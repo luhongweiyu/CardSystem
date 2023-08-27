@@ -1,0 +1,12 @@
+# 全部都必须用空格缩进,不允许用tab缩进
+数据库:
+  username: cardcard
+  password: cardcard
+  Dbname: gocard
+  host: localhost
+  port: 3306
+网站:
+  端口: 802
+  host: localhost
+  管理页: http://localhost:5173
+dev: true
