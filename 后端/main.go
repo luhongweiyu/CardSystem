@@ -13,6 +13,12 @@ import (
 //		rand.Read(randBytes)
 //		return fmt.Sprintf("%x", randBytes)
 //	}
+func 整点执行_任务() {
+	for k := range 全局_用户每小时请求次数 {
+		delete(全局_用户每小时请求次数, k)
+	}
+
+}
 func 初始化() {
 	time.Local = time.FixedZone("CST", 8*3600) // 东八
 
@@ -22,6 +28,17 @@ func 初始化() {
 	if !viper.GetBool("dev") {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	go func() {
+		i := 0
+		for i < 5 {
+			if time.Now().Minute() == 0 {
+				整点执行_任务()
+				time.Sleep(time.Minute * 58)
+			}
+			time.Sleep(time.Second * 10)
+		}
+
+	}()
 	// config = viper.New()
 	// config.SetConfigFile("./config.yaml")
 	// fmt.Println(config.GetString("abc"))

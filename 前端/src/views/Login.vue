@@ -38,7 +38,7 @@ import axios from "axios";
 import Cookies from "js-cookie";
 import { tr } from "element-plus/es/locale";
 const stores = useCounterStore();
-const { 账号, 密码, 登录状态, 用户id } = storeToRefs(stores);
+const { 账号, 密码, 登录状态, 用户id,api次数 } = storeToRefs(stores);
 
 const loading = ref(false);
 const 注册界面 = ref(false)
@@ -73,6 +73,7 @@ const 登录 = function () {
         登录状态.value = true;
         loading.value = false;
         用户id.value = response.data.id
+        api次数.value = response.data.api
         Cookies.set('name', 账号.value, { expires: 61 })
         Cookies.set('password', 密码.value, { expires: 61 })
       } else {

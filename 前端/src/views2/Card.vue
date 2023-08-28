@@ -42,8 +42,14 @@
       <el-table-column :show-overflow-tooltip="true" label="类型" width="60px">
         <template #default="scope"> {{ 计算卡密类型(scope.row.available_time) }}</template>
       </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="address" label="在线状态" width="60px">
-        <template #default="scope"> {{ scope.row.date }}</template>
+      <el-table-column :show-overflow-tooltip="true" prop="address" label="状态" width="60px">
+        <template #default="scope">
+          <span v-if="scope.row.card_state == 4" style="color:red">冻结</span>
+          <span v-else-if="判断到期(scope.row.end_time)" style="color:rgb(131, 71, 71)">到期</span>
+          <span v-else-if="scope.row.end_time" style="color:rgb(9, 255, 0)">激活</span>
+
+
+        </template>
       </el-table-column>
       <el-table-column :show-overflow-tooltip="true" label="所属软件" width="100px">
         <template #default="scope"> {{ 计算所属软件(scope.row.software) }}</template>
@@ -129,8 +135,8 @@
       </el-form>
     </el-dialog>
     <!-- 修改卡密界面 -->
-    <el-dialog v-model="显示修改卡密界面" title="修改卡密" width="80%" >
-      <el-form label-position="right" label-width="100px" style="max-width: 460px;display: inline-block;" v-loading="加载中"  >
+    <el-dialog v-model="显示修改卡密界面" title="修改卡密" width="80%">
+      <el-form label-position="right" label-width="100px" style="max-width: 460px;display: inline-block;" v-loading="加载中">
         <el-form-item label=" ">
           {{ 待修改卡密.card }}
         </el-form-item>
@@ -165,7 +171,7 @@
         </el-form-item>
       </el-form>
       <div style="display: inline-block; margin: 50px; vertical-align: top">
-        <pre >
+        <pre>
           {{ 单个卡密详情 }}
         </pre>
       </div>
@@ -258,6 +264,14 @@ const 待续费卡密 = ref({
   续费时间: 0,
   续费卡密: "",
 })
+const 判断到期 = function (a) {
+  if (!a) {
+    return false
+  }
+  const currentTime = new Date();
+  const targetTime = new Date(a);
+  return currentTime > targetTime
+}
 const 返回提示 = function (msg) {
   var s = '<pre> ' + msg + '</pre>'
   ElMessageBox.alert(s, {

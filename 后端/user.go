@@ -26,7 +26,7 @@ func user_login(ctx *gin.Context) {
 	fmt.Println(a)
 	b := db_user.Where("name=?", a.Name).Where("password=?", a.Password).First(&a).RowsAffected
 	if b > 0 {
-		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "登录成功", "id": a.ID})
+		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "登录成功", "id": a.ID, "api": 全局_用户每小时请求次数[a.Name]})
 	} else {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "用户名或者密码错误"})
 	}

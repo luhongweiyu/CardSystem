@@ -1,21 +1,41 @@
 
 
 <template>
-    <div v-loading="加载中">
+    <el-container>
+        <el-main>
 
-        <el-input v-model="input1" placeholder="请输入卡密">
-            <template #prepend>卡密:</template>
-        </el-input>
-        <el-button type="primary" :icon="Search" @click="查询详情()"> 查询 </el-button>
-    </div>
-    <pre>
-        {{ 单个卡密详情 }}
 
-    </pre>
+            <div v-loading="加载中">
+
+                <el-input v-model="input1" placeholder="请输入卡密">
+                    <template #prepend>卡密:</template>
+                </el-input>
+                <el-button type="primary" :icon="Search" @click="查询详情()"> 查询 </el-button>
+
+            </div>
+            <pre>
+                {{ 单个卡密详情 }}
+
+                </pre>
+
+
+
+        </el-main>
+        <el-footer class="el-footer"><el-button type="warning" plain @click="显示关于 = true">关于</el-button></el-footer>
+    </el-container>
+
+
+
+
+
+    <el-dialog v-model="显示关于" title="关于" width="80%">
+        <About></About>
+    </el-dialog>
 </template>
 <script setup>
 import axios from "axios";
 import { ref, reactive, computed } from "vue";
+
 
 
 import {
@@ -27,9 +47,11 @@ import {
     Star,
 } from '@element-plus/icons-vue'
 import { ElMessage } from "element-plus";
+import About from "./views/About.vue";
 const input1 = ref("")
 const 单个卡密详情 = ref("")
 const 加载中 = ref(false)
+const 显示关于 = ref(false)
 function getUrlSearch(name) {
     // 未传参，返回空
     if (!name) return null;
@@ -61,7 +83,7 @@ const 查询详情 = function () {
         加载中.value = false
         console.log(res.data)
         if (res.data.state == true) {
-            单个卡密详情.value =  "\n"+res.data.data
+            单个卡密详情.value = "\n" + res.data.data
 
         } else {
             ElMessage.error(res.data.msg)
@@ -69,9 +91,6 @@ const 查询详情 = function () {
 
     })
 }
-
-
-
 
 </script>
 
@@ -84,11 +103,15 @@ const 查询详情 = function () {
     height: 100%;
     color: #eee;
     background: #222;
-    /* width: 100%; */
-    /* overflow: auto; */
+    width: 100%;
+    overflow: auto;
 }
 
 .el-button {
     margin: 50px;
+}
+
+.el-footer {
+    height: 50px;
 }
 </style>

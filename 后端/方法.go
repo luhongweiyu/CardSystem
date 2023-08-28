@@ -25,6 +25,7 @@ type 心跳记录 struct {
 	心跳标识 string
 }
 
+var 全局_用户每小时请求次数 = make(map[string]int)
 var 卡密心跳记录 = make(map[string]([]心跳记录))
 
 func 写入文件_追加(filePath string, str string) {
@@ -65,7 +66,13 @@ func card_id获取用户设置(ctx *gin.Context) {
 	var userinfo = user_info{}
 	var ok = false
 	id := input(ctx, "center_id")
-	if card != "" {
+	name := input(ctx, "name")
+	if !请求防火墙(name, id) {
+		失败提示(ctx, "api次数超限")
+		ctx.Abort()
+		return
+	}
+	if id != "" {
 		userinfo, ok = 用户设置_id[id]
 		if !ok {
 			// 查询
@@ -73,18 +80,22 @@ func card_id获取用户设置(ctx *gin.Context) {
 			用户设置_id[strconv.Itoa(userinfo.ID)] = userinfo
 			userinfo, ok = 用户设置_id[id]
 		}
-
-	} else {
-		name := input(ctx, "name")
-		if name != "" {
-			userinfo, ok = 用户设置_name[name]
-			if !ok {
-				user_刷新用户设置(name)
-				userinfo, ok = 用户设置_name[name]
+		if ok {
+			if !请求防火墙(userinfo.Name, "") {
+				失败提示(ctx, "api次数超限")
+				ctx.Abort()
+				return
 			}
+		}
 
+	} else if name != "" {
+		userinfo, ok = 用户设置_name[name]
+		if !ok {
+			user_刷新用户设置(name)
+			userinfo, ok = 用户设置_name[name]
 		}
 	}
+
 	if !ok {
 		失败提示(ctx, "center_id或name错误")
 		ctx.Abort()
@@ -120,24 +131,26 @@ func 失败提示(ctx *gin.Context, 提示 interface{}) {
 func 成功提示(ctx *gin.Context, 提示 interface{}) {
 	ctx.JSON(http.StatusOK, 加入时间戳(ctx, gin.H{"code": 1, "state": true, "data": 提示}))
 }
-func 卡密md5验证(ctx *gin.Context) bool {
+func 卡密md5验证(ctx *gin.Context) {
 	用户设置 := gin线程_变量[ctx]
 	if !用户设置.Api_safe {
-		return true
+		return
 	}
 	加密参数, _ := 取参数表(ctx, []string{"timestamp", "sign"})
 	t, _ := strconv.Atoi(加密参数["timestamp"])
 	if (int64(t)-time.Now().Unix()) > 10*60 || (int64(t)-time.Now().Unix()) < -10*60 {
 		// 超时
 		失败提示(ctx, "时间不正确")
-		return false
+		ctx.Abort()
+		return
 	}
 	srcCode := md5.Sum([]byte(加密参数["timestamp"] + 用户设置.Api_password))
 	if fmt.Sprintf("%x", srcCode) == 加密参数["sign"] {
-		return true
+		return
 	} else {
 		失败提示(ctx, "sign错误")
-		return false
+		ctx.Abort()
+		return
 	}
 }
 func 卡密_删除缓存(管理员用户名 string, card string) {
@@ -167,7 +180,10 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 }
 func 卡密_记录心跳(name string, card string, 心跳标识 string) {
 	a := 卡密心跳记录[name+card]
-	a = append(a, 心跳记录{time.Now(), 心跳标识})
+	a = append([]心跳记录{{time.Now(), 心跳标识}}, a...)
+	if len(a) > 20 {
+		a = a[:20]
+	}
 	卡密心跳记录[name+card] = a
 
 }
@@ -182,27 +198,32 @@ func 卡密_查询心跳(ctx *gin.Context) {
 	}
 	s := []string{}
 	for _, v := range 卡密心跳记录[name+card] {
-		s = append(s, fmt.Sprintf("%v:%v", v.登录时间, v.心跳标识))
+		s = append(s, fmt.Sprintf("%v:  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识))
 	}
 	状态 := "正常"
 	if list.Card_state == 卡密状态_冻结 {
 		状态 = "冻结"
 	}
-	s2 := fmt.Sprintf("卡密:%v\n使用时间:%v\n到期时间:%v\n激活天数:%v天,状态:%v\n登录记录:%v", list.Card, list.Use_time, list.End_time, list.Available_time, 状态, strings.Join(s, "\n"))
+	使用时间 := list.Use_time.Format("2006-01-02 15:04:05")
+	到期时间 := list.End_time.Format("2006-01-02 15:04:05")
+	if list.Use_time.IsZero() {
+		使用时间 = ""
+	}
+	if list.End_time.IsZero() {
+		到期时间 = ""
+	}
+	s2 := fmt.Sprintf("卡密:%v\n使用时间:  %v\n到期时间:  %v\n激活天数:%v天,状态:%v\n登录记录:\n%v", list.Card, 使用时间, 到期时间, list.Available_time, 状态, strings.Join(s, "\n"))
 	成功提示(ctx, s2)
 	// ctx.String(http.StatusOK, s2)
 }
 func card_login(ctx *gin.Context) {
-	登录参数, ok := 取参数表(ctx, []string{"software", "card", "center_id"})
+	登录参数, ok := 取参数表(ctx, []string{"software"})
 	if !ok {
-		失败提示(ctx, "cenger_id,software,card参数错误")
-		return
-	}
-	if !卡密md5验证(ctx) {
+		失败提示(ctx, "software参数错误")
 		return
 	}
 	name := gin线程_变量[ctx].Name
-	card := 登录参数["card"]
+	card := gin线程_变量[ctx].card
 	software, _ := strconv.Atoi(登录参数["software"])
 	if name == "" {
 		失败提示(ctx, "center_id不能为空")
@@ -245,10 +266,6 @@ func card_ping(ctx *gin.Context) {
 		失败提示(ctx, "cenger_id,card,needle参数错误")
 		return
 	}
-	if !卡密md5验证(ctx) {
-		return
-	}
-
 	name := gin线程_变量[ctx].Name
 	card := 登录参数["card"]
 	needle := 登录参数["needle"]
@@ -275,8 +292,13 @@ func card_ping(ctx *gin.Context) {
 		return
 	}
 	if list.Needle != "" && list.Needle == needle {
+		记录 := 卡密心跳记录[name+card]
+		上次 := 999999
+		if len(记录) > 0 {
+			上次 = int(time.Now().Unix() - 记录[0].登录时间.Unix())
+		}
 		卡密_记录心跳(name, card, needle)
-		成功提示(ctx, gin.H{})
+		成功提示(ctx, gin.H{"last": 上次})
 		return
 	} else {
 		失败提示(ctx, "验证失败")
@@ -597,4 +619,22 @@ func modify_card(ctx *gin.Context) {
 	db.Table("card_"+b.Name).Where("card = ?", a.Card).Updates(a)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	卡密_删除缓存(b.Name, a.Card)
+	日志("log/"+b.Name, fmt.Sprintf("修改;%v;", a.Card))
+}
+func modify_card_configContent(ctx *gin.Context) {
+	// var b struct {
+	// 	Type string
+	// }
+	// ctx.ShouldBindBodyWith(&b, binding.JSON)
+	a := input(ctx, "type")
+	name := gin线程_变量[ctx].Name
+	card := gin线程_变量[ctx].card
+	if a == "write" {
+		value := input(ctx, "value")
+		db.Table("card_"+name).Where("card = ?", card).Update("config_content", value)
+		卡密_删除缓存(name, card)
+	}
+	b, _ := 卡密_读取缓存(name, card)
+	成功提示(ctx, b.Config_content)
+
 }

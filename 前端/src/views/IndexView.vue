@@ -151,6 +151,13 @@ const asideMenu = reactive([
     icon: "VideoCameraFilled",
     label: "实名认证"
   },
+  {
+    // 关于
+    path: "/about",
+    name: "about",
+    icon: "Promotion",
+    label: "关于"
+  },
 
   // {
   //   icon: "location",

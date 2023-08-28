@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -31,7 +30,6 @@ func user_query_soft_list(ctx *gin.Context) {
 		Software string
 	}
 	db_software.Where("user = ?", a.Name).Order("ID").Find(&results)
-	fmt.Println(results)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "创建成功", "data": results})
 }
 func user_add_soft(ctx *gin.Context) {

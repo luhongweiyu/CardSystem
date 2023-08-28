@@ -57,6 +57,22 @@ func 管理员验证(ctx *gin.Context) {
 	}
 }
 
+func 请求防火墙(name string, id string) bool {
+	// s := ""
+	var s string
+	if name != "" {
+		s = name
+	} else {
+		s = "id_" + name
+	}
+	count := 全局_用户每小时请求次数[s]
+	if count > 50000 {
+		return false
+	}
+	全局_用户每小时请求次数[s] = count + 1
+	return true
+}
+
 func 启动网络() {
 	router := gin.Default()
 	router.Use(use)
@@ -103,10 +119,10 @@ func 启动网络() {
 	}
 	card := router.Group("/card", card_id获取用户设置)
 	{
-
-		card.Any("/card_login", card_login)
-		card.Any("/card_ping", card_ping)
+		card.Any("/card_login", 卡密md5验证, card_login)
+		card.Any("/card_ping", 卡密md5验证, card_ping)
 		card.Any("/query", 卡密_查询心跳)
+		card.Any("/config", 卡密md5验证, modify_card_configContent)
 		// router.Any("/card/card_time_dec", 管理员验证)
 	}
 
