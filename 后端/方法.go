@@ -23,6 +23,7 @@ var 卡密缓存 = make(map[string]卡密表样式)
 type 心跳记录 struct {
 	登录时间 time.Time
 	心跳标识 string
+	ip   string
 }
 
 var 全局_用户每小时请求次数 = make(map[string]int)
@@ -178,9 +179,9 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 	// 卡密_刷新缓存(管理员用户名, b.Card)
 	return res
 }
-func 卡密_记录心跳(name string, card string, 心跳标识 string) {
+func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) {
 	a := 卡密心跳记录[name+card]
-	a = append([]心跳记录{{time.Now(), 心跳标识}}, a...)
+	a = append([]心跳记录{{time.Now(), 心跳标识, ip}}, a...)
 	if len(a) > 20 {
 		a = a[:20]
 	}
@@ -198,7 +199,7 @@ func 卡密_查询心跳(ctx *gin.Context) {
 	}
 	s := []string{}
 	for _, v := range 卡密心跳记录[name+card] {
-		s = append(s, fmt.Sprintf("%v:  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识))
+		s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
 	}
 	状态 := "正常"
 	if list.Card_state == 卡密状态_冻结 {
@@ -245,7 +246,7 @@ func card_login(ctx *gin.Context) {
 		list.Needle = GetRandomString(6, "a")
 		list.Use_time = time.Now()
 		卡密_修改缓存(name, &list)
-		卡密_记录心跳(name, card, list.Needle)
+		卡密_记录心跳(name, card, list.Needle, ctx.ClientIP())
 		成功提示(ctx, gin.H{
 			"data": gin.H{
 				"needle":            list.Needle,
@@ -297,7 +298,7 @@ func card_ping(ctx *gin.Context) {
 		if len(记录) > 0 {
 			上次 = int(time.Now().Unix() - 记录[0].登录时间.Unix())
 		}
-		卡密_记录心跳(name, card, needle)
+		卡密_记录心跳(name, card, needle, ctx.ClientIP())
 		成功提示(ctx, gin.H{"last": 上次})
 		return
 	} else {
