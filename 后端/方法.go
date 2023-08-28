@@ -122,7 +122,7 @@ func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
 	str := strconv.Itoa(t) + 用户设置.Api_password + code
 	s := md5.Sum([]byte(str))
 	H["sign"] = fmt.Sprintf("%x", s)
-	H["timestamp"] = strconv.Itoa(t)
+	H["timestamp"] = t
 	return H
 }
 func 失败提示(ctx *gin.Context, 提示 interface{}) {

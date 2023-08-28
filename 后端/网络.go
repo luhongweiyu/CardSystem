@@ -109,6 +109,7 @@ func 启动网络() {
 		user.POST("/user_add_soft", user_add_soft)
 		user.POST("/user_del_soft", user_del_soft)
 		user.POST("/user_query_soft_list", user_query_soft_list)
+		user.POST("/user_modify_bulletin", user_modify_bulletin)
 		// user.POST("/query_soft_list", user_query_soft_list)
 
 		user.POST("/add_new_card", add_new_card)
@@ -125,6 +126,7 @@ func 启动网络() {
 		card.Any("/config", 卡密md5验证, modify_card_configContent)
 		// router.Any("/card/card_time_dec", 管理员验证)
 	}
+	router.Any("/card/bulletin", card_get_bulletin)
 
 	// admin := router.Group("/admin", 管理员验证)
 	// {

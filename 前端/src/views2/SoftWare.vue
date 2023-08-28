@@ -8,10 +8,15 @@
   <el-table :data="软件列表" style="width: 100%">
     <el-table-column prop="ID" label="软件ID" width="180" />
     <el-table-column prop="Software" label="软件名称" width="180" />
-    <el-table-column prop="Software" label="软件名称" width="180" />
-
+    <el-table-column prop="bulletin" label="公告" width="180">
+      <template #default="scope">
+        <el-input v-model="scope.row.Bulletin" autosize type="textarea" placeholder="请输入公告内容" style="display:inline" width="100px" />
+      </template>
+    </el-table-column>
+    
     <el-table-column fixed="right" label="操作" width="120">
       <template #default="scope">
+        <el-button link type="primary" size="small" @click="保存公告(scope.row)" style="display:inline" >保存</el-button>
         <el-button link type="primary" size="small" @click="删除软件(scope.row.ID)">删除</el-button>
         <!-- <el-button link type="primary" size="small">修改</el-button> -->
       </template>
@@ -54,6 +59,16 @@ const 添加软件 = function () {
 };
 const 删除软件 = function (id) {
   post("/user_del_soft", { id: id }).then(function (res) {
+    if (res.data.state) {
+      ElMessage.success("删除成功");
+      查询软件列表();
+    } else {
+      ElMessage.error(res.data.msg);
+    }
+  });
+};
+const 保存公告 = function (row) {
+  post("/user_modify_bulletin", { id: row.ID, bulletin: row.Bulletin }).then(function (res) {
     if (res.data.state) {
       ElMessage.success("删除成功");
       查询软件列表();
