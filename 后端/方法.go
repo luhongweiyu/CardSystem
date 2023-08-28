@@ -127,10 +127,24 @@ func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
 	return H
 }
 func 失败提示(ctx *gin.Context, 提示 interface{}) {
-	ctx.JSON(http.StatusOK, 加入时间戳(ctx, gin.H{"code": 0, "state": false, "msg": 提示}))
+	data, ok := 提示.(gin.H)
+	if ok {
+		data["code"] = 0
+		data["state"] = false
+	} else {
+		data = gin.H{"code": 0, "state": false, "msg": 提示}
+	}
+	ctx.JSON(http.StatusOK, 加入时间戳(ctx, data))
 }
 func 成功提示(ctx *gin.Context, 提示 interface{}) {
-	ctx.JSON(http.StatusOK, 加入时间戳(ctx, gin.H{"code": 1, "state": true, "data": 提示}))
+	data, ok := 提示.(gin.H)
+	if ok {
+		data["code"] = 1
+		data["state"] = true
+	} else {
+		data = gin.H{"code": 1, "state": true, "data": 提示}
+	}
+	ctx.JSON(http.StatusOK, 加入时间戳(ctx, data))
 }
 func 卡密md5验证(ctx *gin.Context) {
 	用户设置 := gin线程_变量[ctx]
@@ -182,8 +196,8 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) {
 	a := 卡密心跳记录[name+card]
 	a = append([]心跳记录{{time.Now(), 心跳标识, ip}}, a...)
-	if len(a) > 20 {
-		a = a[:20]
+	if len(a) > 100 {
+		a = a[:100]
 	}
 	卡密心跳记录[name+card] = a
 
@@ -248,12 +262,10 @@ func card_login(ctx *gin.Context) {
 		卡密_修改缓存(name, &list)
 		卡密_记录心跳(name, card, list.Needle, ctx.ClientIP())
 		成功提示(ctx, gin.H{
-			"data": gin.H{
-				"needle":            list.Needle,
-				"endtime_timestamp": list.End_time.Unix(),
-				"less_time":         fmt.Sprintf("%.2f天", float32(list.End_time.Unix()-time.Now().Unix())/(60*60*24)),
-				"endtime":           fmt.Sprint(list.End_time.Format("2006年01月02日03:04:05")),
-			},
+			"needle":            list.Needle,
+			"endtime_timestamp": list.End_time.Unix(),
+			"less_time":         fmt.Sprintf("%.2f天", float32(list.End_time.Unix()-time.Now().Unix())/(60*60*24)),
+			"endtime":           fmt.Sprint(list.End_time.Format("2006年01月02日03:04:05")),
 		})
 
 	} else {
@@ -292,6 +304,10 @@ func card_ping(ctx *gin.Context) {
 		失败提示(ctx, "卡密被冻结")
 		return
 	}
+	if list.End_time.Unix() < time.Now().Unix() {
+		失败提示(ctx, "过期啦")
+		return
+	}
 	if list.Needle != "" && list.Needle == needle {
 		记录 := 卡密心跳记录[name+card]
 		上次 := 999999
@@ -302,7 +318,7 @@ func card_ping(ctx *gin.Context) {
 		成功提示(ctx, gin.H{"last": 上次})
 		return
 	} else {
-		失败提示(ctx, "验证失败")
+		失败提示(ctx, "验证失败,可能被挤下线")
 		return
 	}
 
@@ -520,8 +536,8 @@ func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {
 			到期时间 = 最晚到期时间
 		}
 	}
-	if a.Available_time == -1 {
-		到期时间, _ = time.Parse("2006年1月2日15:04:05", "2099年1月1日00:00:00")
+	if a.Available_time == 36500 {
+		到期时间, _ = time.Parse("2006年1月2日15:04:05", "2029年1月1日00:00:00")
 	}
 	a.End_time = 到期时间
 	db.Table("card_" + 管理员用户名).Updates(&a)
