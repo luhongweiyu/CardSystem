@@ -55,7 +55,7 @@
         </card> -->
       </el-col>
     </el-row>
-    <el-button type="primary" @click="获取设置()">下载设置</el-button>
+    <el-button type="primary" @click="获取设置()">刷新设置</el-button>
   </div>
 </template>
 

@@ -422,11 +422,12 @@ const 保存修改的卡密 = function () {
 const 删除卡密 = function (cards) {
   // [row.card] 
   // 已勾的卡密.value
-  post("/delete_card", { cards: cards }).then(function (res) {
-    返回提示(res.data.msg)
-    查询所有卡密();
-  });
-
+  ElMessageBox.confirm('确认删除' + cards.length + "个吗?").then(() => {
+    post("/delete_card", { cards: cards }).then(function (res) {
+      返回提示(res.data.msg)
+      查询所有卡密();
+    });
+  })
 }
 const 删除单个卡密 = function (row) {
   删除卡密([row.card])
