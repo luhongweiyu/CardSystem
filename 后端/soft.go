@@ -78,13 +78,14 @@ func user_modify_bulletin(ctx *gin.Context) {
 	var a struct {
 		Name     string //`gorm:"column:user"`
 		ID       int
-		Bulletin string
+		Bulletin *string
+		Software string
 	}
 	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
 	if err != nil {
 		return
 	}
-	db_software.Where("id = ?", a.ID).Where("name = ?", a.Name).Update("bulletin", a.Bulletin)
+	db_software.Where("id = ?", a.ID).Where("name = ?", a.Name).Updates(a)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 
 }

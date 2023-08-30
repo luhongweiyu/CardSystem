@@ -6,9 +6,14 @@
   用户卡密查询链接:
   <el-link type="success" :href="用户卡密查询链接" target="_blank"> {{ 用户卡密查询链接 }}</el-link>
   <el-table :data="软件列表" style="width: 100%">
-    <el-table-column prop="ID" label="软件ID" width="180" />
-    <el-table-column prop="Software" label="软件名称" width="180" />
-    <el-table-column prop="bulletin" label="公告" width="180">
+    <el-table-column prop="ID" label="软件ID" width="70" />
+    <el-table-column prop="Software" label="软件名称" width="200">
+      <template #default="scope">
+        <el-input v-model="scope.row.Software" placeholder="请输入软件名" />
+      </template>
+
+    </el-table-column>
+    <el-table-column prop="bulletin" label="公告" width="280">
       <template #default="scope">
         <el-input v-model="scope.row.Bulletin" autosize type="textarea" placeholder="请输入公告内容" style="display:inline"
           width="100px" />
@@ -43,7 +48,7 @@ import { reactive, ref } from "vue";
 const 软件列表 = ref([]);
 const 新增软件名 = ref("");
 const 软件名称输入显示 = ref(false);
-const 用户卡密查询链接 = ref("http://" + window.location.hostname + ":" + window.location.port + "/usercard/index.html?center_id=" + useCounterStore().用户id)
+const 用户卡密查询链接 = ref("http://" + window.location.hostname + ":" + (window.location.port && "80") + "/usercard/index.html?center_id=" + useCounterStore().用户id)
 const post = useCounterStore().post;
 const 添加软件 = function () {
   软件名称输入显示.value = false;
@@ -71,7 +76,7 @@ const 删除软件 = function (id) {
   })
 };
 const 保存公告 = function (row) {
-  post("/user_modify_bulletin", { id: row.ID, bulletin: row.Bulletin }).then(function (res) {
+  post("/user_modify_bulletin", { id: row.ID, software: row.Software, bulletin: row.Bulletin }).then(function (res) {
     if (res.data.state) {
       ElMessage.success("删除成功");
       查询软件列表();

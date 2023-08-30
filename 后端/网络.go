@@ -47,7 +47,7 @@ func 匹配卡密(ctx *gin.Context) []string {
 	return cards_tab
 }
 func use(ctx *gin.Context) {
-	fmt.Println("----------------------------------")
+	fmt.Println("-----------------------------------")
 	ctx.Header("Access-Control-Allow-Origin", "*")
 }
 func 管理员验证(ctx *gin.Context) {

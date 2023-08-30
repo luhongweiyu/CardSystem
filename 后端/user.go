@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -23,14 +22,12 @@ type user struct {
 func user_login(ctx *gin.Context) {
 	var a user
 	ctx.ShouldBindBodyWith(&a, binding.JSON)
-	fmt.Println(a)
 	b := db_user.Where("name=?", a.Name).Where("password=?", a.Password).First(&a).RowsAffected
 	if b > 0 {
 		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "登录成功", "id": a.ID, "api": 全局_用户每小时请求次数[a.Name]})
 	} else {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "用户名或者密码错误"})
 	}
-	fmt.Println(ctx.ClientIP())
 	user_info_登录记录(a.Name, ctx.ClientIP())
 }
 

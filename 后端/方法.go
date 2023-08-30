@@ -537,7 +537,7 @@ func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {
 		}
 	}
 	if a.Available_time == 36500 {
-		到期时间, _ = time.Parse("2006年1月2日15:04:05", "2029年1月1日00:00:00")
+		到期时间, _ = time.Parse("2006年1月2日15:04:05", "2099年1月1日00:00:00")
 	}
 	a.End_time = 到期时间
 	db.Table("card_" + 管理员用户名).Updates(&a)
