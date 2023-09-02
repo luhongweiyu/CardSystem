@@ -76,7 +76,7 @@ func 连接数据库() {
 
 	for _, v := range a {
 		db.Table("card_" + v.Name).AutoMigrate(&卡密表样式{})
-
+		user_刷新用户设置(v.Name)
 	}
 
 	fmt.Println(a)

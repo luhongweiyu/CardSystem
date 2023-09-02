@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,14 +27,11 @@ type user_info struct {
 	// Token      string
 }
 
-var 用户设置_id = make(map[string]user_info)
-var 用户设置_name = make(map[string]user_info)
-
 func user_info_创建(a user) {
 	db_user_info.Select("name", "CreatedAt", "id").Create(user_info{Name: a.Name, CreatedAt: time.Now(), ID: a.ID})
+	user_刷新用户设置(a.Name)
 	// db_user_info.Select("name", "create").Create(gin.H{})
 }
-
 func user_info_登录记录(用户名 string, ip string) {
 	// a := map[string]interface{}{}
 	// c := &a{}
@@ -58,7 +53,6 @@ func user_update_info(ctx *gin.Context) {
 		Name     string
 		Password string
 	}
-	fmt.Println("-------------")
 	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
 	if err != nil {
 		return
@@ -70,8 +64,8 @@ func user_update_info(ctx *gin.Context) {
 func user_刷新用户设置(name string) {
 	a := user_info{}
 	db_user_info.Where("name=?", name).First(&a)
-	用户设置_id[strconv.Itoa(a.ID)] = a
-	用户设置_name[a.Name] = a
+	全局_用户设置_name[a.Name] = a
+	全局_id对应name[a.ID] = a.Name
 }
 func user_query_card(ctx *gin.Context) {
 	// var a struct {

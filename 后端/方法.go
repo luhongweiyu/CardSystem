@@ -27,7 +27,9 @@ type 心跳记录 struct {
 }
 
 var 全局_用户每小时请求次数 = make(map[string]int)
-var 卡密心跳记录 = make(map[string]([]心跳记录))
+var 全局_卡密心跳记录 = make(map[string]([]心跳记录))
+var 全局_id对应name = make(map[int]string)
+var 全局_用户设置_name = make(map[string]user_info)
 
 func 写入文件_追加(filePath string, str string) {
 	//创建一个新文件，写入内容 5 句 “http://c.biancheng.net/golang/”
@@ -66,37 +68,23 @@ func card_id获取用户设置(ctx *gin.Context) {
 	}
 	var userinfo = user_info{}
 	var ok = false
-	id := input(ctx, "center_id")
 	name := input(ctx, "name")
-	if !请求防火墙(name, id) {
+	if name == "" {
+		id, _ := strconv.Atoi(input(ctx, "center_id"))
+		name = 全局_id对应name[id]
+	}
+	if !请求防火墙(name) {
 		失败提示(ctx, "api次数超限")
 		ctx.Abort()
 		return
 	}
-	if id != "" {
-		userinfo, ok = 用户设置_id[id]
-		if !ok {
-			// 查询
-			db_user_info.Where("id=?", id).First(&userinfo)
-			用户设置_id[strconv.Itoa(userinfo.ID)] = userinfo
-			userinfo, ok = 用户设置_id[id]
-		}
-		if ok {
-			if !请求防火墙(userinfo.Name, "") {
-				失败提示(ctx, "api次数超限")
-				ctx.Abort()
-				return
-			}
-		}
-
-	} else if name != "" {
-		userinfo, ok = 用户设置_name[name]
-		if !ok {
-			user_刷新用户设置(name)
-			userinfo, ok = 用户设置_name[name]
-		}
+	if name != "" {
+		userinfo, ok = 全局_用户设置_name[name]
+		// if !ok {
+		// 	user_刷新用户设置(name)
+		// 	userinfo, ok = 全局_用户设置_name[name]
+		// }
 	}
-
 	if !ok {
 		失败提示(ctx, "center_id或name错误")
 		ctx.Abort()
@@ -194,12 +182,12 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 	return res
 }
 func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) {
-	a := 卡密心跳记录[name+card]
+	a := 全局_卡密心跳记录[name+card]
 	a = append([]心跳记录{{time.Now(), 心跳标识, ip}}, a...)
 	if len(a) > 100 {
 		a = a[:100]
 	}
-	卡密心跳记录[name+card] = a
+	全局_卡密心跳记录[name+card] = a
 
 }
 func 卡密_查询心跳(ctx *gin.Context) {
@@ -212,7 +200,7 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		return
 	}
 	s := []string{}
-	for _, v := range 卡密心跳记录[name+card] {
+	for _, v := range 全局_卡密心跳记录[name+card] {
 		s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
 	}
 	状态 := "正常"
@@ -311,7 +299,7 @@ func card_ping(ctx *gin.Context) {
 		return
 	}
 	if list.Needle != "" && list.Needle == needle {
-		记录 := 卡密心跳记录[name+card]
+		记录 := 全局_卡密心跳记录[name+card]
 		上次 := 999999
 		if len(记录) > 0 {
 			上次 = int(time.Now().Unix() - 记录[0].登录时间.Unix())

@@ -107,10 +107,6 @@ func card_get_bulletin(ctx *gin.Context) {
 	a := struct {
 		Bulletin string
 	}{}
-	if !请求防火墙("software_"+software, "") {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "data": "api次数超上限"})
-		return
-	}
 	db_software.Where("id = ?", software).Find(&a)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "bulletin": a.Bulletin})
 
