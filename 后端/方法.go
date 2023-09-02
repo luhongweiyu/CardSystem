@@ -216,9 +216,6 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
 	}
 	状态 := "正常"
-	if list.Card_state == 卡密状态_冻结 {
-		状态 = "冻结"
-	}
 	使用时间 := list.Use_time.Format("2006-01-02 15:04:05")
 	到期时间 := list.End_time.Format("2006-01-02 15:04:05")
 	if list.Use_time.IsZero() {
@@ -226,6 +223,11 @@ func 卡密_查询心跳(ctx *gin.Context) {
 	}
 	if list.End_time.IsZero() {
 		到期时间 = ""
+	} else if list.End_time.Unix() < time.Now().Unix() {
+		状态 = "到期"
+	}
+	if list.Card_state == 卡密状态_冻结 {
+		状态 = "冻结"
 	}
 	s2 := fmt.Sprintf("卡密:%v\n使用时间:  %v\n到期时间:  %v\n激活天数:%v天,状态:%v\n登录记录:\n%v", list.Card, 使用时间, 到期时间, list.Available_time, 状态, strings.Join(s, "\n"))
 	成功提示(ctx, s2)
@@ -391,6 +393,10 @@ func 查询所有卡密(ctx *gin.Context) {
 			b.Where("end_time <= ?", time.Now())
 		} else if a.Card_state == 卡密状态_冻结 {
 			b.Where("card_state = ?", 卡密状态_冻结)
+		} else if a.Card_state == 5 {
+			// 已激活
+			b.Where("card_state = ?", 卡密状态_正常)
+			b.Where("end_time > ?", time.Now())
 		}
 		// b.Where("card_state", a.Card_state)
 	}
@@ -404,7 +410,7 @@ func 查询所有卡密(ctx *gin.Context) {
 		b.Where("notes LIKE ?", "%"+a.Notes+"%")
 	}
 	list := []map[string]interface{}{}
-	b.Order("create_time").Find(&list)
+	b.Order("create_time desc").Find(&list)
 
 	var page struct {
 		O当前页 int `json:"当前页"`
