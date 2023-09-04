@@ -372,21 +372,21 @@ func 查询所有卡密(ctx *gin.Context) {
 		b.Where("software", a.Software)
 	}
 	if a.Card_state != 0 {
-		if a.Card_state == 卡密状态_未激活 {
+		if a.Card_state == 1 {
 			b.Where("end_time", nil)
-		} else if a.Card_state == 卡密状态_正常 {
-			// b.Where("end_time > ? OR  end_time IS NULL", time.Now())
 			b.Where("card_state = ?", 卡密状态_正常)
-		} else if a.Card_state == 卡密状态_到期 {
-			b.Where("end_time <= ?", time.Now())
-		} else if a.Card_state == 卡密状态_冻结 {
-			b.Where("card_state = ?", 卡密状态_冻结)
-		} else if a.Card_state == 5 {
+		} else if a.Card_state == 2 {
 			// 已激活
-			b.Where("card_state = ?", 卡密状态_正常)
 			b.Where("end_time > ?", time.Now())
+			b.Where("card_state = ?", 卡密状态_正常)
+		} else if a.Card_state == 3 {
+			b.Where("end_time <= ?", time.Now())
+			b.Where("card_state = ?", 卡密状态_正常)
+		} else if a.Card_state == 4 {
+			b.Where("card_state = ?", 卡密状态_正常)
+		} else if a.Card_state == 5 {
+			b.Where("card_state = ?", 卡密状态_冻结)
 		}
-		// b.Where("card_state", a.Card_state)
 	}
 	if a.Available_time != 0 {
 		b.Where("available_time", a.Available_time)
