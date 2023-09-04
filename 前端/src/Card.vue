@@ -1,34 +1,22 @@
 
 
 <template>
-    <el-container>
-        <el-main>
-
-
+    <div class="backimg"></div>
+    <el-container style="z-index: 9999">
+        <el-main style="z-index: 9999">
             <div v-loading="加载中">
-
                 <el-input v-model="input1" placeholder="请输入卡密">
                     <template #prepend>卡密:</template>
                 </el-input>
                 <el-button type="primary" :icon="Search" @click="查询详情()"> 查询 </el-button>
-
             </div>
             <pre>
                 {{ 单个卡密详情 }}
-
-                </pre>
-
-
-
+            </pre>
         </el-main>
-        <el-footer class="el-footer"><el-button type="warning" plain @click="显示关于 = true">关于</el-button></el-footer>
+        <el-footer class="el-footer" style="z-index: 9999"><el-button type="warning" plain @click="显示关于 = true" >关于</el-button></el-footer>
     </el-container>
-
-
-
-
-
-    <el-dialog v-model="显示关于" title="关于" width="80%">
+    <el-dialog v-model="显示关于" title="关于" width="80%" style="z-index: 9999">
         <About></About>
     </el-dialog>
 </template>
@@ -96,16 +84,45 @@ const 查询详情 = function () {
 
 
 <style >
+html,
+body {
+    width: 100%;
+    height: 100%;
+    color: #fff;
+    background-image: url('https://t.mwm.moe/pc');
+    background-size: cover;
+}
+
 #app {
     top: 0px;
     padding: 50px;
     margin: 0px;
-    height: 100%;
-    color: #eee;
-    background: #222;
     width: 100%;
-    overflow: auto;
+    height: 100%;
 }
+
+container,
+el-main {
+    width: 100%;
+    height: 100%;
+
+}
+
+.backimg {
+    top: 0;
+    left: 0;
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgb(22, 22, 22, 0.9);
+    z-index: 0;
+    pointer-events: none;
+
+}
+
+
 
 .el-button {
     margin: 50px;

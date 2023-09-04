@@ -48,7 +48,7 @@ import { reactive, ref } from "vue";
 const 软件列表 = ref([]);
 const 新增软件名 = ref("");
 const 软件名称输入显示 = ref(false);
-const 用户卡密查询链接 = ref("http://" + window.location.hostname + ":" + (window.location.port && "80") + "/usercard/index.html?center_id=" + useCounterStore().用户id)
+const 用户卡密查询链接 = ref("http://" + window.location.hostname + ((window.location.port && (":" + window.location.port)) || "") + "/usercard/index.html?center_id=" + useCounterStore().用户id)
 const post = useCounterStore().post;
 const 添加软件 = function () {
   软件名称输入显示.value = false;

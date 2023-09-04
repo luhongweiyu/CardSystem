@@ -22,6 +22,8 @@ const 导航宽 = computed(() => {
 </script>
 
 <template>
+  <div class="backimg">
+  </div>
   <Login v-if="!登录状态" />
 
   <div v-if="登录状态">
@@ -49,8 +51,10 @@ body,
   padding: 0px;
   margin: 0px;
   height: 100%;
-  color: #eee;
+  color: #fff;
   background: #222;
+  background-image: url('https://t.mwm.moe/pc');
+  background-size: cover;
   /* width: 100%; */
   /* overflow: auto; */
 }
@@ -68,7 +72,7 @@ body,
   padding: 0px;
   margin: 0px;
   width: 100%;
-  height:auto;
+  height: auto;
 }
 
 .left {
@@ -85,5 +89,16 @@ body,
   left: 0;
   width: 100%;
   height: 100%;
+}
+
+
+.backimg {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgb(22, 22, 22, 0.9);
+  /* background: #000; */
 }
 </style>
