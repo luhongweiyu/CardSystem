@@ -35,7 +35,7 @@ func 初始化() {
 				整点执行_任务()
 				time.Sleep(time.Minute * 58)
 			}
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 25)
 		}
 
 	}()
