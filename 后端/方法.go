@@ -97,8 +97,8 @@ func card_id获取用户设置(ctx *gin.Context) {
 		card:      card,
 		user_info: userinfo,
 	}
+	defer delete(gin线程_变量, ctx)
 	ctx.Next()
-	delete(gin线程_变量, ctx)
 }
 func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
 	t, err := strconv.Atoi(input(ctx, "timestamp"))

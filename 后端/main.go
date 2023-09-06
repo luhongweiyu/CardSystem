@@ -14,10 +14,11 @@ import (
 //		return fmt.Sprintf("%x", randBytes)
 //	}
 func 整点执行_任务() {
+	锁_请求防火墙.Lock()
+	defer 锁_请求防火墙.Unlock()
 	for k := range 全局_用户每小时请求次数 {
 		delete(全局_用户每小时请求次数, k)
 	}
-
 }
 func 初始化() {
 	time.Local = time.FixedZone("CST", 8*3600) // 东八
@@ -28,16 +29,15 @@ func 初始化() {
 	if !viper.GetBool("dev") {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	日志("log/启动记录.txt", "启动啦")
 	go func() {
-		i := 0
-		for i < 5 {
+		for {
 			if time.Now().Minute() == 0 {
 				整点执行_任务()
-				time.Sleep(time.Minute * 58)
+				time.Sleep(time.Duration(time.Minute * 58))
 			}
-			time.Sleep(time.Second * 25)
+			time.Sleep(time.Duration(time.Second * 25))
 		}
-
 	}()
 	// config = viper.New()
 	// config.SetConfigFile("./config.yaml")
@@ -47,24 +47,7 @@ func 初始化() {
 	// fmt.Println(config.GetString("123"))
 }
 func main() {
-	// type b struct {
-	// 	dd string
-	// }
-	// a := make(map[string]b)
-	// fmt.Println("---------------")
-	// fmt.Println(a["abc"].dd == "")
 
-	// d := a["abc"]
-	// d.dd = "13456"
-	// fmt.Println(a)
-	// a["abc"] = d
-	// fmt.Println(a)
-	// fmt.Println("---------------")
-
-	// a := gin.H{}
-	// b, _ := a["code"].(string)
-	// b = b + "**"
-	// fmt.Println(b)
 	初始化()
 	fmt.Println("开始运行:")
 	连接数据库()
@@ -77,6 +60,8 @@ func main() {
 	// }
 	// s :=
 	// fmt.Println(s)
+	// L := sync.Mutex
+	// L.Lock()
 
 }
 

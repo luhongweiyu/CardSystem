@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sync"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -57,7 +58,11 @@ func 管理员验证(ctx *gin.Context) {
 	}
 }
 
-func 请求防火墙(name string) bool {
+var 锁_请求防火墙 sync.Mutex
+
+func 请求防火墙(name string) (res bool) {
+	锁_请求防火墙.Lock()
+	defer 锁_请求防火墙.Unlock()
 	count := 全局_用户每小时请求次数[name]
 	if count > 50000 {
 		return false
