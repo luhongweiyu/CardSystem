@@ -66,4 +66,4 @@ func main() {
 }
 
 // could not import github.com/gin-gonic/gin (no required module provides package "github.com/gin-gonic/gin")
-// go env -w GOOS=linux;go build .
+// go env -w GOOS=linux;go build .;go env -w GOOS=windows

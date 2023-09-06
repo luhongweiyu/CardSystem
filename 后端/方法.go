@@ -90,14 +90,9 @@ func card_id获取用户设置(ctx *gin.Context) {
 		ctx.Abort()
 		return
 	}
-	gin线程_变量[ctx] = struct {
-		card string
-		user_info
-	}{
+	ctx.Set("card", gin线程_变量_user_ifo{
 		card:      card,
-		user_info: userinfo,
-	}
-	defer delete(gin线程_变量, ctx)
+		user_info: userinfo})
 	ctx.Next()
 }
 func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
@@ -106,7 +101,8 @@ func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
 		t = int(time.Now().Unix())
 	}
 	t = t + 10
-	用户设置 := gin线程_变量[ctx]
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
 	code, _ := H["code"].(string)
 	str := strconv.Itoa(t) + 用户设置.Api_password + code
 	s := md5.Sum([]byte(str))
@@ -135,7 +131,8 @@ func 成功提示(ctx *gin.Context, 提示 interface{}) {
 	ctx.JSON(http.StatusOK, 加入时间戳(ctx, data))
 }
 func 卡密md5验证(ctx *gin.Context) {
-	用户设置 := gin线程_变量[ctx]
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
 	if !用户设置.Api_safe {
 		return
 	}
@@ -192,8 +189,10 @@ func 卡密_记录心跳(name string, card string, 心跳标识 string, ip strin
 }
 func 卡密_查询心跳(ctx *gin.Context) {
 	// fmt.Println(gin线程_变量[ctx])
-	name := gin线程_变量[ctx].Name
-	card := gin线程_变量[ctx].card
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
+	name := 用户设置.Name
+	card := 用户设置.card
 	list, _ := 卡密_读取缓存(name, card)
 	if list.Card == "" {
 		失败提示(ctx, "没有记录")
@@ -227,8 +226,10 @@ func card_login(ctx *gin.Context) {
 		失败提示(ctx, "software参数错误")
 		return
 	}
-	name := gin线程_变量[ctx].Name
-	card := gin线程_变量[ctx].card
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
+	name := 用户设置.Name
+	card := 用户设置.card
 	software, _ := strconv.Atoi(登录参数["software"])
 	if name == "" {
 		失败提示(ctx, "center_id不能为空")
@@ -269,7 +270,9 @@ func card_ping(ctx *gin.Context) {
 		失败提示(ctx, "cenger_id,card,needle参数错误")
 		return
 	}
-	name := gin线程_变量[ctx].Name
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
+	name := 用户设置.Name
 	card := 登录参数["card"]
 	needle := 登录参数["needle"]
 
@@ -638,8 +641,10 @@ func modify_card_configContent(ctx *gin.Context) {
 	// }
 	// ctx.ShouldBindBodyWith(&b, binding.JSON)
 	a := input(ctx, "type")
-	name := gin线程_变量[ctx].Name
-	card := gin线程_变量[ctx].card
+	c, _ := ctx.Get("card")
+	用户设置 := c.(gin线程_变量_user_ifo)
+	name := 用户设置.Name
+	card := 用户设置.card
 	if a == "write" {
 		value := input(ctx, "value")
 		db.Table("card_"+name).Where("card = ?", card).Update("config_content", value)

@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-var gin线程_变量 = make(map[*gin.Context]struct {
+type gin线程_变量_user_ifo struct {
 	card string
 	user_info
-})
+}
 
 func input(ctx *gin.Context, id string) string {
 	user_id, ok := ctx.GetPostForm(id)
