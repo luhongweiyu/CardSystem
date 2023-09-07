@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,7 @@ type 心跳记录 struct {
 }
 
 var 全局_用户每小时请求次数 = make(map[string]int)
-var 全局_卡密心跳记录 = make(map[string]([]心跳记录))
+var 全局_卡密心跳记录 = make(map[string](*[]心跳记录))
 var 全局_id对应name = make(map[int]string)
 var 全局_用户设置_name = make(map[string]user_info)
 
@@ -102,7 +103,7 @@ func 加入时间戳(ctx *gin.Context, H gin.H) gin.H {
 	}
 	t = t + 10
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	code, _ := H["code"].(string)
 	str := strconv.Itoa(t) + 用户设置.Api_password + code
 	s := md5.Sum([]byte(str))
@@ -132,7 +133,7 @@ func 成功提示(ctx *gin.Context, 提示 interface{}) {
 }
 func 卡密md5验证(ctx *gin.Context) {
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	if !用户设置.Api_safe {
 		return
 	}
@@ -178,19 +179,36 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 	// 卡密_刷新缓存(管理员用户名, b.Card)
 	return res
 }
-func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) {
-	a := 全局_卡密心跳记录[name+card]
-	a = append([]心跳记录{{time.Now(), 心跳标识, ip}}, a...)
-	if len(a) > 100 {
-		a = a[:100]
+
+var 锁_卡密_记录心跳 sync.RWMutex
+
+func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) int {
+	锁_卡密_记录心跳.RLock()
+	a, ok := 全局_卡密心跳记录[name+card]
+	锁_卡密_记录心跳.RUnlock()
+	if !ok {
+		b := []心跳记录{}
+		锁_卡密_记录心跳.Lock()
+		全局_卡密心跳记录[name+card] = &b
+		锁_卡密_记录心跳.Unlock()
+		a = &b
 	}
-	全局_卡密心跳记录[name+card] = a
+	b := append([]心跳记录{{time.Now(), 心跳标识, ip}}, (*a)...)
+	if len(b) > 100 {
+		b = b[:100]
+	}
+	上次 := 999999
+	if len(b) > 1 {
+		上次 = int(b[1].登录时间.Unix() - b[0].登录时间.Unix())
+	}
+	*a = b
+	return 上次
 
 }
 func 卡密_查询心跳(ctx *gin.Context) {
 	// fmt.Println(gin线程_变量[ctx])
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	name := 用户设置.Name
 	card := 用户设置.card
 	list, _ := 卡密_读取缓存(name, card)
@@ -199,8 +217,13 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		return
 	}
 	s := []string{}
-	for _, v := range 全局_卡密心跳记录[name+card] {
-		s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
+	锁_卡密_记录心跳.RLock()
+	心跳记录, ok := 全局_卡密心跳记录[name+card]
+	锁_卡密_记录心跳.RUnlock()
+	if ok {
+		for _, v := range *心跳记录 {
+			s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
+		}
 	}
 	状态 := "正常"
 	使用时间 := list.Use_time.Format("2006-01-02 15:04:05")
@@ -227,7 +250,7 @@ func card_login(ctx *gin.Context) {
 		return
 	}
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	name := 用户设置.Name
 	card := 用户设置.card
 	software, _ := strconv.Atoi(登录参数["software"])
@@ -271,7 +294,7 @@ func card_ping(ctx *gin.Context) {
 		return
 	}
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	name := 用户设置.Name
 	card := 登录参数["card"]
 	needle := 登录参数["needle"]
@@ -302,12 +325,8 @@ func card_ping(ctx *gin.Context) {
 		return
 	}
 	if list.Needle != "" && list.Needle == needle {
-		记录 := 全局_卡密心跳记录[name+card]
 		上次 := 999999
-		if len(记录) > 0 {
-			上次 = int(time.Now().Unix() - 记录[0].登录时间.Unix())
-		}
-		卡密_记录心跳(name, card, needle, ctx.ClientIP())
+		上次 = 卡密_记录心跳(name, card, needle, ctx.ClientIP())
 		成功提示(ctx, gin.H{"last": 上次})
 		return
 	} else {
@@ -642,7 +661,7 @@ func modify_card_configContent(ctx *gin.Context) {
 	// ctx.ShouldBindBodyWith(&b, binding.JSON)
 	a := input(ctx, "type")
 	c, _ := ctx.Get("card")
-	用户设置 := c.(gin线程_变量_user_ifo)
+	用户设置, _ := c.(gin线程_变量_user_ifo)
 	name := 用户设置.Name
 	card := 用户设置.card
 	if a == "write" {

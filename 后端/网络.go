@@ -64,7 +64,7 @@ func 请求防火墙(name string) (res bool) {
 	锁_请求防火墙.Lock()
 	defer 锁_请求防火墙.Unlock()
 	count := 全局_用户每小时请求次数[name]
-	if count > 50000 {
+	if count > 500000 {
 		return false
 	}
 	全局_用户每小时请求次数[name] = count + 1
