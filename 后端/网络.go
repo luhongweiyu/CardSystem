@@ -50,6 +50,7 @@ func 匹配卡密(ctx *gin.Context) []string {
 func use(ctx *gin.Context) {
 	fmt.Println("-----------------------------------")
 	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Writer.Header().Set("Connection", "close")
 }
 func 管理员验证(ctx *gin.Context) {
 	if !user_验证用户(ctx) {
