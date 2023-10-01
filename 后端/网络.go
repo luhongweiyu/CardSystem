@@ -117,14 +117,18 @@ func 启动网络() {
 		user.POST("/add_card_time", add_card_time)
 
 	}
-	card := router.Group("/card", card_id获取用户设置)
+	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)
 	{
-		card.Any("/card_login", 卡密md5验证, card_login)
-		card.Any("/card_ping", 卡密md5验证, card_ping)
-		card.Any("/query", 卡密_查询心跳)
-		card.Any("/config", 卡密md5验证, modify_card_configContent)
+		card.Any("/card_login", card_login)
+		card.Any("/card_ping", card_ping)
+		card.Any("/config", modify_card_configContent)
 		// router.Any("/card/card_time_dec", 管理员验证)
-		card.Any("/bulletin", card_get_bulletin)
+	}
+	card2 := router.Group("/card", card_id获取用户设置)
+	{
+		card2.Any("/query", 卡密_查询心跳)
+		card2.Any("/bulletin", card_get_bulletin)
+		card2.Any("/recharge", card_recharge)
 	}
 
 	// admin := router.Group("/admin", 管理员验证)
