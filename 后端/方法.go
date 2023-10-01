@@ -390,6 +390,7 @@ func 查询所有卡密(ctx *gin.Context) {
 		return
 	}
 	b := db.Table("card_" + a.Name)
+	order := "create_time desc"
 	if a.Software != 0 {
 		b.Where("software", a.Software)
 	}
@@ -415,12 +416,13 @@ func 查询所有卡密(ctx *gin.Context) {
 	}
 	if a.Card != "" {
 		b.Where("card LIKE ?", "%"+a.Card+"%")
+		order = "card"
 	}
 	if a.Notes != "" {
 		b.Where("notes LIKE ?", "%"+a.Notes+"%")
 	}
 	list := []map[string]interface{}{}
-	b.Order("create_time desc").Find(&list)
+	b.Order(order).Find(&list)
 
 	var page struct {
 		O当前页 int `json:"当前页"`
@@ -529,7 +531,7 @@ func add_new_card(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
-	日志("log/"+a.Name, fmt.Sprintf("新增;软件:%v;数量:%v个;时长:%v天;成功:%v", a.Software, len(成功的卡密), a.Available_time, strings.Join(成功的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("新增;软件:%v;数量:%v个;时长:%v天;成功:%v", a.Software, len(成功的卡密), a.Available_time, strings.Join(成功的卡密, ",")))
 
 	if a.Latest_activation_time == 0 {
 		for _, card := range cards_tab {
@@ -580,24 +582,25 @@ func add_card_time(ctx *gin.Context) {
 		list := map[string]interface{}{}
 		修改行 := db.Table("card_"+a.Name).Where("card=?", card).Find(&list).RowsAffected
 		if 修改行 > 0 {
+			修改行 = 0
 			end_time, ok := list["end_time"].(time.Time)
 			if ok {
 				if end_time.Unix() < time.Now().Unix() {
 					end_time = time.Now()
 				}
-				list["end_time"] = time.Time(end_time).Add(time.Duration(a.Add_time*24*60) * time.Minute)
+				end_time = time.Time(end_time).Add(time.Duration(a.Add_time*24*60) * time.Minute)
+				修改行 = db.Table("card_" + a.Name).Where(map[string]interface{}{"card": card}).Updates(map[string]interface{}{"end_time": end_time}).RowsAffected
 			}
-			修改行 = 0
-			修改行 = db.Table("card_" + a.Name).Where(map[string]interface{}{"card": card}).Updates(&list).RowsAffected
 		}
 		if 修改行 > 0 {
 			成功的卡密 = append(成功的卡密, card)
 		} else {
 			失败的卡密 = append(失败的卡密, card)
 		}
+		卡密_删除缓存(a.Name, card)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",\n")})
-	日志("log/"+a.Name, fmt.Sprintf("加时;数量:%v个;时长:%v天;成功:%v", len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("加时;数量:%v个;时长:%v天;成功:%v", len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
 
 }
 func delete_card(ctx *gin.Context) {
@@ -626,7 +629,7 @@ func delete_card(ctx *gin.Context) {
 		卡密_删除缓存(a.Name, card)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
-	日志("log/"+a.Name, fmt.Sprintf("删除;数量:%v个;成功:%v", len(成功的卡密), strings.Join(成功的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("删除;数量:%v个;成功:%v", len(成功的卡密), strings.Join(成功的卡密, ",")))
 
 }
 func modify_card(ctx *gin.Context) {
@@ -652,7 +655,7 @@ func modify_card(ctx *gin.Context) {
 	db.Table("card_"+b.Name).Where("card = ?", a.Card).Updates(a)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	卡密_删除缓存(b.Name, a.Card)
-	日志("log/"+b.Name, fmt.Sprintf("修改;%v;", a.Card))
+	日志("log/"+b.Name+time.Now().Format("200601"), fmt.Sprintf("修改;%v;", a.Card))
 }
 func modify_card_configContent(ctx *gin.Context) {
 	// var b struct {
