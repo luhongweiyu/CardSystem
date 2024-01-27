@@ -115,6 +115,7 @@ func 启动网络() {
 		user.POST("/delete_card", delete_card)
 		user.POST("/modify_card", modify_card)
 		user.POST("/add_card_time", add_card_time)
+		user.POST("/生成充值卡", 生成充值卡)
 
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)
@@ -129,6 +130,12 @@ func 启动网络() {
 		card2.Any("/query", 卡密_查询心跳)
 		card2.Any("/bulletin", card_get_bulletin)
 		card2.Any("/recharge", card_recharge)
+	}
+	visitor := router.Group("/visitor", visitor_验证对应id)
+	{
+		visitor.POST("/查询所有卡密", visitor_查询所有卡密)
+		visitor.POST("/查询充值卡", visitor_查询充值卡)
+		visitor.POST("/续费卡密", visitor_续费卡密)
 	}
 
 	// admin := router.Group("/admin", 管理员验证)

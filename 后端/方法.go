@@ -154,29 +154,36 @@ func 卡密md5验证(ctx *gin.Context) {
 		return
 	}
 }
+
+var 卡密_缓存锁 sync.RWMutex
+
 func 卡密_删除缓存(管理员用户名 string, card string) {
+	卡密_缓存锁.Lock()
+	defer 卡密_缓存锁.Unlock()
 	delete(卡密缓存, 管理员用户名+"_"+card)
 }
-func 卡密_刷新缓存(管理员用户名 string, card string) {
-	var a 卡密表样式
-	err := db.Table("card_"+管理员用户名).Where("card=?", card).First(&a).Error
-	if err == nil {
-		卡密缓存[管理员用户名+"_"+card] = a
-	}
-}
 func 卡密_读取缓存(管理员用户名 string, card string) (卡密表样式, bool) {
+	卡密_刷新缓存 := func(管理员用户名 string, card string) {
+		var a 卡密表样式
+		err := db.Table("card_"+管理员用户名).Where("card=?", card).First(&a).Error
+		if err == nil {
+			卡密缓存[管理员用户名+"_"+card] = a
+		}
+	}
+	卡密_缓存锁.Lock()
+	defer 卡密_缓存锁.Unlock()
 	a, ok := 卡密缓存[管理员用户名+"_"+card]
 	if !ok {
 		卡密_刷新缓存(管理员用户名, card)
 		a, ok = 卡密缓存[管理员用户名+"_"+card]
 	}
 	return a, ok
-
 }
 func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB {
+	卡密_缓存锁.Lock()
+	defer 卡密_缓存锁.Unlock()
 	res := db.Table("card_" + 管理员用户名).Updates(b)
 	delete(卡密缓存, 管理员用户名+"_"+b.Card)
-	// 卡密_刷新缓存(管理员用户名, b.Card)
 	return res
 }
 
@@ -290,7 +297,7 @@ func card_login(ctx *gin.Context) {
 func card_ping(ctx *gin.Context) {
 	登录参数, ok := 取参数表(ctx, []string{"needle", "card", "center_id"})
 	if !ok {
-		失败提示(ctx, "cenger_id,card,needle参数错误")
+		失败提示(ctx, "center_id,card,needle参数错误")
 		return
 	}
 	c, _ := ctx.Get("card")
@@ -539,6 +546,101 @@ func add_new_card(ctx *gin.Context) {
 			激活卡密(a.Name, card)
 		}
 	}
+
+}
+func 生成充值卡(ctx *gin.Context) {
+	var a struct {
+		Name     string
+		Password string
+		Software int
+		Add_time float64
+		Num      int
+		O充值次数    int       `json:"充值次数"`
+		O有效期至    time.Time `json:"有效期至"`
+		Cards    string
+		O指定类型    int `json:"指定类型"`
+	}
+	// software 需要判断下name的
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	if !user_soft_验证(a.Name, a.Software) {
+		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "添加成功!!"})
+		return
+	}
+	if a.Name == "" {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "用户名不存在"})
+		return
+	}
+	if a.Software == 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "软件id不存在"})
+		return
+	}
+	if a.Add_time <= 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "充值天数不正确"})
+		return
+	}
+	if a.Num <= 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "生成数量不正确"})
+		return
+	}
+	if a.Cards == "" && a.O指定类型 != 1 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "卡密不存在"})
+		return
+	}
+	if a.O指定类型 == 1 {
+		a.Cards = ""
+		for i := 0; i < a.Num; i++ {
+			// 循环10次
+			a.Cards = a.Cards + "\n" + strconv.FormatInt(int64(a.Software), 36) + "" + GetRandomString(16, "A")
+		}
+	}
+
+	// s, _ := regexp.Compile(`[\w+d]+`)
+	cards_tab := regexp.MustCompile(`[\w]+`).FindAllString(a.Cards, -1)
+	if len(cards_tab) != a.Num {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "卡密或数量不正确"})
+		return
+	}
+	存在的卡密 := []string{}
+	for _, card := range cards_tab {
+		// 判断是否有重复的card
+		list := 数据库表_充值卡{}
+		重复 := db.Table("visitor_recharge").Where("card = ?", card).First(&list).RowsAffected
+		if 重复 > 0 {
+			存在的卡密 = append(存在的卡密, card)
+		}
+	}
+	if len(存在的卡密) > 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "有存在的卡密,请检查:" + strings.Join(存在的卡密, ",")})
+		return
+	}
+	失败的卡密 := []string{}
+	成功的卡密 := []string{}
+	// 立即激活
+
+	for _, card := range cards_tab {
+		err := db.Table("visitor_recharge").Create(map[string]interface{}{
+			"card":            card,
+			"software":        a.Software,
+			"create_time":     time.Now(),
+			"add_time":        a.Add_time,
+			"face_value":      a.O充值次数,
+			"balance":         a.O充值次数,
+			"expiration_date": a.O有效期至,
+			"admin":           a.Name,
+		}).Error
+		if err == nil {
+			成功的卡密 = append(成功的卡密, card)
+		} else {
+			失败的卡密 = append(失败的卡密, card)
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("新增充值卡;软件:%v;数量:%v个;时长:%v天%v次;成功:%v", a.Software, len(成功的卡密), a.Add_time, a.O充值次数, strings.Join(成功的卡密, ",")))
 
 }
 func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {

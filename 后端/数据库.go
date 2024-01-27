@@ -31,11 +31,23 @@ type 卡密表样式 struct {
 	Config_content         string
 	Latest_activation_time float64
 }
+type 数据库表_充值卡 struct {
+	Card            string `gorm:"primaryKey"`
+	Software        int
+	AddTime         float64
+	Face_value      int
+	Balance         int
+	Expiration_date time.Time
+	Record          string
+	Admin           string
+	Create_time     time.Time
+}
 
 var db *gorm.DB
 var db_user *gorm.DB
 var db_user_info *gorm.DB
 var db_software *gorm.DB
+var db_user_recharge *gorm.DB
 
 func 连接数据库() {
 	username := viper.GetString("数据库.username")
@@ -67,6 +79,9 @@ func 连接数据库() {
 	// 软件数据库
 	db_software = db.Table("software").Session(&gorm.Session{})
 	db_software.AutoMigrate(&software{})
+	// 充值卡数据库
+	db_user_recharge = db.Table("visitor_recharge").Session(&gorm.Session{})
+	db_user_recharge.AutoMigrate(&数据库表_充值卡{})
 
 	// 用户卡密数据表
 	var a []struct {
