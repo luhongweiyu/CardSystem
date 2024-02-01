@@ -72,6 +72,7 @@
       </el-table-column>
       <el-table-column :show-overflow-tooltip="true" prop="notes" label="备注" />
       <el-table-column :show-overflow-tooltip="true" prop="config_content" label="配置" />
+      <el-table-column :show-overflow-tooltip="true" prop="history" label="最近登录"  width="230px"/>
     </el-table>
 
     <el-pagination v-model:current-page="所有卡密_当前页" v-model:page-size="每页卡密数量" :page-sizes="[20, 100, 200, 300, 400, 500]"

@@ -28,7 +28,7 @@ type 心跳记录 struct {
 }
 
 var 全局_用户每小时请求次数 = make(map[string]int)
-var 全局_卡密心跳记录 = make(map[string](*[]心跳记录))
+var 全局_卡密心跳记录2 sync.Map
 var 全局_id对应name = make(map[int]string)
 var 全局_用户设置_name = make(map[string]user_info)
 
@@ -186,18 +186,12 @@ func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB
 	delete(卡密缓存, 管理员用户名+"_"+b.Card)
 	return res
 }
-
-var 锁_卡密_记录心跳 sync.RWMutex
-
 func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) int {
-	锁_卡密_记录心跳.RLock()
-	a, ok := 全局_卡密心跳记录[name+card]
-	锁_卡密_记录心跳.RUnlock()
+	c, ok := 全局_卡密心跳记录2.Load(name + card)
+	a, _ := c.(*[]心跳记录)
 	if !ok {
 		b := []心跳记录{}
-		锁_卡密_记录心跳.Lock()
-		全局_卡密心跳记录[name+card] = &b
-		锁_卡密_记录心跳.Unlock()
+		全局_卡密心跳记录2.Store(name+card, &b)
 		a = &b
 	}
 	b := append([]心跳记录{{time.Now(), 心跳标识, ip}}, (*a)...)
@@ -224,10 +218,9 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		return
 	}
 	s := []string{}
-	锁_卡密_记录心跳.RLock()
-	心跳记录, ok := 全局_卡密心跳记录[name+card]
-	锁_卡密_记录心跳.RUnlock()
+	临时, ok := 全局_卡密心跳记录2.Load(name + card)
 	if ok {
+		心跳记录, _ := 临时.(*[]心跳记录)
 		for _, v := range *心跳记录 {
 			s = append(s, fmt.Sprintf("%v:  %v  %v", v.登录时间.Format("2006-01-02 15:04:05"), v.心跳标识, v.ip))
 		}
@@ -443,6 +436,19 @@ func 查询所有卡密(ctx *gin.Context) {
 	}
 	start, end := slicePage(page.O当前页, page.O每页, len(list)) //第一页1页显示3条数据
 	list2 := list[start:end]
+	for _, v := range list2 {
+		card, ok := v["card"].(string)
+		if ok {
+			临时, ok := 全局_卡密心跳记录2.Load(a.Name + card)
+			if ok {
+				心跳记录, _ := 临时.(*[]心跳记录)
+				if len(*心跳记录) > 0 {
+					v2 := (*心跳记录)[0]
+					v["history"] = fmt.Sprintf("%v,%v", v2.登录时间.Format("01-02 15:04"), v2.ip)
+				}
+			}
+		}
+	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 1, "data": list2, "num": len(list)})
 }
 func add_new_card(ctx *gin.Context) {
