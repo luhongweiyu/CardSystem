@@ -115,7 +115,9 @@ func 启动网络() {
 		user.POST("/delete_card", delete_card)
 		user.POST("/modify_card", modify_card)
 		user.POST("/add_card_time", add_card_time)
-		user.POST("/生成充值卡", 生成充值卡)
+		user.POST("/充值卡_生成", 充值卡_生成)
+		user.POST("/充值卡_查询", 充值卡_查询)
+		user.POST("/充值卡_修改", 充值卡_修改)
 
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)

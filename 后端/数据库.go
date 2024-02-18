@@ -41,6 +41,7 @@ type 数据库表_充值卡 struct {
 	Record          string
 	Admin           string
 	Create_time     time.Time
+	State           int
 }
 
 var db *gorm.DB

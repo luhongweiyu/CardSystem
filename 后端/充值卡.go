@@ -15,6 +15,166 @@ import (
 
 var visitor_锁 sync.RWMutex
 
+func 充值卡_生成(ctx *gin.Context) {
+	var a struct {
+		Name     string
+		Password string
+		Software int
+		Add_time float64
+		Num      int
+		O充值次数    int       `json:"充值次数"`
+		O有效期至    time.Time `json:"有效期至"`
+		Cards    string
+		O指定类型    int `json:"指定类型"`
+	}
+	// software 需要判断下name的
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	if !user_soft_验证(a.Name, a.Software) {
+		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "添加成功!!"})
+		return
+	}
+	if a.Name == "" {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "用户名不存在"})
+		return
+	}
+	if a.Software == 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "软件id不存在"})
+		return
+	}
+	if a.Add_time <= 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "充值天数不正确"})
+		return
+	}
+	if a.Num <= 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "生成数量不正确"})
+		return
+	}
+	if a.Cards == "" && a.O指定类型 != 1 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "卡密不存在"})
+		return
+	}
+	if a.O指定类型 == 1 {
+		a.Cards = ""
+		for i := 0; i < a.Num; i++ {
+			// 循环10次
+			a.Cards = a.Cards + "\n" + strconv.FormatInt(int64(a.Software), 36) + "" + GetRandomString(16, "A")
+		}
+	}
+
+	// s, _ := regexp.Compile(`[\w+d]+`)
+	cards_tab := regexp.MustCompile(`[\w]+`).FindAllString(a.Cards, -1)
+	if len(cards_tab) != a.Num {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "卡密或数量不正确"})
+		return
+	}
+	存在的卡密 := []string{}
+	for _, card := range cards_tab {
+		// 判断是否有重复的card
+		list := 数据库表_充值卡{}
+		重复 := db.Table("visitor_recharge").Where("card = ?", card).First(&list).RowsAffected
+		if 重复 > 0 {
+			存在的卡密 = append(存在的卡密, card)
+		}
+	}
+	if len(存在的卡密) > 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "有存在的卡密,请检查:" + strings.Join(存在的卡密, ",")})
+		return
+	}
+	失败的卡密 := []string{}
+	成功的卡密 := []string{}
+	// 立即激活
+
+	for _, card := range cards_tab {
+		err := db.Table("visitor_recharge").Create(map[string]interface{}{
+			"card":            card,
+			"software":        a.Software,
+			"create_time":     time.Now(),
+			"add_time":        a.Add_time,
+			"face_value":      a.O充值次数,
+			"balance":         a.O充值次数,
+			"expiration_date": a.O有效期至,
+			"admin":           a.Name,
+		}).Error
+		if err == nil {
+			成功的卡密 = append(成功的卡密, card)
+		} else {
+			失败的卡密 = append(失败的卡密, card)
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("新增充值卡;软件:%v;数量:%v个;时长:%v天%v次;成功:%v", a.Software, len(成功的卡密), a.Add_time, a.O充值次数, strings.Join(成功的卡密, ",")))
+}
+func 充值卡_查询(ctx *gin.Context) {
+	var a struct {
+		Name       string
+		Password   string
+		Software   int
+		Card       string
+		Similarity int
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	order := "create_time desc"
+	b := db.Table("visitor_recharge").Order(order)
+	if a.Software != 0 {
+		b.Where("software", a.Software)
+	}
+	if a.Card != "" {
+		if a.Similarity == 0 {
+			b.Where("card LIKE ?", "%"+a.Card+"%")
+		} else {
+			b.Where("card = ?", a.Card)
+		}
+		order = "card"
+	}
+	list := []map[string]interface{}{}
+	b.Where("admin = ?", a.Name).Find(&list)
+	if len(list) > 1 {
+		for _, m := range list {
+			delete(m, "record")
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"code": 1, "data": list, "num": len(list)})
+}
+func 充值卡_修改(ctx *gin.Context) {
+	var a struct {
+		Name     string
+		Password string
+		Software int
+		Card     string
+		Command  string
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	data := map[string]interface{}{}
+	db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Find(&data)
+	if data["card"] == "" {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	if a.Command == "del" {
+		db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Delete(&data)
+		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
+		return
+	}
+	// data["state"], _ = strconv.Atoi(a.Command)
+	data["state"] = a.Command
+	db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Updates(data)
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
+}
 func visitor_验证对应id(ctx *gin.Context) {
 	visitor_锁.Lock()
 	defer func() {
@@ -85,7 +245,6 @@ func visitor_查询充值卡(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "data": b})
-
 }
 func visitor_续费卡密(ctx *gin.Context) {
 	// 充值卡天数,充值卡
@@ -105,6 +264,10 @@ func visitor_续费卡密(ctx *gin.Context) {
 	var 充值卡 数据库表_充值卡
 	充值卡.Card = a.Rechargeable_card
 	db.Table("visitor_recharge").Where("card = ?", 充值卡.Card).Where("admin = ?", name).Find(&充值卡)
+	if 充值卡.State == 卡密状态_冻结 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "充值卡被冻结"})
+		return
+	}
 	if 充值卡.Balance < len(cards) {
 		// 充值卡余额不足
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足或充值卡不正确"})

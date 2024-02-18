@@ -75,6 +75,13 @@ const asideMenu = reactive([
     label: "卡密"
   },
   {
+    // 充值
+    path: "/charge",
+    name: "charge",
+    icon: "Money",
+    label: "充值卡"
+  },
+  {
     // 帮助
     path: "/help",
     name: "help",
@@ -94,13 +101,6 @@ const asideMenu = reactive([
   //   name: "user",
   //   icon: "UserFilled",
   //   label: "用户"
-  // },
-  // {
-  //   // 充值
-  //   path: "/charge",
-  //   name: "charge",
-  //   icon: "Money",
-  //   label: "充值"
   // },
   // {
   //   // 代理

@@ -24,7 +24,7 @@
       <template #default="scope">
         <el-button link type="primary" size="small" @click="保存公告(scope.row)" style="display:inline">保存</el-button>
         <el-button link type="primary" size="small" @click="删除软件(scope.row.ID)">删除</el-button>
-        <el-button link type="primary" size="small" @click="准备生成充值卡(scope.row)">生成充值卡</el-button>
+        <!-- <el-button link type="primary" size="small" @click="准备生成充值卡(scope.row)">生成充值卡</el-button> -->
         <!-- <el-button link type="primary" size="small">修改</el-button> -->
       </template>
     </el-table-column>
@@ -91,7 +91,7 @@ const 充值卡_新卡 = reactive({
   add_time: 30,
   充值次数: 1,
   有效期至: new Date(),
-  指定类型: 1,
+  指定类型: 2,
   cards: ""
 })
 const 返回提示 = function (msg) {
@@ -166,7 +166,7 @@ const 准备生成充值卡 = function (row) {
 }
 const 确定生成充值卡 = function () {
   加载中.value = true
-  post("/生成充值卡", 充值卡_新卡).then(
+  post("/充值卡_生成", 充值卡_新卡).then(
     function (res) {
       加载中.value = false
       if (!res.data.state) {
