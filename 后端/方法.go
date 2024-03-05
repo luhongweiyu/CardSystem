@@ -263,6 +263,10 @@ func card_login(ctx *gin.Context) {
 		失败提示(ctx, "卡密不存在或者已过期")
 		return
 	}
+	if list.Card != card {
+		失败提示(ctx, "错误,请检查大小写或者空格")
+		return
+	}
 	if list.Card_state == 卡密状态_冻结 {
 		失败提示(ctx, "卡密被冻结")
 		return
