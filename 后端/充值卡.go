@@ -25,7 +25,8 @@ func 充值卡_生成(ctx *gin.Context) {
 		O充值次数    int       `json:"充值次数"`
 		O有效期至    time.Time `json:"有效期至"`
 		Cards    string
-		O指定类型    int `json:"指定类型"`
+		O指定类型    int    `json:"指定类型"`
+		Notes    string `json:"备注"`
 	}
 	// software 需要判断下name的
 	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
@@ -99,6 +100,7 @@ func 充值卡_生成(ctx *gin.Context) {
 			"balance":         a.O充值次数,
 			"expiration_date": a.O有效期至,
 			"admin":           a.Name,
+			"notes":           a.Notes,
 		}).Error
 		if err == nil {
 			成功的卡密 = append(成功的卡密, card)
@@ -236,6 +238,7 @@ func visitor_查询充值卡(ctx *gin.Context) {
 		Balance         int
 		Expiration_date time.Time
 		Record          string
+		Notes           string
 		// Admin           string
 	}{}
 	db.Table("visitor_recharge").Where("admin=?", name).Where("card = ?", 充值卡.Card).Find(&b)
@@ -262,8 +265,7 @@ func visitor_续费卡密(ctx *gin.Context) {
 	cards := a.Cards
 	// 查询充值卡余额
 	var 充值卡 数据库表_充值卡
-	充值卡.Card = a.Rechargeable_card
-	db.Table("visitor_recharge").Where("card = ?", 充值卡.Card).Where("admin = ?", name).Find(&充值卡)
+	db.Table("visitor_recharge").Where("card = ?", a.Rechargeable_card).Where("admin = ?", name).Find(&充值卡)
 	if 充值卡.State == 卡密状态_冻结 {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "充值卡被冻结"})
 		return
@@ -282,7 +284,10 @@ func visitor_续费卡密(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "请输入需要充值的数据"})
 		return
 	}
-
+	if 充值卡.Card != a.Rechargeable_card {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "请检测下充值卡大小写"})
+		return
+	}
 	失败的卡密 := []string{}
 	成功的卡密 := []string{}
 	充值卡原次数 := 充值卡.Balance

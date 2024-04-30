@@ -23,6 +23,7 @@
       <el-table-column :show-overflow-tooltip="true" label="所属软件" width="100px">
         <template #default="scope">{{ 计算所属软件(scope.row.software) }}</template>
       </el-table-column>
+      <el-table-column :show-overflow-tooltip="true" prop="notes" label="备注" width="100px" />
       <el-table-column :show-overflow-tooltip="true" label="状态" width="100px">
         <template #default="scope">
           <span v-if="scope.row.state == 4" style="color: red;"> 冻结</span>
@@ -70,6 +71,9 @@
         </el-form-item>
         <el-form-item label="有效期至">
           <el-date-picker v-model="充值卡_新卡.有效期至" type="datetime" placeholder="选择时间" style="width: 200px" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="充值卡_新卡.备注" style="width: 200px" />
         </el-form-item>
         <el-form-item label="生成类型">
           <el-radio-group v-model="充值卡_新卡.指定类型" class="ml-4">
@@ -207,6 +211,7 @@ const 充值卡_新卡 = reactive({
   add_time: 30,
   充值次数: 1,
   有效期至: new Date(),
+  备注:"",
   指定类型: 2,
   cards: ""
 })
