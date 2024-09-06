@@ -1,20 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 )
-
-type software struct {
-	ID        int
-	Name      string
-	Software  string
-	CreatedAt time.Time
-	Bulletin  string
-}
 
 func user_query_soft_list(ctx *gin.Context) {
 	var a struct {
@@ -26,12 +19,8 @@ func user_query_soft_list(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
 		return
 	}
-	var results []struct {
-		ID       int
-		Software string
-		Bulletin *string
-	}
-	db_software.Where("name = ?", a.Name).Order("ID").Find(&results)
+	var results []map[string]interface{}
+	db_software.Where("name = ?", a.Name).Order("ID").Select("ID", "Software", "Bulletin", "暂停扣时").Find(&results)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "data": results})
 }
 func user_add_soft(ctx *gin.Context) {
@@ -80,14 +69,17 @@ func user_modify_bulletin(ctx *gin.Context) {
 		ID       int
 		Bulletin *string
 		Software string
+		O暂停扣时    *float64 `json:"暂停扣时" gorm:"column:暂停扣时;default:-1"`
 	}
 	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
 	if err != nil {
 		return
 	}
-	db_software.Where("id = ?", a.ID).Where("name = ?", a.Name).Updates(a)
+	db_software.Where("id = ?", a.ID).Where("name = ?", a.Name).Select("name", "bulletin", "software", "暂停扣时").Updates(a)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
-
+	if a.O暂停扣时 != nil && *a.O暂停扣时 > 0 {
+		日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("修改;%v(%v);暂停扣时:%v天;", a.ID, a.Software, *a.O暂停扣时))
+	}
 }
 func user_soft_验证(name string, soft int) bool {
 	var a []map[string]interface{}

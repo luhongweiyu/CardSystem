@@ -271,6 +271,9 @@ func card_login(ctx *gin.Context) {
 		失败提示(ctx, "卡密被冻结")
 		return
 	}
+	if list.Storage_time > 0 {
+		失败提示(ctx, "时长被暂停")
+	}
 	if list.End_time.Unix() == (time.Time{}).Unix() {
 		list = 激活卡密(name, card)
 	}
@@ -323,6 +326,9 @@ func card_ping(ctx *gin.Context) {
 	if list.Card_state == 卡密状态_冻结 {
 		失败提示(ctx, "卡密被冻结")
 		return
+	}
+	if list.Storage_time > 0 {
+		失败提示(ctx, "时长被暂停")
 	}
 	if list.End_time.Unix() < time.Now().Unix() {
 		失败提示(ctx, "过期啦")
@@ -455,6 +461,34 @@ func 查询所有卡密(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 1, "data": list2, "num": len(list)})
 }
+func 查询操作日志(ctx *gin.Context) {
+	var a struct {
+		Name string
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	fmt.Println(err)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		return
+	}
+	name := a.Name
+	if name == "" {
+		ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "用户名不存在"})
+		return
+	}
+	// 文件名1 :=
+	文件1, err := os.ReadFile("log/" + name + time.Now().Format("200601"))
+	内容1 := "没有其他内容"
+	if err == nil {
+		内容1 = string(文件1)
+	}
+	文件2, err := os.ReadFile("log/" + name + time.Now().AddDate(0, -1, 0).Format("200601"))
+	内容2 := "没有其他内容"
+	if err == nil {
+		内容2 = string(文件2)
+	}
+	ctx.String(http.StatusOK, 内容1+"\n"+内容2)
+}
 func add_new_card(ctx *gin.Context) {
 	var a struct {
 		Name                   string
@@ -503,10 +537,10 @@ func add_new_card(ctx *gin.Context) {
 		a.Cards = ""
 		for i := 0; i < a.Num; i++ {
 			// 循环10次
-			a.Cards = a.Cards + "\n" + strconv.FormatInt(int64(a.Software), 36) + "" + GetRandomString(16, "A")
+			a.Cards = a.Cards + "\n" + strconv.FormatInt(int64(a.Software), 36) + "" + GetRandomString(16, "a")
 		}
 	}
-
+	a.Cards = strings.ToLower(a.Cards)
 	// s, _ := regexp.Compile(`[\w+d]+`)
 	cards_tab := regexp.MustCompile(`[\w]+`).FindAllString(a.Cards, -1)
 	if len(cards_tab) != a.Num {
@@ -540,6 +574,7 @@ func add_new_card(ctx *gin.Context) {
 			"latest_activation_time": a.Latest_activation_time,
 			"Notes":                  a.Notes,
 			"Config_content":         a.Config_content,
+			"Storage_time":           0,
 		}).Error
 		if err == nil {
 			成功的卡密 = append(成功的卡密, card)
@@ -566,7 +601,7 @@ func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {
 	}
 	到期时间 := time.Now().Add(time.Minute * time.Duration(a.Available_time*24*60))
 	if a.Latest_activation_time > 0 {
-		最晚到期时间 := a.Create_time.Add(time.Minute * time.Duration(a.Available_time*24*60))
+		最晚到期时间 := a.Create_time.Add(time.Minute * time.Duration(a.Latest_activation_time*24*60))
 		if 最晚到期时间.Unix() < 到期时间.Unix() {
 			到期时间 = 最晚到期时间
 		}

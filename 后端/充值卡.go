@@ -66,7 +66,7 @@ func 充值卡_生成(ctx *gin.Context) {
 			a.Cards = a.Cards + "\n" + strconv.FormatInt(int64(a.Software), 36) + "" + GetRandomString(16, "A")
 		}
 	}
-
+	a.Cards = strings.ToUpper(a.Cards)
 	// s, _ := regexp.Compile(`[\w+d]+`)
 	cards_tab := regexp.MustCompile(`[\w]+`).FindAllString(a.Cards, -1)
 	if len(cards_tab) != a.Num {
@@ -211,7 +211,7 @@ func visitor_查询所有卡密(ctx *gin.Context) {
 	b := db.Table("card_" + name)
 	// b.Where("card LIKE ?", card+"[0-9][0-9][0-9]")
 	b.Where("card like ?", card+"___").Or("card = ?", card)
-	b.Select("card", "use_time", "end_time", "card_state", "software s")
+	b.Select("card", "use_time", "end_time", "card_state", "software s", "storage_time left_time")
 	order := "card"
 	list := []map[string]interface{}{}
 	b.Order(order).Find(&list)
@@ -325,4 +325,87 @@ func visitor_续费卡密(ctx *gin.Context) {
 		s2 = "1:请检查 充值卡 和 卡密类型是否一致\n2:未激活的卡密不能充值\n" + s2
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": regexp.MustCompile(";").ReplaceAllString(s2, "\n")})
+}
+func visitor_暂停时长(ctx *gin.Context) {
+	// 充值卡天数,充值卡
+	var data struct {
+		Card     string
+		Software int
+	}
+	err := ctx.ShouldBindBodyWith(&data, binding.JSON)
+	fmt.Println(err)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		return
+	}
+	软件设置 := software{}
+	db_software.Where("id = ?", data.Software).Find(&软件设置)
+	if 软件设置.O暂停扣时 <= 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "冻结被禁用"})
+		return
+	}
+	name := ctx.GetString("name")
+	card := data.Card
+	card2 := 卡密表样式{}
+	db.Table("card_"+name).Where("card=?", card).Where("software=?", data.Software).Find(&card2)
+	// 判断卡密是否正常
+	if card2.Card_state != 卡密状态_正常 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "卡密状态不正常"})
+		return
+	}
+	if card2.Storage_time != 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "冻结状态不正常"})
+		return
+	}
+	if card2.End_time.IsZero() {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "未激活不能冻结"})
+		return
+	}
+	剩余时间 := float64(int(card2.End_time.Unix()-time.Now().Unix())-int(软件设置.O暂停扣时*24*60*60)) / 60 / 60 / 24
+	if 剩余时间 < 2 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "扣时后剩余时间不足(低于2天)"})
+		return
+	}
+	if 剩余时间 > 365 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "还有很久到期,不用冻啊"})
+		return
+	}
+	card2.Storage_time = 剩余时间
+	db.Table("card_"+name).Where("card=?", card2.Card).Where("software=?", data.Software).Select("Storage_time").Updates(card2)
+	卡密_删除缓存(name, card2.Card)
+	卡密_记录心跳(name, card2.Card, fmt.Sprintf("扣%v,冻结时长%v", 软件设置.O暂停扣时, card2.Storage_time), ctx.ClientIP())
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "操作成功"})
+}
+func visitor_恢复时长(ctx *gin.Context) {
+	// 充值卡天数,充值卡
+	var data struct {
+		Card     string
+		Software int
+	}
+	err := ctx.ShouldBindBodyWith(&data, binding.JSON)
+	fmt.Println(err)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		return
+	}
+	name := ctx.GetString("name")
+	// card := data.Card
+	card2 := 卡密表样式{}
+	db.Table("card_"+name).Where("card=?", data.Card).Where("software=?", data.Software).Find(&card2)
+	// 判断卡密是否正常
+	if card2.Card_state != 卡密状态_正常 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "卡密状态不正常"})
+		return
+	}
+	if card2.Storage_time <= 1 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "可解冻时间不正确"})
+		return
+	}
+	解冻时间 := card2.Storage_time
+	card2.End_time = time.Now().Add(time.Duration(解冻时间*24) * time.Hour)
+	card2.Storage_time = 0
+	db.Table("card_"+name).Where("card=?", card2.Card).Where("software=?", data.Software).Select("End_time", "Storage_time").Updates(card2)
+	卡密_删除缓存(name, card2.Card)
+	卡密_记录心跳(name, card2.Card, fmt.Sprintf("解冻%v天", 解冻时间), ctx.ClientIP())
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "操作成功"})
 }

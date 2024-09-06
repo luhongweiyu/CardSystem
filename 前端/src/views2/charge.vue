@@ -91,7 +91,9 @@
         </el-form-item>
       </div>
     </el-dialog>
-
+    <el-dialog v-model="充值记录显示" title="充值记录" width="90%">
+      <span v-html="充值记录显示_内容"></span>
+    </el-dialog>
 
   </div>
 </template>
@@ -156,6 +158,8 @@ const 查询所有卡密 = function () {
     所有卡密.value = res.data.data
   })
 }
+const 充值记录显示 = ref(false)
+const 充值记录显示_内容 = ref("")
 const 查看充值记录 = function (a) {
   console.log(a.card)
   post('/充值卡_查询', {
@@ -164,9 +168,8 @@ const 查看充值记录 = function (a) {
     similarity: 1
   }).then(function (res) {
     let data = res.data.data[0].record
-    ElMessageBox.alert('<pre>' + data + '</pre>', '充值记录', {
-      dangerouslyUseHTMLString: true
-    })
+    充值记录显示_内容.value = '<pre>' + data + '</pre>'
+    充值记录显示.value = true
   })
 }
 const 修改充值卡 = function (a, command) {
@@ -211,7 +214,7 @@ const 充值卡_新卡 = reactive({
   add_time: 30,
   充值次数: 1,
   有效期至: new Date(),
-  备注:"",
+  备注: "",
   指定类型: 2,
   cards: ""
 })

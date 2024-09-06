@@ -117,13 +117,6 @@ const asideMenu = reactive([
   //   label: "数据"
   // },
   // {
-  //   // 日志
-  //   path: "/log",
-  //   name: "log",
-  //   icon: "List",
-  //   label: "日志"
-  // },
-  // {
   //   // 消息
   //   path: "/msg",
   //   name: "msg",
@@ -150,6 +143,13 @@ const asideMenu = reactive([
     name: "authentication",
     icon: "VideoCameraFilled",
     label: "实名认证"
+  },
+  {
+    // 日志
+    path: "/log",
+    name: "log",
+    icon: "List",
+    label: "日志"
   },
   {
     // 关于

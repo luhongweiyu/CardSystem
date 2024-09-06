@@ -45,10 +45,9 @@
       <el-table-column :show-overflow-tooltip="true" prop="address" label="状态" width="60px">
         <template #default="scope">
           <span v-if="scope.row.card_state == 4" style="color:red">冻结</span>
+          <span v-else-if="scope.row.storage_time > 0" style="color:rgb(255, 255, 0)">暂停</span>
           <span v-else-if="判断到期(scope.row.end_time)" style="color:rgb(131, 71, 71)">到期</span>
           <span v-else-if="scope.row.end_time" style="color:rgb(9, 255, 0)">激活</span>
-
-
         </template>
       </el-table-column>
       <el-table-column :show-overflow-tooltip="true" label="所属软件" width="100px">
@@ -73,6 +72,11 @@
       <el-table-column :show-overflow-tooltip="true" prop="notes" label="备注" />
       <el-table-column :show-overflow-tooltip="true" prop="config_content" label="配置" />
       <el-table-column :show-overflow-tooltip="true" prop="history" label="最近登录"  width="230px"/>
+      <el-table-column :show-overflow-tooltip="true" label="其他">
+        <template #default="scope">
+          <span v-if="scope.row.storage_time > 0" style="color:rgb(255, 255, 0)">暂停{{ Math.floor( scope.row.storage_time*10)/10 }}天</span>
+        </template>
+      </el-table-column>
     </el-table>
 
     <el-pagination v-model:current-page="所有卡密_当前页" v-model:page-size="每页卡密数量" :page-sizes="[20, 100, 200, 300, 400, 500]"

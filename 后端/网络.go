@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"sync"
 
@@ -72,7 +73,23 @@ func 请求防火墙(name string) (res bool) {
 	return true
 }
 
+func 静态文件夹(router *gin.Engine, path string) {
+	// files, _ := os.ReadDir("./assets")
+	files, _ := os.ReadDir(path)
+	for _, file := range files {
+		if file.IsDir() {
+			router.Static("/"+file.Name(), path+"/"+file.Name())
+		} else {
+			router.StaticFile("/"+file.Name(), path+"/"+file.Name())
+		}
+	}
+	router.StaticFile("/", path+"/index.html") // 处理根路径的 index.html
+}
 func 启动网络() {
+	if !viper.GetBool("dev") {
+		fmt.Println("发行版")
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router := gin.Default()
 	router.Use(use)
 	router.Use(cors.Default())
@@ -118,6 +135,7 @@ func 启动网络() {
 		user.POST("/充值卡_生成", 充值卡_生成)
 		user.POST("/充值卡_查询", 充值卡_查询)
 		user.POST("/充值卡_修改", 充值卡_修改)
+		user.POST("/query_log", 查询操作日志)
 
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)
@@ -138,6 +156,8 @@ func 启动网络() {
 		visitor.POST("/查询所有卡密", visitor_查询所有卡密)
 		visitor.POST("/查询充值卡", visitor_查询充值卡)
 		visitor.POST("/续费卡密", visitor_续费卡密)
+		visitor.POST("/暂停时长", visitor_暂停时长)
+		visitor.POST("/恢复时长", visitor_恢复时长)
 	}
 
 	// admin := router.Group("/admin", 管理员验证)
@@ -162,9 +182,10 @@ func 启动网络() {
 
 	// 	admin.Any("/modify_card", modify_card)
 	// }
-	router.Any("", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, viper.GetString("网站.管理页"))
-	})
+	静态文件夹(router, "./assets")
+	// router.Any("", func(c *gin.Context) {
+	// 	c.Redirect(http.StatusMovedPermanently, viper.GetString("网站.管理页"))
+	// })
 	// router.Run(":802")
 	router.Run(":" + viper.GetString("网站.端口"))
 }

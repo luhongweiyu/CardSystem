@@ -2,13 +2,11 @@
   <div>
     <div>
       <div v-loading="加载中">
-
-        <el-input v-model="卡密" placeholder="卡密" style="width: auto" />
+        <el-input v-model="卡密" placeholder="卡密(后3位可省略)" style="width: auto" />
         <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
         <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" />
         <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询充值卡()" />
-
-        <el-button style="border: 0px; margin: 0px" type="success" @click="续费按钮">续费 </el-button>
+        <el-button style="border: 0px; margin: 0px" type="primary" @click="续费按钮">续费 </el-button>
       </div>
     </div>
 
@@ -30,6 +28,25 @@
         <template #default="scope"> {{ 时间转字符串(scope.row.end_time) }}</template>
       </el-table-column>
       <el-table-column :show-overflow-tooltip="true" prop="s" label="类型" width="50px" />
+      <el-table-column label="操作" width="180px">
+        <template #default="scope">
+          <!-- <template #default="scope"> {{ 时间转字符串(scope.row.end_time) }}</template> -->
+          <el-popconfirm title="确定冻结?" @confirm="冻时(scope.row.card, scope.row.s, scope.row)"> <template #reference>
+              <el-button type="info" size="small" :disabled="!(scope.row.left_time == 0 || scope.row.left_time == null)">冻时</el-button>
+            </template>
+          </el-popconfirm>
+          <el-popconfirm :title="'确定解除冻结吗?' + Math.floor(scope.row.left_time * 100) / 100 + '天'"
+            @confirm="解冻(scope.row.card, scope.row.s, scope.row)">
+            <template #reference>
+              <el-button type="success" size="small" :disabled="scope.row.left_time <= 0">
+                解冻
+              </el-button>
+            </template>
+          </el-popconfirm>
+          <!-- <el-button type="info" size="small" @click="冻时(scope.row.card, scope.row.s)">冻时</el-button> -->
+          <!-- <el-button type="success" size="small" @click="解冻(scope.row.card, scope.row.s)">解冻</el-button> -->
+        </template>
+      </el-table-column>
     </el-table>
 
     <el-dialog v-model="显示续费卡密界面" title="续费卡密" width="80%">
@@ -38,9 +55,7 @@
         <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" />
         <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询充值卡()" />
         <el-form-item label="">
-        </el-form-item>
-        请核对需要续费的卡密:(共{{ 已勾的卡密.length }}个)
-        <el-form-item label="卡密">
+        </el-form-item> 请核对需要续费的卡密:(共{{ 已勾的卡密.length }}个) <el-form-item label="卡密">
           <!--  v-if="新卡.指定类型 == 2" -->
           <el-input v-model="待续费卡密.续费卡密" :autosize="{ minRows: 3 }" type="textarea" placeholder="输入需要续费的卡密"
             style="width: 300px" :disabled="true" />
@@ -50,7 +65,7 @@
 
   </div>
 </template>
-  
+
 <script lang="ts" setup>
 import { Check, Delete, Edit, Message, Search, Star } from "@element-plus/icons-vue";
 import { reactive, ref } from "vue";
@@ -198,7 +213,6 @@ const 确定续费卡密 = function () {
   if (充值卡.value.length < 6) {
     警告提示("请输入正确的充值卡")
     return
-
   }
   加载中.value = true
   post("/续费卡密", { Rechargeable_card: 充值卡.value, cards: res }).then(
@@ -210,12 +224,53 @@ const 确定续费卡密 = function () {
       }
       返回提示(res.data.msg)
       查询所有卡密();
-
     }
-
   )
-
-
+}
+const 冻时 = function (card, s, row) {
+  if (row.card_state != 2) {
+    警告提示("使用状态不正常")
+    return
+  }
+  if (row.left_time != 0 && row.left_time != null) {
+    警告提示("已经冻结了,请勿重复冻结")
+    return
+  }
+  console.log('冻结:' + card)
+  加载中.value = true
+  row.left_time = -1
+  post("/暂停时长", { Card: card, Software: s }).then(
+    function (res) {
+      console.log(res.data)
+      加载中.value = false
+      if (!res.data.state) {
+        警告提示(res.data.msg)
+        return
+      }
+      返回提示(res.data.msg)
+    }
+  )
+}
+const 解冻 = function (card, s, row) {
+  let 可解冻时长 = row.left_time
+  if (可解冻时长 <= 0) {
+    警告提示("没有可解冻时长")
+    return
+  }
+  console.log('解冻:' + card)
+  加载中.value = true
+  row.left_time = -1
+  post("/恢复时长", { card: card, Software: s }).then(
+    function (res) {
+      console.log(res.data)
+      加载中.value = false
+      if (!res.data.state) {
+        警告提示(res.data.msg)
+        return
+      }
+      返回提示(res.data.msg)
+    }
+  )
 }
 // 查询软件列表();
 // 查询所有卡密();
@@ -230,4 +285,3 @@ const 确定续费卡密 = function () {
     color: #ff0;
   } */
 </style>
-  

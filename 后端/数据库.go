@@ -29,7 +29,8 @@ type 卡密表样式 struct {
 	Needle                 string `gorm:"size:6"`
 	Notes                  string
 	Config_content         string
-	Latest_activation_time float64
+	Latest_activation_time float64 `gorm:"default:0"`
+	Storage_time           float64
 }
 type 数据库表_充值卡 struct {
 	Card            string `gorm:"primaryKey"`
@@ -43,6 +44,14 @@ type 数据库表_充值卡 struct {
 	Create_time     time.Time
 	State           int
 	Notes           string
+}
+type software struct {
+	ID        int
+	Name      string
+	Software  string
+	CreatedAt time.Time
+	Bulletin  string
+	O暂停扣时     float64 `json:"暂停扣时" gorm:"column:暂停扣时;default:-1"`
 }
 
 var db *gorm.DB
