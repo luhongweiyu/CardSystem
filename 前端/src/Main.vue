@@ -54,7 +54,7 @@ body,
   color: #fff;
   background: #222;
   background-image: url('https://t.mwm.moe/pc');
-  background-size: cover;
+  background-size: 100%;
   /* width: 100%; */
   /* overflow: auto; */
 }

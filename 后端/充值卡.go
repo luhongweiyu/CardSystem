@@ -170,6 +170,7 @@ func 充值卡_修改(ctx *gin.Context) {
 	if a.Command == "del" {
 		db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Delete(&data)
 		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
+		日志("log/"+a.Name+time.Now().Format("200601"), "删除充值卡:"+a.Card)
 		return
 	}
 	// data["state"], _ = strconv.Atoi(a.Command)
@@ -272,7 +273,7 @@ func visitor_续费卡密(ctx *gin.Context) {
 	}
 	if 充值卡.Balance < len(cards) {
 		// 充值卡余额不足
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足或充值卡不正确"})
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "剩余次数余额不足或充值卡不正确"})
 		return
 	}
 	if 充值卡.Expiration_date.Unix() < time.Now().Unix() {

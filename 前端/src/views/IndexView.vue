@@ -37,6 +37,7 @@
         </el-menu-item>
       </el-menu-item-group>
     </el-sub-menu>
+    <img src="/favicon.png" style="width: 66px;">
   </el-menu>
 </template>
 

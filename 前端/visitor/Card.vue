@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <div style="background-color: rgb(22, 22, 22, 0.9);">
+    <img src="/favicon.png" style="position: fixed; width: 200px;right: 0px;bottom: 0px">
     <div>
       <div v-loading="加载中">
         <el-input v-model="卡密" placeholder="卡密(后3位可省略)" style="width: auto" />
@@ -9,7 +10,7 @@
         <el-button style="border: 0px; margin: 0px" type="primary" @click="续费按钮">续费 </el-button>
       </div>
     </div>
-
+    
     <el-table :data="所有卡密" :cell-style="cellState" @selection-change="记录打钩的" border v-loading="加载中">
       <el-table-column type="selection" width="30" />
       <el-table-column :show-overflow-tooltip="true" prop="card" label="卡密" width="180px" />
@@ -284,4 +285,17 @@ const 解冻 = function (card, s, row) {
 /* :global(.cell) {
     color: #ff0;
   } */
+</style>
+
+<style type="text/css">
+html,
+body {
+    width: 100%;
+    height: 100%;
+    color: #fff;
+    background: #222;
+    background-image: url('https://t.mwm.moe/pc');
+    background-size: cover;
+    background-size: 100%;
+}
 </style>

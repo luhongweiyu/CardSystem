@@ -16,7 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
-	"gorm.io/gorm"
 )
 
 var 卡密缓存 = make(map[string]卡密表样式)
@@ -158,11 +157,13 @@ func 卡密md5验证(ctx *gin.Context) {
 var 卡密_缓存锁 sync.RWMutex
 
 func 卡密_删除缓存(管理员用户名 string, card string) {
+	card = strings.ToLower(card)
 	卡密_缓存锁.Lock()
 	defer 卡密_缓存锁.Unlock()
 	delete(卡密缓存, 管理员用户名+"_"+card)
 }
 func 卡密_读取缓存(管理员用户名 string, card string) (卡密表样式, bool) {
+	card = strings.ToLower(card)
 	卡密_刷新缓存 := func(管理员用户名 string, card string) {
 		var a 卡密表样式
 		err := db.Table("card_"+管理员用户名).Where("card=?", card).First(&a).Error
@@ -178,13 +179,6 @@ func 卡密_读取缓存(管理员用户名 string, card string) (卡密表样�
 		a, ok = 卡密缓存[管理员用户名+"_"+card]
 	}
 	return a, ok
-}
-func 卡密_修改缓存(管理员用户名 string, b *卡密表样式) *gorm.DB {
-	卡密_缓存锁.Lock()
-	defer 卡密_缓存锁.Unlock()
-	res := db.Table("card_" + 管理员用户名).Updates(b)
-	delete(卡密缓存, 管理员用户名+"_"+b.Card)
-	return res
 }
 func 卡密_记录心跳(name string, card string, 心跳标识 string, ip string) int {
 	c, ok := 全局_卡密心跳记录2.Load(name + card)
@@ -280,7 +274,8 @@ func card_login(ctx *gin.Context) {
 	if list.End_time.Unix() > time.Now().Unix() {
 		list.Needle = GetRandomString(6, "a")
 		list.Use_time = time.Now()
-		卡密_修改缓存(name, &list)
+		db.Table("card_" + name).Updates(list)
+		卡密_删除缓存(name, card)
 		卡密_记录心跳(name, card, list.Needle, ctx.ClientIP())
 		成功提示(ctx, gin.H{
 			"needle":            list.Needle,

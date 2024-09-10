@@ -1,6 +1,7 @@
 <template>
   <div v-loading="loading" class="juzhong">
-    <div>
+    <div>      
+      <img src="/favicon.png" style=" width: 200px;">
       <div>
         <el-input v-model="账号" placeholder="请输入账号">
           <template #prepend>账号</template>
