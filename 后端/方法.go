@@ -363,7 +363,7 @@ func slicePage(page int, pageSize int, nums int) (sliceStart, sliceEnd int) {
 	}
 	return sliceStart, sliceEnd
 }
-func 查询所有卡密(ctx *gin.Context) {
+func 管理员_查询所有卡密(ctx *gin.Context) {
 	// center_id := input(ctx, "center_id")
 	// if center_id == "" {
 	// 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "用户名不存在"})
@@ -381,7 +381,6 @@ func 查询所有卡密(ctx *gin.Context) {
 
 	var a struct {
 		Name           string
-		Password       string
 		Software       int
 		Card_state     int
 		Available_time float64
@@ -393,6 +392,25 @@ func 查询所有卡密(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
 		return
+	}
+	查询所有卡密(ctx, 0, a.Name, a.Software, a.Card_state, a.Available_time, a.Card, a.Notes)
+}
+
+func 查询所有卡密(ctx *gin.Context, ID子账号 int, Name string, Software int, Card_state int, Available_time float64, Card string, Notes string) {
+	a := struct {
+		Name           string
+		Software       int
+		Card_state     int
+		Available_time float64
+		Card           string
+		Notes          string
+	}{
+		Name:           Name,
+		Software:       Software,
+		Card_state:     Card_state,
+		Available_time: Available_time,
+		Card:           Card,
+		Notes:          Notes,
 	}
 	b := db.Table("card_" + a.Name)
 	order := "create_time desc"
@@ -426,6 +444,9 @@ func 查询所有卡密(ctx *gin.Context) {
 	if a.Notes != "" {
 		b.Where("notes LIKE ?", "%"+a.Notes+"%")
 	}
+	if ID子账号 != 0 {
+		b.Where("ID子账号 = ?", ID子账号)
+	}
 	list := []map[string]interface{}{}
 	b.Order(order).Find(&list)
 
@@ -433,7 +454,7 @@ func 查询所有卡密(ctx *gin.Context) {
 		O当前页 int `json:"当前页"`
 		O每页  int `json:"每页"`
 	}
-	err = ctx.ShouldBindBodyWith(&page, binding.JSON)
+	err := ctx.ShouldBindBodyWith(&page, binding.JSON)
 	if err != nil {
 		fmt.Println(err)
 		page.O当前页 = 1
@@ -484,7 +505,7 @@ func 查询操作日志(ctx *gin.Context) {
 	}
 	ctx.String(http.StatusOK, 内容1+"\n"+内容2)
 }
-func add_new_card(ctx *gin.Context) {
+func 管理员_add_new_card(ctx *gin.Context) {
 	var a struct {
 		Name                   string
 		Password               string
@@ -503,6 +524,31 @@ func add_new_card(ctx *gin.Context) {
 		fmt.Println(err)
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
+	}
+	add_new_card(ctx, 0, a.Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型)
+}
+
+func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, Available_time float64, Num int, Latest_activation_time int, Cards string, Notes string, Config_content string, O指定类型 int) {
+	a := struct {
+		Name                   string
+		Software               int
+		Available_time         float64
+		Num                    int
+		Latest_activation_time int
+		Cards                  string
+		Notes                  string
+		Config_content         string
+		O指定类型                  int `json:"指定类型"`
+	}{
+		Name:                   Name,
+		Software:               Software,
+		Available_time:         Available_time,
+		Num:                    Num,
+		Latest_activation_time: Latest_activation_time,
+		Cards:                  Cards,
+		Notes:                  Notes,
+		Config_content:         Config_content,
+		O指定类型:                  O指定类型,
 	}
 	if !user_soft_验证(a.Name, a.Software) {
 		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "添加成功!!"})
@@ -570,6 +616,7 @@ func add_new_card(ctx *gin.Context) {
 			"Notes":                  a.Notes,
 			"Config_content":         a.Config_content,
 			"Storage_time":           0,
+			"ID子账号":                  ID子账号,
 		}).Error
 		if err == nil {
 			成功的卡密 = append(成功的卡密, card)
@@ -609,7 +656,7 @@ func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {
 	return a
 }
 
-func add_card_time(ctx *gin.Context) {
+func 管理员_add_card_time(ctx *gin.Context) {
 	var a struct {
 		Name     string
 		Password string
@@ -623,11 +670,35 @@ func add_card_time(ctx *gin.Context) {
 		return
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
+	add_card_time(ctx, 0, a.Name, a.Cards, a.Add_time)
+}
+
+func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []string, Add_time float64) {
+	a := struct {
+		Name     string
+		Cards    []string
+		Add_time float64
+	}{
+		Name:     Name,
+		Cards:    Cards,
+		Add_time: Add_time,
+	}
+	// err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+	// 	return
+	// }
+	// // cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	失败的卡密 := []string{}
 	成功的卡密 := []string{}
 	for _, card := range a.Cards {
 		list := map[string]interface{}{}
-		修改行 := db.Table("card_"+a.Name).Where("card=?", card).Find(&list).RowsAffected
+		b := db.Table("card_" + a.Name)
+		if ID子账号 != 0 {
+			b.Where("ID子账号=?", ID子账号)
+		}
+		修改行 := b.Where("card=?", card).Find(&list).RowsAffected
 		if 修改行 > 0 {
 			修改行 = 0
 			end_time, ok := list["end_time"].(time.Time)
@@ -650,7 +721,7 @@ func add_card_time(ctx *gin.Context) {
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("加时;数量:%v个;时长:%v天;成功:%v", len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
 
 }
-func delete_card(ctx *gin.Context) {
+func 管理员_delete_card(ctx *gin.Context) {
 	var a struct {
 		Name     string
 		Password string
@@ -663,11 +734,26 @@ func delete_card(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
 	}
+	delete_card(ctx, 0, a.Name, a.Cards)
+}
+func delete_card(ctx *gin.Context, ID子账号 int, Name string, Cards []string) {
+
+	a := struct {
+		Name  string
+		Cards []string
+	}{
+		Name:  Name,
+		Cards: Cards,
+	}
 	失败的卡密 := []string{}
 	成功的卡密 := []string{}
 	for _, card := range a.Cards {
 		list := 卡密表样式{} //map[string]interface{}{}
-		err := db.Table("card_"+a.Name).Where("card = ?", card).Delete(&list).Error
+		b := db.Table("card_" + a.Name)
+		if ID子账号 != 0 {
+			b.Where("ID子账号=?", ID子账号)
+		}
+		err := b.Where("card = ?", card).Delete(&list).Error
 		if err == nil {
 			成功的卡密 = append(成功的卡密, card)
 		} else {
@@ -699,10 +785,17 @@ func modify_card(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
 	}
-	db.Table("card_"+b.Name).Where("card = ?", a.Card).Updates(a)
+	修改卡密(ctx, 0, b.Name, a.Card, a)
+}
+func 修改卡密(ctx *gin.Context, ID子账号 int, Name string, Card string, data interface{}) {
+	b := db.Table("card_"+Name).Where("card = ?", Card)
+	if ID子账号 != 0 {
+		b.Where("ID子账号=?", ID子账号)
+	}
+	b.Updates(data)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
-	卡密_删除缓存(b.Name, a.Card)
-	日志("log/"+b.Name+time.Now().Format("200601"), fmt.Sprintf("修改;%v;", a.Card))
+	卡密_删除缓存(Name, Card)
+	日志("log/"+Name+time.Now().Format("200601"), fmt.Sprintf("修改;%v;", Card))
 }
 func modify_card_configContent(ctx *gin.Context) {
 	// var b struct {

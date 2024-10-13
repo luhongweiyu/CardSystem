@@ -59,6 +59,12 @@ func 管理员验证(ctx *gin.Context) {
 		ctx.Abort()
 	}
 }
+func 子账号验证(ctx *gin.Context) {
+	if !user_son_验证用户(ctx) {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "密码错误"})
+		ctx.Abort()
+	}
+}
 
 var 锁_请求防火墙 sync.Mutex
 
@@ -121,21 +127,37 @@ func 启动网络() {
 		user.POST("/user_get_info", user_get_info)
 		user.POST("/user_update_info", user_update_info)
 		// user.POST("/query_card", user_query_card)
-		user.POST("/user_query_card", 查询所有卡密)
+		user.POST("/user_query_card", 管理员_查询所有卡密)
 		user.POST("/user_add_soft", user_add_soft)
 		user.POST("/user_del_soft", user_del_soft)
 		user.POST("/user_query_soft_list", user_query_soft_list)
 		user.POST("/user_modify_bulletin", user_modify_bulletin)
 		// user.POST("/query_soft_list", user_query_soft_list)
 
-		user.POST("/add_new_card", add_new_card)
-		user.POST("/delete_card", delete_card)
+		user.POST("/add_new_card", 管理员_add_new_card)
+		user.POST("/delete_card", 管理员_delete_card)
 		user.POST("/modify_card", modify_card)
-		user.POST("/add_card_time", add_card_time)
-		user.POST("/充值卡_生成", 充值卡_生成)
-		user.POST("/充值卡_查询", 充值卡_查询)
-		user.POST("/充值卡_修改", 充值卡_修改)
+		user.POST("/add_card_time", 管理员_add_card_time)
+		user.POST("/充值卡_生成", 充值卡_生成_管理员)
+		user.POST("/充值卡_查询", 充值卡_查询_管理员)
+		user.POST("/充值卡_修改", 充值卡_修改_管理员)
 		user.POST("/query_log", 查询操作日志)
+	}
+
+	son := router.Group("/admin_son", 子账号验证)
+	router.POST("/admin_son/user_register", user_son_register)
+	{
+		son.POST("/user_login", user_son_login)
+		son.POST("/user_query_card", user_son_查询所有卡密)
+		son.POST("/add_new_card", user_son_添加卡密)
+		son.POST("/delete_card", user_son_删除卡密)
+		son.POST("/add_card_time", user_son_加时长)
+		son.POST("/modify_card", user_son_修改卡密)
+		son.POST("/user_query_soft_list", user_son_查询软件列表)
+
+		son.POST("/充值卡_生成", user_son_充值卡_生成)
+		son.POST("/充值卡_查询", user_son_充值卡_查询)
+		son.POST("/充值卡_修改", user_son_充值卡_修改)
 
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)

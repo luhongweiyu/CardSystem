@@ -14,7 +14,7 @@ type user struct {
 	ID       int `gorm:"primaryKey;AUTO_INCREMENT;"`
 }
 
-// 注册时间
+// 注册时间`gorm:"column:ID子账号"`
 // 登录时间
 // 登录ip
 

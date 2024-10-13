@@ -19,9 +19,10 @@
       </div>
     </div>
     <div>
-      <el-row :span="12">
-        <el-col :span="6"> <el-button @click="登录()">登录</el-button></el-col>
-        <el-col :span="6"><el-button @click="注册()">注册</el-button></el-col>
+      <el-row :span="24">
+        <el-col :span="8"><el-button @click="注册()">开发注册</el-button></el-col>
+        <el-col :span="8"> <el-button @click="登录()">开发登录</el-button></el-col>
+        <el-col :span="8"><el-button @click="登录(true)">授权登录</el-button></el-col>
       </el-row>
     </div>
   </div>
@@ -39,7 +40,7 @@ import axios from "axios";
 import Cookies from "js-cookie";
 import { tr } from "element-plus/es/locale";
 const stores = useCounterStore();
-const { 账号, 密码, 登录状态, 用户id,api次数 } = storeToRefs(stores);
+const { 账号, 密码, 登录状态, 用户id,api次数,是子账号 } = storeToRefs(stores);
 
 const loading = ref(false);
 const 注册界面 = ref(false)
@@ -47,16 +48,24 @@ const 再次确认密码 = ref("")
 
 // const 密码 = ref(stores.密码);
 // const 登录状态 = ref(stores.登录状态);
-const 登录 = function () {
+const 登录 = function (是否代理) {
   if (注册界面.value) {
     注册界面.value = false
     return
   }
   loading.value = true;
   console.log(window.location)
+  let 链接 = "http://" + window.location.hostname + ":802/admin/user_login"
+  if (是否代理){
+    链接 = "http://" + window.location.hostname + ":802/admin_son/user_login"
+    是子账号.value = true
+  }else{
+    是子账号.value = false
+
+  }
   axios
     .post(
-      "http://" + window.location.hostname + ":802/admin/user_login",
+      链接,
       {
         name: 账号.value,
         password: 密码.value

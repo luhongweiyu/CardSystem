@@ -15,10 +15,24 @@ import (
 
 var visitor_锁 sync.RWMutex
 
-func 充值卡_生成(ctx *gin.Context) {
+func 充值卡_生成_管理员(ctx *gin.Context) {
 	var a struct {
 		Name     string
 		Password string
+	}
+	// software 需要判断下name的
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	充值卡_生成(ctx, 0, a.Name)
+}
+func 充值卡_生成(ctx *gin.Context, ID子账号 int, Name string) {
+	type A2 struct {
+		// Name     string
+		// Password string
 		Software int
 		Add_time float64
 		Num      int
@@ -28,13 +42,21 @@ func 充值卡_生成(ctx *gin.Context) {
 		O指定类型    int    `json:"指定类型"`
 		Notes    string `json:"备注"`
 	}
-	// software 需要判断下name的
-	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	var a2 A2
+	err := ctx.ShouldBindBodyWith(&a2, binding.JSON)
 	if err != nil {
 		fmt.Println(err)
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
 	}
+	a := struct {
+		A2
+		Name string
+	}{
+		A2:   a2,
+		Name: Name,
+	}
+
 	if !user_soft_验证(a.Name, a.Software) {
 		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "添加成功!!"})
 		return
@@ -101,6 +123,7 @@ func 充值卡_生成(ctx *gin.Context) {
 			"expiration_date": a.O有效期至,
 			"admin":           a.Name,
 			"notes":           a.Notes,
+			"ID子账号":           ID子账号,
 		}).Error
 		if err == nil {
 			成功的卡密 = append(成功的卡密, card)
@@ -111,10 +134,28 @@ func 充值卡_生成(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("新增充值卡;软件:%v;数量:%v个;时长:%v天%v次;成功:%v", a.Software, len(成功的卡密), a.Add_time, a.O充值次数, strings.Join(成功的卡密, ",")))
 }
-func 充值卡_查询(ctx *gin.Context) {
+
+func 充值卡_查询_管理员(ctx *gin.Context) {
 	var a struct {
 		Name       string
 		Password   string
+		Software   int
+		Card       string
+		Similarity int
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	充值卡_查询(ctx, 0, a.Name)
+}
+
+func 充值卡_查询(ctx *gin.Context, ID子账号 int, Name string) {
+	var a struct {
+		// Name       string
+		// Password   string
 		Software   int
 		Card       string
 		Similarity int
@@ -138,8 +179,11 @@ func 充值卡_查询(ctx *gin.Context) {
 		}
 		order = "card"
 	}
+	if ID子账号 != 0 {
+		b.Where("ID子账号", ID子账号)
+	}
 	list := []map[string]interface{}{}
-	b.Where("admin = ?", a.Name).Find(&list)
+	b.Where("admin = ?", Name).Find(&list)
 	if len(list) > 1 {
 		for _, m := range list {
 			delete(m, "record")
@@ -147,7 +191,7 @@ func 充值卡_查询(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 1, "data": list, "num": len(list)})
 }
-func 充值卡_修改(ctx *gin.Context) {
+func 充值卡_修改_管理员(ctx *gin.Context) {
 	var a struct {
 		Name     string
 		Password string
@@ -161,21 +205,41 @@ func 充值卡_修改(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
 	}
+	充值卡_修改(ctx, 0, a.Name)
+}
+func 充值卡_修改(ctx *gin.Context, ID子账号 int, Name string) {
+	var a struct {
+		// Name     string
+		// Password string
+		Software int
+		Card     string
+		Command  string
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
 	data := map[string]interface{}{}
-	db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Find(&data)
+	b := db.Table("visitor_recharge").Where("admin = ?", Name)
+	if ID子账号 != 0 {
+		b.Where("ID子账号", ID子账号)
+	}
+	b.Where("card = ?", a.Card).Find(&data)
 	if data["card"] == "" {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
 		return
 	}
 	if a.Command == "del" {
-		db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Delete(&data)
+		db.Table("visitor_recharge").Where("admin = ?", Name).Where("card = ?", a.Card).Delete(&data)
 		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
-		日志("log/"+a.Name+time.Now().Format("200601"), "删除充值卡:"+a.Card)
+		日志("log/"+Name+time.Now().Format("200601"), "删除充值卡:"+a.Card)
 		return
 	}
 	// data["state"], _ = strconv.Atoi(a.Command)
 	data["state"] = a.Command
-	db.Table("visitor_recharge").Where("admin = ?", a.Name).Where("card = ?", a.Card).Updates(data)
+	db.Table("visitor_recharge").Where("admin = ?", Name).Where("card = ?", a.Card).Updates(data)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 }
 func visitor_验证对应id(ctx *gin.Context) {
@@ -342,7 +406,7 @@ func visitor_暂停时长(ctx *gin.Context) {
 	软件设置 := software{}
 	db_software.Where("id = ?", data.Software).Find(&软件设置)
 	if 软件设置.O暂停扣时 <= 0 {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "冻结被禁用"})
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "功能开发中或者被禁用"})
 		return
 	}
 	name := ctx.GetString("name")

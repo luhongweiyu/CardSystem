@@ -47,6 +47,7 @@
           <el-button style="border: 0px; margin: 0px" size="small" type="danger" @click="修改充值卡(scope.row, 'del')">
             删除
           </el-button>
+          {{ scope.row.ID子账号 }}
         </template>
       </el-table-column>
     </el-table>

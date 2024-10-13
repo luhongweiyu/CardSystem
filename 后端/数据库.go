@@ -31,6 +31,7 @@ type 卡密表样式 struct {
 	Config_content         string
 	Latest_activation_time float64 `gorm:"default:0"`
 	Storage_time           float64
+	ID子账号                  int `gorm:"column:ID子账号"`
 }
 type 数据库表_充值卡 struct {
 	Card            string `gorm:"primaryKey"`
@@ -44,6 +45,7 @@ type 数据库表_充值卡 struct {
 	Create_time     time.Time
 	State           int
 	Notes           string
+	ID子账号           int `gorm:"column:ID子账号"`
 }
 type software struct {
 	ID        int
@@ -56,6 +58,7 @@ type software struct {
 
 var db *gorm.DB
 var db_user *gorm.DB
+var db_user_son *gorm.DB
 var db_user_info *gorm.DB
 var db_software *gorm.DB
 var db_user_recharge *gorm.DB
@@ -84,6 +87,9 @@ func 连接数据库() {
 	// 用户数据库
 	db_user = db.Table("user").Session(&gorm.Session{})
 	db_user.AutoMigrate(&user{})
+	// 用户数据库
+	db_user_son = db.Table("user_son").Session(&gorm.Session{})
+	db_user_son.AutoMigrate(&user_son{})
 	// 用户信息数据库
 	db_user_info = db.Table("user_info").Session(&gorm.Session{})
 	db_user_info.AutoMigrate(&user_info{})

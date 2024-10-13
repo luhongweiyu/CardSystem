@@ -74,6 +74,7 @@
       <el-table-column :show-overflow-tooltip="true" prop="history" label="最近登录"  width="230px"/>
       <el-table-column :show-overflow-tooltip="true" label="其他">
         <template #default="scope">
+          {{ scope.row.ID子账号 }}
           <span v-if="scope.row.storage_time > 0" style="color:rgb(255, 255, 0)">暂停{{ Math.floor( scope.row.storage_time*10)/10 }}天</span>
         </template>
       </el-table-column>
@@ -149,21 +150,21 @@
           {{ 待修改卡密.create_time }}
         </el-form-item>
         <el-form-item label="所属软件">
-          <el-select v-model="待修改卡密.software" placeholder="所属软件" style="width: 200px">
+          <el-select v-model="待修改卡密.software" placeholder="所属软件" style="width: 200px" :disabled="是子账号">
             <el-option v-for="( item, index ) in  软件列表 " :label="item.Software" :value="item.ID" />
           </el-select>
         </el-form-item>
-        <el-form-item label="到期时间">
+        <el-form-item label="到期时间" >
           <el-date-picker v-model="待修改卡密.end_time" type="datetime" placeholder="选择时间" style="width: 200px"
-            :default-time="new Date()" :shortcuts="shortcuts" />
+            :default-time="new Date()" :shortcuts="shortcuts" :disabled="是子账号" />
 
         </el-form-item>
         <el-form-item label="配置">
-          <el-input v-model="待修改卡密.config_content" placeholder="配置" style="width: 200px" />
+          <el-input v-model="待修改卡密.config_content" placeholder="配置" style="width: 200px" :disabled="是子账号"/>
 
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="待修改卡密.notes" placeholder="备注" style="width: 200px" />
+          <el-input v-model="待修改卡密.notes" placeholder="备注" style="width: 200px" :disabled="是子账号"/>
         </el-form-item>
         <el-form-item label="冻结状态">
           <el-radio-group v-model="待修改卡密.card_state">
@@ -209,7 +210,7 @@ import { useCounterStore } from "../stores/counter";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { tr } from "element-plus/es/locale";
 import axios, { Axios } from "axios";
-
+const 是子账号=useCounterStore().是子账号
 
 const post = useCounterStore().post;
 const 软件列表 = ref([] as any[]);

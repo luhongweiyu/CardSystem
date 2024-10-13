@@ -43,7 +43,12 @@
 
 <script lang="ts" setup>
 import { ref, reactive, computed } from "vue";
+import { useCounterStore} from "../stores/counter.js";
 // import { Document, Menu as IconMenu, Location, Setting } from "@element-plus/icons-vue";
+import { storeToRefs } from "pinia";
+const stores = useCounterStore();//是子账号
+// const { 是子账号 } = storeToRefs(stores);
+const 是子账号 = useCounterStore().是子账号
 
 const handleOpen = (key: string, keyPath: string[]) => {
   console.log(key, keyPath);
@@ -188,6 +193,46 @@ const asideMenu = reactive([
   //   ]
   // }
 ]);
+if (是子账号) {
+  asideMenu.length = 0;
+  asideMenu.push(...[  
+  {
+    // 卡密
+    path: "/card",
+    name: "card",
+    icon: "Postcard",
+    label: "卡密"
+  },
+  {
+    // 充值
+    path: "/charge",
+    name: "charge",
+    icon: "Money",
+    label: "充值卡"
+  },
+  {
+    // 实名认证
+    path: "/authentication",
+    name: "authentication",
+    icon: "VideoCameraFilled",
+    label: "实名认证"
+  },
+  {
+    // 日志
+    path: "/log",
+    name: "log",
+    icon: "List",
+    label: "日志"
+  },
+  {
+    // 关于
+    path: "/about",
+    name: "about",
+    icon: "Promotion",
+    label: "关于"
+  },
+  ])
+}
 const noChildren = computed(() => {
   return asideMenu.filter((item) => !item.children);
 });
@@ -195,8 +240,6 @@ const hasChildren = computed(() => {
   return asideMenu.filter((item) => item.children);
 });
 
-import { useCounterStore } from "../stores/counter.js";
-const stores = useCounterStore();
 // const isCollapse = dhkg();
 </script>
 <style scoped>
