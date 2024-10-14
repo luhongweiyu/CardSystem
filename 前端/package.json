@@ -22,5 +22,13 @@
     "unplugin-auto-import": "^0.16.6",
     "unplugin-vue-components": "^0.25.1",
     "vite": "^4.4.6"
+  },
+  "prettier": {
+    "singleQuote": true, 
+    "printWidth": 115,
+    "proseWrap": "always",
+    "semi": false, 
+    "trailingComma": "none", 
+    "htmlWhitespaceSensitivity": "ignore"
   }
 }

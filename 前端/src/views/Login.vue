@@ -1,6 +1,6 @@
 <template>
   <div v-loading="loading" class="juzhong">
-    <div>      
+    <div>
       <img src="/favicon.png" style=" width: 200px;">
       <div>
         <el-input v-model="账号" placeholder="请输入账号">
@@ -39,8 +39,10 @@ import { storeToRefs } from "pinia";
 import axios from "axios";
 import Cookies from "js-cookie";
 import { tr } from "element-plus/es/locale";
+import { RouterLink, RouterView, useRouter } from "vue-router";
+const router = useRouter()
 const stores = useCounterStore();
-const { 账号, 密码, 登录状态, 用户id,api次数,是子账号 } = storeToRefs(stores);
+const { 账号, 密码, 登录状态, 用户id, api次数, 是子账号 } = storeToRefs(stores);
 
 const loading = ref(false);
 const 注册界面 = ref(false)
@@ -56,10 +58,10 @@ const 登录 = function (是否代理) {
   loading.value = true;
   console.log(window.location)
   let 链接 = "http://" + window.location.hostname + ":802/admin/user_login"
-  if (是否代理){
+  if (是否代理) {
     链接 = "http://" + window.location.hostname + ":802/admin_son/user_login"
     是子账号.value = true
-  }else{
+  } else {
     是子账号.value = false
 
   }
@@ -79,6 +81,9 @@ const 登录 = function (是否代理) {
     .then(function (response) {
       console.log(response.data);
       if (response.data.state) {
+        if (是子账号.value) {
+          router.replace('/index')
+        }
         ElMessage.success("登录成功");
         登录状态.value = true;
         loading.value = false;

@@ -1,14 +1,14 @@
 <template>
   <el-menu :collapse="stores.导航开关" default-active="2" active-text-color="#ffd04b" background-color="#545c64" text-color="#fff" @open="handleOpen" @close="handleClose" router>
-    <!-- <div class="info"><img src="assets/img/avatar.029cf3c7.jpg" style="width: 86px; height: 86px; border-radius: 50%; margin-bottom: 10px" /></div> -->
-
-    <!-- 配置没有二级菜单的菜单路由内容 
-        - 通过v-for循环遍历 noChildren 数据对象，分别取出:
-          - 菜单路由item.path
-          - 菜单icon
+  <!-- <div class="info"><img src="assets/img/avatar.029cf3c7.jpg" style="width: 86px; height: 86px; border-radius: 50%; margin-bottom: 10px" /></div> -->
+  
+  <!-- 配置没有二级菜单的菜单路由内容 
+    - 通过v-for循环遍历 noChildren 数据对象，分别取出:
+    - 菜单路由item.path
+    - 菜单icon
           - 菜单title名称
     -->
-    <el-menu-item :index="item.path" v-for="item in noChildren" :key="item.path">
+    <el-menu-item :index="item.path" v-for="item in noChildren" :key="item.path" style="padding-left: 1px;">
       <el-icon>
         <component :is="item.icon"></component>
       </el-icon>

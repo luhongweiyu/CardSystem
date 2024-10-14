@@ -35,7 +35,7 @@ const 开关导航 = function () {
   导航开关.value = !导航开关.value;
 };
 const 退出登录 = function () {
-  Cookies.remove('name')
+  // Cookies.remove('name')
   Cookies.remove('password')
   登录状态.value = false
 
