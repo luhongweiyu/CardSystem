@@ -625,7 +625,7 @@ func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, 
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
-	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("新增;软件:%v;数量:%v个;时长:%v天;成功:%v", a.Software, len(成功的卡密), a.Available_time, strings.Join(成功的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;新增;软件:%v;数量:%v个;时长:%v天;成功:%v", ID子账号, a.Software, len(成功的卡密), a.Available_time, strings.Join(成功的卡密, ",")))
 
 	if a.Latest_activation_time == 0 {
 		for _, card := range cards_tab {
@@ -718,7 +718,7 @@ func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []strin
 		卡密_删除缓存(a.Name, card)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",\n")})
-	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("加时;数量:%v个;时长:%v天;成功:%v", len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;加时;数量:%v个;时长:%v天;成功:%v", ID子账号, len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
 
 }
 func 管理员_delete_card(ctx *gin.Context) {
@@ -762,7 +762,7 @@ func delete_card(ctx *gin.Context, ID子账号 int, Name string, Cards []string)
 		卡密_删除缓存(a.Name, card)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
-	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("删除;数量:%v个;成功:%v", len(成功的卡密), strings.Join(成功的卡密, ",")))
+	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;删除;数量:%v个;成功:%v", ID子账号, len(成功的卡密), strings.Join(成功的卡密, ",")))
 
 }
 func modify_card(ctx *gin.Context) {
