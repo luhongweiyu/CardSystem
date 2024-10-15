@@ -98,6 +98,10 @@ func user_son_取价格(ctx *gin.Context) map[int]int {
 	json.Unmarshal([]byte(子账号信息.O价格), &价格)
 	return 价格
 }
+func user_son_消费(账号 user_son, 金额 int) {
+	账号.O余额 = 账号.O余额 - 金额
+	db_user_son.Select("余额").Updates(账号)
+}
 
 func user_son_查询所有卡密(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
@@ -138,7 +142,15 @@ func user_son_添加卡密(ctx *gin.Context) {
 		return
 	}
 	账号 := user_son_取账号信息(ctx)
-	add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型)
+	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
+		return
+	}
+	价格表 := user_son_取价格(ctx)
+	价格, _ := 价格表[a.Software]
+	消费 := 价格 * a.Num * int(a.Available_time)
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("加卡消费 %v=价格%v * 数量%v * 天%v", 消费, 价格, a.Num, a.Available_time))
+	user_son_消费(账号, 消费)
+
 }
 
 func user_son_加时长(ctx *gin.Context) {
@@ -156,7 +168,12 @@ func user_son_加时长(ctx *gin.Context) {
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	账号 := user_son_取账号信息(ctx)
-	add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time)
+	if !add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time) {
+		return
+	}
+	// 价格表 := user_son_取价格(ctx)
+	// 价格, _ := 价格表[a.Software]
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("加时消费 价格x * 数量%v * 天%v", len(a.Cards), a.Add_time))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -173,6 +190,7 @@ func user_son_删除卡密(ctx *gin.Context) {
 	}
 	账号 := user_son_取账号信息(ctx)
 	delete_card(ctx, 账号.ID子账号, 账号.O父Name, a.Cards)
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("删除卡密;数量%v;%v", len(a.Cards), a.Cards))
 }
 
 func user_son_修改卡密(ctx *gin.Context) {
@@ -195,6 +213,7 @@ func user_son_修改卡密(ctx *gin.Context) {
 		return
 	}
 	修改卡密(ctx, 账号.ID子账号, 账号.O父Name, a.Card, a)
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("修改卡密;%v", a.Card))
 }
 func user_son_查询软件列表(ctx *gin.Context) {
 	var a struct {
@@ -213,7 +232,23 @@ func user_son_查询软件列表(ctx *gin.Context) {
 }
 func user_son_充值卡_生成(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
-	充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name)
+	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
+		return
+	}
+
+	价格表 := user_son_取价格(ctx)
+	a := struct {
+		Name     string
+		Software int
+		Add_time float64
+		Num      int
+		O充值次数    int `json:"充值次数"`
+	}{}
+	取josn参数表(ctx, &a)
+	价格, _ := 价格表[a.Software]
+	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v *次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
+	user_son_消费(账号, 消费)
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
@@ -222,4 +257,55 @@ func user_son_充值卡_查询(ctx *gin.Context) {
 func user_son_充值卡_修改(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
 	充值卡_修改(ctx, 账号.ID子账号, 账号.O父Name)
+}
+func 设置子账号(ctx *gin.Context) {
+	// var a struct {
+	// 	Name string
+	// }
+	// if 取josn参数表(ctx, &a) {
+	// 	return
+	// }
+	// data := user_son{}
+	// db_user_son.Where("O父Name = ?", a.Name).Find(&data)
+
+	var a struct {
+		Name string
+		Data struct {
+			Name     string
+			Password string
+			ID子账号    int    `gorm:"column:ID子账号;primaryKey;AUTO_INCREMENT;"`
+			O余额      int    `json:"余额" gorm:"column:余额;default:0"`
+			O价格      string `json:"价格" gorm:"column:价格"`
+			// O父Name   string `json:"父Name" gorm:"column:父Name;default:0"`
+		}
+		// ID子账号 int
+	}
+	if 取josn参数表(ctx, &a) != nil {
+		return
+	}
+	fmt.Println(a)
+	fmt.Println(a.Data)
+	// data := user_son{}
+	fmt.Println(a.Data.ID子账号)
+	fmt.Println(a.Name)
+
+	// bbb := map[string]interface{}{}
+	// db_user_son.Where("ID子账号=?", a.Data.ID子账号).Where("父Name = ?", a.Name).Find(&bbb)
+	// fmt.Println(bbb)
+
+	db_user_son.Where("ID子账号 = ?", a.Data.ID子账号).Where("父Name = ?", a.Name).Select("password", "余额", "价格").Updates(a.Data)
+}
+
+func 查询子账号(ctx *gin.Context) {
+	var a struct {
+		Name string
+	}
+	if 取josn参数表(ctx, &a) != nil {
+		return
+	}
+	data := []map[string]interface{}{}
+	// db_user_son.Where("父Name = ?", a.Name).Select("*").Omit("父Name").Find(&data)
+	db_user_son.Where("父Name = ?", a.Name).Select("ID子账号", "name", "password", "价格", "余额").Omit("父Name").Find(&data)
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "data": data})
+
 }

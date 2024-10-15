@@ -29,7 +29,8 @@ func 充值卡_生成_管理员(ctx *gin.Context) {
 	}
 	充值卡_生成(ctx, 0, a.Name)
 }
-func 充值卡_生成(ctx *gin.Context, ID子账号 int, Name string) {
+func 充值卡_生成(ctx *gin.Context, ID子账号 int, Name string) (结果 bool) {
+	结果 = false
 	type A2 struct {
 		// Name     string
 		// Password string
@@ -133,6 +134,8 @@ func 充值卡_生成(ctx *gin.Context, ID子账号 int, Name string) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;新增充值卡;软件:%v;数量:%v个;时长:%v天%v次;成功:%v", ID子账号, a.Software, len(成功的卡密), a.Add_time, a.O充值次数, strings.Join(成功的卡密, ",")))
+	结果 = true
+	return
 }
 
 func 充值卡_查询_管理员(ctx *gin.Context) {

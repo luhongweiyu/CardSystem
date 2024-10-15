@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/spf13/viper"
 )
 
@@ -40,6 +41,18 @@ func 取参数表(ctx *gin.Context, query []string) (map[string]string, bool) {
 		}
 	}
 	return t, 成功取出
+}
+func 取josn参数表(ctx *gin.Context, obj any) error {
+	// var obj struct {
+	// 	Name     string
+	// 	Password string
+	// }
+	err := ctx.ShouldBindBodyWith(obj, binding.JSON)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		ctx.Abort()
+	}
+	return err
 }
 
 func 匹配卡密(ctx *gin.Context) []string {
@@ -142,6 +155,9 @@ func 启动网络() {
 		user.POST("/充值卡_查询", 充值卡_查询_管理员)
 		user.POST("/充值卡_修改", 充值卡_修改_管理员)
 		user.POST("/query_log", 查询操作日志)
+		// user.POST("/新增子账号", 新增子账号)
+		user.POST("/设置子账号", 设置子账号)
+		user.POST("/查询子账号", 查询子账号)
 	}
 
 	son := router.Group("/admin_son", 子账号验证)

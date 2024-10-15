@@ -528,7 +528,8 @@ func 管理员_add_new_card(ctx *gin.Context) {
 	add_new_card(ctx, 0, a.Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型)
 }
 
-func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, Available_time float64, Num int, Latest_activation_time int, Cards string, Notes string, Config_content string, O指定类型 int) {
+func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, Available_time float64, Num int, Latest_activation_time int, Cards string, Notes string, Config_content string, O指定类型 int) (结果 bool) {
+	结果 = false
 	a := struct {
 		Name                   string
 		Software               int
@@ -633,7 +634,8 @@ func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, 
 			激活卡密(a.Name, card)
 		}
 	}
-
+	结果 = true
+	return
 }
 func 激活卡密(管理员用户名 string, 卡密 string) 卡密表样式 {
 	a := 卡密表样式{}
@@ -673,7 +675,8 @@ func 管理员_add_card_time(ctx *gin.Context) {
 	add_card_time(ctx, 0, a.Name, a.Cards, a.Add_time)
 }
 
-func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []string, Add_time float64) {
+func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []string, Add_time float64) (结果 bool) {
+	结果 = false
 	a := struct {
 		Name     string
 		Cards    []string
@@ -719,7 +722,8 @@ func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []strin
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",\n")})
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;加时;数量:%v个;时长:%v天;成功:%v", ID子账号, len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
-
+	结果 = true
+	return
 }
 func 管理员_delete_card(ctx *gin.Context) {
 	var a struct {
