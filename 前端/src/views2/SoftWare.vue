@@ -33,6 +33,22 @@
     </el-table-column>
   </el-table>
 
+  <el-button link type="primary" size="small" @click="查询子账号" style="display:inline">查询授权账号</el-button>
+
+  <div v-for="user_1, k1 in 授权列表" :key="k1">
+    {{ user_1.ID子账号 }}
+    账号: <el-input v-model="user_1.name" style="width: 100px" placeholder="Please input" disabled/>
+    密码:<el-input v-model="user_1.password" style="width: 100px" placeholder="Please input" />
+    余额:<el-input v-model="user_1.余额" style="width: 100px" placeholder="Please input" />
+    <el-button link type="primary" size="small" @click="保存授权设置(user_1)" style="display:inline">保存授权设置</el-button>
+    <template v-for="(soft, k2) in 软件列表" :key="k2">
+      <!-- <span v-for="(软件, k2) in [{ID:1,Software:'软件名'},{ID:2,Software:'软件名2'}]" :key="k2"> -->
+      <span v-show="user_1.价格[(soft.ID) + ''] || user_1.价格[(soft.ID) + ''] == 0">
+        {{ soft.Software }}
+        <el-input-number v-model="user_1['价格'][soft.ID]" :min="-999" :max="999" />
+      </span>
+    </template>
+  </div>
 
   <el-dialog v-model="软件名称输入显示" title="输入软件名称">
     {{ 新增软件名 }}
@@ -73,6 +89,7 @@ const 返回提示 = function (msg) {
     dangerouslyUseHTMLString: true,
   });
 }
+const 授权列表 = ref([]);
 const 添加软件 = function () {
   软件名称输入显示.value = false;
   post("/user_add_soft", {
@@ -109,7 +126,7 @@ const 删除软件 = function (id) {
     })
 };
 const 保存公告 = function (row) {
-  post("/user_modify_bulletin", { ID: row.ID, Software: row.Software, Bulletin: row.Bulletin,暂停扣时:row.暂停扣时 }).then(function (res) {
+  post("/user_modify_bulletin", { ID: row.ID, Software: row.Software, Bulletin: row.Bulletin, 暂停扣时: row.暂停扣时 }).then(function (res) {
     if (res.data.state) {
       ElMessage.success("修改成功");
       查询软件列表();
@@ -130,6 +147,59 @@ const 查询软件列表 = function () {
     // 查询软件列表()
   });
 };
+const 查询子账号 = function () {
+  post("/查询子账号", {}).then(function (res) {
+    console.log(res.data)
+    if (res.data.state) {
+      ElMessage.success("刷新授权账号列表成功");
+      console.log(res.data.data);
+      // console.log(typeof(res.data.data[0]))
+
+      for (let i = 0; i < res.data.data.length; i++) {
+        res.data.data[i].价格 = res.data.data[i].价格 || "{}"
+        res.data.data[i].价格 = JSON.parse(res.data.data[i].价格)
+        // res.data.data[i].价格 = ref( JSON.parse(res.data.data[i].价格))
+        for (let i2 = 0; i2 < 软件列表.value.length; i2++) {
+          res.data.data[i].价格[软件列表.value[i2].ID] = res.data.data[i].价格[软件列表.value[i2].ID] || 0
+          // res.data.data[i].价格.value[软件列表.value[i2].ID] = res.data.data[i].价格.value[软件列表.value[i2].ID] || 0
+        }
+      }
+      console.log(res.data.data)
+
+      // res.data.data[0].价格 = JSON.parse(res.data.data[0].价格)
+      // if (!res.data.data[0].价格) {
+      //   res.data.data[0].价格 = {}
+      // }
+
+      授权列表.value = res.data.data;
+    } else {
+      ElMessage.error(res.data.msg);
+    }
+  });
+}
+const 保存授权设置 = function (账号) {
+  console.log(账号.价格)
+  JSON.stringify(账号.价格)
+  let data = {
+    价格: JSON.stringify(账号.价格),
+    ID子账号: 账号.ID子账号,
+    name: 账号.name,
+    password: 账号.password,
+    余额: 账号.余额,
+  }
+  // console.log(data)
+  post("/设置子账号", { data: data }).then(function (res) {
+    console.log(res.data)
+    if (res.data.state) {
+      ElMessage.success("刷新授权账号列表成功");
+      console.log(res.data.data);
+
+    } else {
+      ElMessage.error(res.data.msg);
+    }
+  });
+}
+// 查询子账号()
 查询软件列表();
 </script>
 <style scoped></style>

@@ -20,9 +20,9 @@
     </div>
     <div>
       <el-row :span="24">
-        <el-col :span="8"><el-button @click="注册()">开发注册</el-button></el-col>
-        <el-col :span="8"> <el-button @click="登录()">开发登录</el-button></el-col>
-        <el-col :span="8"><el-button @click="登录(true)">授权登录</el-button></el-col>
+        <el-col :span="8"><el-button @click="注册()">注册</el-button></el-col>
+        <el-col :span="8"> <el-button @click="登录(null)">管理</el-button></el-col>
+        <el-col :span="8"><el-button @click="登录(true)">登录</el-button></el-col>
       </el-row>
     </div>
   </div>
@@ -129,7 +129,7 @@ const 注册 = function () {
       if (response.data.state) {
         ElMessage.success("注册成功");
         注册界面.value = false
-        登录();
+        登录(null);
       } else {
         ElMessage.error(response.data.msg);
         loading.value = false;
