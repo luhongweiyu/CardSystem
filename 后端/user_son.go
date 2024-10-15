@@ -98,9 +98,10 @@ func user_son_取价格(ctx *gin.Context) map[int]int {
 	json.Unmarshal([]byte(子账号信息.O价格), &价格)
 	return 价格
 }
-func user_son_消费(账号 user_son, 金额 int) {
+func user_son_消费(账号 user_son, 金额 int, log string) {
 	账号.O余额 = 账号.O余额 - 金额
 	db_user_son.Select("余额").Updates(账号)
+	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("余额:%v;%v", 账号.O余额, log))
 }
 
 func user_son_查询所有卡密(ctx *gin.Context) {
@@ -148,8 +149,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	价格表 := user_son_取价格(ctx)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Available_time)
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("加卡消费 %v=价格%v * 数量%v * 天%v", 消费, 价格, a.Num, a.Available_time))
-	user_son_消费(账号, 消费)
+	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %v=价格%v * 数量%v * 天%v", 消费, 价格, a.Num, a.Available_time))
 
 }
 
@@ -247,8 +247,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	取josn参数表(ctx, &a)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v *次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
-	user_son_消费(账号, 消费)
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v *次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
