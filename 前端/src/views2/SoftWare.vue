@@ -36,16 +36,17 @@
   <el-button link type="primary" size="small" @click="查询子账号" style="display:inline">查询授权账号</el-button>
 
   <div v-for="user_1, k1 in 授权列表" :key="k1">
-    {{ user_1.ID子账号 }}
+    <span style="width: 25px;display: inline-block;">{{ user_1.ID子账号 }}</span>    
     账号: <el-input v-model="user_1.name" style="width: 100px" placeholder="Please input" disabled/>
     密码:<el-input v-model="user_1.password" style="width: 100px" placeholder="Please input" />
-    余额:<el-input v-model="user_1.余额" style="width: 100px" placeholder="Please input" />
+    余额:<el-input-number v-model="user_1.余额" style="width: 150px" placeholder="余额" controls-position="right"/>
+
     <el-button link type="primary" size="small" @click="保存授权设置(user_1)" style="display:inline">保存授权设置</el-button>
     <template v-for="(soft, k2) in 软件列表" :key="k2">
       <!-- <span v-for="(软件, k2) in [{ID:1,Software:'软件名'},{ID:2,Software:'软件名2'}]" :key="k2"> -->
       <span v-show="user_1.价格[(soft.ID) + ''] || user_1.价格[(soft.ID) + ''] == 0">
         {{ soft.Software }}
-        <el-input-number v-model="user_1['价格'][soft.ID]" :min="-999" :max="999" />
+        <el-input-number v-model="user_1['价格'][soft.ID]" :min="-999" :max="999" controls-position="right"/>
       </span>
     </template>
   </div>

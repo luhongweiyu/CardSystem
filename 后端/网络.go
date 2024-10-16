@@ -174,6 +174,7 @@ func 启动网络() {
 		son.POST("/充值卡_生成", user_son_充值卡_生成)
 		son.POST("/充值卡_查询", user_son_充值卡_查询)
 		son.POST("/充值卡_修改", user_son_充值卡_修改)
+		son.POST("/query_log", user_son_查询操作日志)
 
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -98,10 +100,13 @@ func user_son_取价格(ctx *gin.Context) map[int]int {
 	json.Unmarshal([]byte(子账号信息.O价格), &价格)
 	return 价格
 }
+func user_son_日志(ID子账号 interface{}, 内容 string) {
+	日志(fmt.Sprintf("log/子账号%v_%v", ID子账号, time.Now().Format("200601")), 内容)
+}
 func user_son_消费(账号 user_son, 金额 int, log string) {
 	账号.O余额 = 账号.O余额 - 金额
 	db_user_son.Select("余额").Updates(账号)
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("余额:%v;%v", 账号.O余额, log))
+	user_son_日志(账号.ID子账号, fmt.Sprintf("余额:%v;%v", 账号.O余额, log))
 }
 
 func user_son_查询所有卡密(ctx *gin.Context) {
@@ -143,12 +148,16 @@ func user_son_添加卡密(ctx *gin.Context) {
 		return
 	}
 	账号 := user_son_取账号信息(ctx)
-	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
-		return
-	}
 	价格表 := user_son_取价格(ctx)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Available_time)
+	if 账号.O余额 < 消费 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
+		return
+	}
+	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
+		return
+	}
 	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %v=价格%v * 数量%v * 天%v", 消费, 价格, a.Num, a.Available_time))
 
 }
@@ -173,7 +182,7 @@ func user_son_加时长(ctx *gin.Context) {
 	}
 	// 价格表 := user_son_取价格(ctx)
 	// 价格, _ := 价格表[a.Software]
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("加时消费 价格x * 数量%v * 天%v", len(a.Cards), a.Add_time))
+	user_son_日志(账号.ID子账号, fmt.Sprintf("加时消费 价格x * 数量%v * 天%v", len(a.Cards), a.Add_time))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -190,7 +199,7 @@ func user_son_删除卡密(ctx *gin.Context) {
 	}
 	账号 := user_son_取账号信息(ctx)
 	delete_card(ctx, 账号.ID子账号, 账号.O父Name, a.Cards)
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("删除卡密;数量%v;%v", len(a.Cards), a.Cards))
+	user_son_日志(账号.ID子账号, fmt.Sprintf("删除卡密;数量%v;%v", len(a.Cards), a.Cards))
 }
 
 func user_son_修改卡密(ctx *gin.Context) {
@@ -213,7 +222,7 @@ func user_son_修改卡密(ctx *gin.Context) {
 		return
 	}
 	修改卡密(ctx, 账号.ID子账号, 账号.O父Name, a.Card, a)
-	日志(fmt.Sprintf("log/子账号%v", 账号.ID子账号), fmt.Sprintf("修改卡密;%v", a.Card))
+	user_son_日志(账号.ID子账号, fmt.Sprintf("修改卡密;%v", a.Card))
 }
 func user_son_查询软件列表(ctx *gin.Context) {
 	var a struct {
@@ -232,10 +241,6 @@ func user_son_查询软件列表(ctx *gin.Context) {
 }
 func user_son_充值卡_生成(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
-	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
-		return
-	}
-
 	价格表 := user_son_取价格(ctx)
 	a := struct {
 		Name     string
@@ -247,6 +252,13 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	取josn参数表(ctx, &a)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
+	if 账号.O余额 < 消费 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
+		return
+	}
+	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
+		return
+	}
 	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v *次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
@@ -257,6 +269,36 @@ func user_son_充值卡_修改(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
 	充值卡_修改(ctx, 账号.ID子账号, 账号.O父Name)
 }
+func user_son_查询操作日志(ctx *gin.Context) {
+	var a struct {
+		Name string
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	fmt.Println(err)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		return
+	}
+	name := a.Name
+	if name == "" {
+		ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "用户名不存在"})
+		return
+	}
+	账号 := user_son_取账号信息(ctx)
+	// 文件名1 :=
+	文件1, err := os.ReadFile(fmt.Sprintf("log/子账号%v_%v", 账号.ID子账号, time.Now().Format("200601")))
+	内容1 := "没有其他内容"
+	if err == nil {
+		内容1 = string(文件1)
+	}
+	文件2, err := os.ReadFile(fmt.Sprintf("log/子账号%v_%v", 账号.ID子账号, time.Now().AddDate(0, -1, 0).Format("200601")))
+	内容2 := "没有其他内容"
+	if err == nil {
+		内容2 = string(文件2)
+	}
+	ctx.String(http.StatusOK, 内容1+"\n"+内容2)
+}
+
 func 设置子账号(ctx *gin.Context) {
 	// var a struct {
 	// 	Name string
@@ -282,17 +324,13 @@ func 设置子账号(ctx *gin.Context) {
 	if 取josn参数表(ctx, &a) != nil {
 		return
 	}
-	fmt.Println(a)
-	fmt.Println(a.Data)
-	// data := user_son{}
-	fmt.Println(a.Data.ID子账号)
-	fmt.Println(a.Name)
-
-	// bbb := map[string]interface{}{}
-	// db_user_son.Where("ID子账号=?", a.Data.ID子账号).Where("父Name = ?", a.Name).Find(&bbb)
-	// fmt.Println(bbb)
-
+	var b user_son
+	db_user_son.Where("ID子账号 = ?", a.Data.ID子账号).Where("父Name = ?", a.Name).Select("password", "余额", "价格").First(&b)
 	db_user_son.Where("ID子账号 = ?", a.Data.ID子账号).Where("父Name = ?", a.Name).Select("password", "余额", "价格").Updates(a.Data)
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
+	if b.O余额 != a.Data.O余额 {
+		user_son_日志(a.Data.ID子账号, fmt.Sprintf("修改余额 修改前:%v;修改后:%v", b.O余额, a.Data.O余额))
+	}
 }
 
 func 查询子账号(ctx *gin.Context) {
