@@ -25,8 +25,10 @@ func user_son_login(ctx *gin.Context) {
 	var a user_son
 	ctx.ShouldBindBodyWith(&a, binding.JSON)
 	b := db_user_son.Where("name=?", a.Name).Where("password=?", a.Password).First(&a).RowsAffected
+	父 := user{}
+	db_user.Where("name=?", a.O父Name).First(&父)
 	if b > 0 {
-		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "登录成功", "id": a.ID子账号})
+		ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "登录成功", "id": a.ID子账号, "id2": 父.ID, "余额": a.O余额, "价格": a.O价格})
 	} else {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "用户名或者密码错误"})
 	}
@@ -259,7 +261,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v *次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v * 次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
@@ -318,6 +320,7 @@ func 设置子账号(ctx *gin.Context) {
 			O余额      int    `json:"余额" gorm:"column:余额;default:0"`
 			O价格      string `json:"价格" gorm:"column:价格"`
 			// O父Name   string `json:"父Name" gorm:"column:父Name;default:0"`
+			O原始余额 int `json:"原始余额"`
 		}
 		// ID子账号 int
 	}
@@ -326,6 +329,10 @@ func 设置子账号(ctx *gin.Context) {
 	}
 	var b user_son
 	db_user_son.Where("ID子账号 = ?", a.Data.ID子账号).Where("父Name = ?", a.Name).Select("password", "余额", "价格").First(&b)
+	if b.O余额 != a.Data.O余额 && b.O余额 != a.Data.O原始余额 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "授权账户余额有变动,请刷新后再修改余额"})
+		return
+	}
 	db_user_son.Where("ID子账号 = ?", a.Data.ID子账号).Where("父Name = ?", a.Name).Select("password", "余额", "价格").Updates(a.Data)
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	if b.O余额 != a.Data.O余额 {

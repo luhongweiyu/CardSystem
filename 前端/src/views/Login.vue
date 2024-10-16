@@ -42,7 +42,7 @@ import { tr } from "element-plus/es/locale";
 import { RouterLink, RouterView, useRouter } from "vue-router";
 const router = useRouter()
 const stores = useCounterStore();
-const { 账号, 密码, 登录状态, 用户id, api次数, 是子账号 } = storeToRefs(stores);
+const { 账号, 密码, 登录状态, 用户id, api次数, 是子账号, 账号信息 } = storeToRefs(stores);
 
 const loading = ref(false);
 const 注册界面 = ref(false)
@@ -81,6 +81,7 @@ const 登录 = function (是否代理) {
     .then(function (response) {
       console.log(response.data);
       if (response.data.state) {
+        账号信息.value = response.data
         if (是子账号.value) {
           router.replace('/index')
         }

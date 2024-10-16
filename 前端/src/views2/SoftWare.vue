@@ -3,8 +3,6 @@
     <h1>SoftWare软件</h1>
   </div>
   <el-button type="success" @click="软件名称输入显示 = true">添加软件</el-button>
-  用户卡密查询链接:
-  <el-link type="success" :href="用户卡密查询链接" target="_blank"> {{ 用户卡密查询链接 }}</el-link>
   <el-table :data="软件列表" style="width: 100%">
     <el-table-column prop="ID" label="软件ID" width="70" />
     <el-table-column prop="Software" label="软件名称" width="200">
@@ -72,7 +70,6 @@ const 新增软件名 = ref("");
 const 加载中 = ref(false)
 const 软件名称输入显示 = ref(false);
 const 充值卡输入显示 = ref(false);
-const 用户卡密查询链接 = ref("http://" + window.location.hostname + ((window.location.port && (":" + window.location.port)) || "") + "/visitor/index.html?center_id=" + useCounterStore().用户id)
 const post = useCounterStore().post;
 const 充值卡_新卡 = reactive({
   软件名: 0,

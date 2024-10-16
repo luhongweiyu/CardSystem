@@ -15,6 +15,7 @@ export const useCounterStore = defineStore("counter", () => {
   const 登录状态 = ref(false);
   const api次数 = ref(0);
   const 是子账号 = ref(false);
+  const 账号信息 = ref({});
   const post = function (链接, 参数) {
     参数.name = 账号.value;
     参数.password = 密码.value;
@@ -28,5 +29,5 @@ export const useCounterStore = defineStore("counter", () => {
 
 
 
-  return { post, 登录状态, 账号, 密码, 用户id, 导航开关, count, doubleCount, increment, api次数, 是子账号 };
+  return { post, 登录状态, 账号, 密码, 用户id, 导航开关, count, doubleCount, increment, api次数, 是子账号,账号信息 };
 });
