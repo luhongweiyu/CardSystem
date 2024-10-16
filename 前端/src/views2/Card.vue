@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div  v-loading="加载中">
     <div>
       <el-row>
         <el-col :span="12"> 卡密列表 </el-col>
@@ -9,7 +9,7 @@
       </el-row>
     </div>
     <div>
-      <el-select v-model="soft" placeholder="所属软件" style="width: 100px">
+      <el-select v-model="soft" placeholder="所属软件" style="width: 100px" @change="查询所有卡密()">
         <!-- <el-option label="Zone one" value="shanghai" /> -->
         <el-option v-for="(item, index) in 软件列表" :label="item.Software" :value="item.ID" />
       </el-select>
@@ -286,6 +286,7 @@ const 返回提示 = function (msg) {
   });
 }
 const 查询所有卡密 = function () {
+  加载中.value=true
   post("/user_query_card", {
     software: soft.value,
     card_state: state.value,
@@ -298,6 +299,7 @@ const 查询所有卡密 = function () {
     console.log(res.data);
     所有卡密.value = res.data.data;
     所有卡密数量.value = res.data.num
+    加载中.value=false
   });
 };
 const 查询软件列表 = function () {
@@ -462,8 +464,12 @@ const 确定续费卡密 = function () {
     console.log("没有卡")
     return
   }
+  if (是子账号 && soft.value==0) {
+    ElMessage.error('请选择续费软件类型')
+    return
+  }
   加载中.value = true
-  post("/add_card_time", { add_time: 待续费卡密.value.续费时间, cards: res }).then(
+  post("/add_card_time", { add_time: 待续费卡密.value.续费时间, cards: res ,software:soft.value}).then(
     function (res) {
       加载中.value = false
       if (!res.data.state) {

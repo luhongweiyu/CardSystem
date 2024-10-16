@@ -153,7 +153,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	价格表 := user_son_取价格(ctx)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Available_time)
-	if 账号.O余额 < 消费 {
+	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
 	}
@@ -170,6 +170,7 @@ func user_son_加时长(ctx *gin.Context) {
 		Password string
 		Cards    []string
 		Add_time float64
+		Software int
 	}
 	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
 	if err != nil {
@@ -179,12 +180,15 @@ func user_son_加时长(ctx *gin.Context) {
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	账号 := user_son_取账号信息(ctx)
-	if !add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time) {
+	价格表 := user_son_取价格(ctx)
+	价格, _ := 价格表[a.Software]
+	消费 := 价格 * len(a.Cards) * int(a.Add_time)
+	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
 	}
-	// 价格表 := user_son_取价格(ctx)
-	// 价格, _ := 价格表[a.Software]
-	user_son_日志(账号.ID子账号, fmt.Sprintf("加时消费 价格x * 数量%v * 天%v", len(a.Cards), a.Add_time))
+	成功数量, 失败数量 := add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time, a.Software)
+	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %v=价格%v * 数量%v * 天%v  (成功:%v,失败:%v)", 消费, 价格, 成功数量, a.Add_time, 成功数量, 失败数量))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -254,7 +258,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	取josn参数表(ctx, &a)
 	价格, _ := 价格表[a.Software]
 	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
-	if 账号.O余额 < 消费 {
+	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
 	}

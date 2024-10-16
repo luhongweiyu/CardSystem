@@ -672,19 +672,22 @@ func 管理员_add_card_time(ctx *gin.Context) {
 		return
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
-	add_card_time(ctx, 0, a.Name, a.Cards, a.Add_time)
+	add_card_time(ctx, 0, a.Name, a.Cards, a.Add_time, 0)
 }
 
-func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []string, Add_time float64) (结果 bool) {
-	结果 = false
+func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []string, Add_time float64, Software int) (成功数量 int, 失败数量 int) {
+	成功数量 = 0
+	失败数量 = 0
 	a := struct {
 		Name     string
 		Cards    []string
 		Add_time float64
+		Software int
 	}{
 		Name:     Name,
 		Cards:    Cards,
 		Add_time: Add_time,
+		Software: Software,
 	}
 	// err := ctx.ShouldBindBodyWith(&a, binding.JSON)
 	// if err != nil {
@@ -699,7 +702,7 @@ func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []strin
 		list := map[string]interface{}{}
 		b := db.Table("card_" + a.Name)
 		if ID子账号 != 0 {
-			b.Where("ID子账号=?", ID子账号)
+			b.Where("ID子账号=?", ID子账号).Where("software=?", a.Software)
 		}
 		修改行 := b.Where("card=?", card).Find(&list).RowsAffected
 		if 修改行 > 0 {
@@ -722,7 +725,8 @@ func add_card_time(ctx *gin.Context, ID子账号 int, Name string, Cards []strin
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "msg": "成功:\n" + strings.Join(成功的卡密, ",\n") + "\n失败:\n" + strings.Join(失败的卡密, ",\n")})
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;加时;数量:%v个;时长:%v天;成功:%v", ID子账号, len(成功的卡密), a.Add_time, strings.Join(成功的卡密, ",")+";失败:"+strings.Join(失败的卡密, ",")))
-	结果 = true
+	成功数量 = len(成功的卡密)
+	失败数量 = len(失败的卡密)
 	return
 }
 func 管理员_delete_card(ctx *gin.Context) {
