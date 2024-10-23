@@ -157,6 +157,7 @@ const 查询子账号 = function () {
         res.data.data[i].价格 = res.data.data[i].价格 || "{}"
         res.data.data[i].价格 = JSON.parse(res.data.data[i].价格)
         // res.data.data[i].价格 = ref( JSON.parse(res.data.data[i].价格))
+        res.data.data[i].原始余额 = res.data.data[i].余额
         for (let i2 = 0; i2 < 软件列表.value.length; i2++) {
           res.data.data[i].价格[软件列表.value[i2].ID] = res.data.data[i].价格[软件列表.value[i2].ID] || 0
           // res.data.data[i].价格.value[软件列表.value[i2].ID] = res.data.data[i].价格.value[软件列表.value[i2].ID] || 0
@@ -184,6 +185,7 @@ const 保存授权设置 = function (账号) {
     name: 账号.name,
     password: 账号.password,
     余额: 账号.余额,
+    原始余额: 账号.原始余额,
   }
   // console.log(data)
   post("/设置子账号", { data: data }).then(function (res) {
@@ -191,6 +193,7 @@ const 保存授权设置 = function (账号) {
     if (res.data.state) {
       ElMessage.success("刷新授权账号列表成功");
       console.log(res.data.data);
+      查询子账号()
 
     } else {
       ElMessage.error(res.data.msg);

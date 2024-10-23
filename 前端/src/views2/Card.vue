@@ -247,7 +247,7 @@ const 新卡 = ref({
   notes: "",
   latest_activation_time: -1,
   cards: "",
-  指定类型: 1,
+  指定类型: 2,
 });
 const 单个卡密详情 = ref("")
 const 所有卡密 = ref([]);
