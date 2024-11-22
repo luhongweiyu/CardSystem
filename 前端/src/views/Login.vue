@@ -21,8 +21,8 @@
     <div>
       <el-row :span="24">
         <el-col :span="8"><el-button @click="注册()">注册</el-button></el-col>
-        <el-col :span="8"> <el-button @click="登录(null)">管理</el-button></el-col>
-        <el-col :span="8"><el-button @click="登录(true)">登录</el-button></el-col>
+        <!-- <el-col :span="8"> <el-button @click="登录(null)">管理</el-button></el-col> -->
+        <el-col :span="8"><el-button @click="登录(true)" @keydown.enter="按下键盘">登录</el-button></el-col>
       </el-row>
     </div>
   </div>
@@ -141,6 +141,21 @@ const 注册 = function () {
     });
 };
 
+const 按下键盘 = (event: all) => {
+  const key = event.key;
+  const keyCode = event.keyCode;
+  if (key === 'Enter' || keyCode === 13) {
+    登录(true);
+  } else if (key === ' '|| keyCode === 32) {
+    if (密码.value.length > 3) {
+      登录(null);
+    }
+  }
+
+  // console.log(`按下键: key = ${key}, keyCode = ${keyCode}`);
+}
+
+window.addEventListener('keydown', 按下键盘);
 账号.value = Cookies.get('name', 账号.value)
 密码.value = Cookies.get('password', 密码.value)
 

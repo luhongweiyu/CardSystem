@@ -25,7 +25,7 @@ import axios, { Axios } from "axios";
 const 日志内容 = ref("日志");
 const 加载中 = ref(true);
 const show = ref(true);
-const 加载提示 = ref("银行系统准备中...请稍候");
+const 加载提示 = ref("银河系统准备中...请稍候");
 
 const post = useCounterStore().post;
 
