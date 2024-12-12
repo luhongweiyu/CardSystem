@@ -8,7 +8,7 @@
         <el-option v-for="(item, index) in 软件列表" :label="item.Software" :value="item.ID" />
       </el-select>
 
-      <el-input v-model="卡密" placeholder="卡密" style="width: auto" />
+      <el-input v-model="卡密" placeholder="卡密" style="width: auto"  @keypress.enter="查询所有卡密()"/>
 
       <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
 

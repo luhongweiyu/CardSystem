@@ -108,7 +108,7 @@ func user_son_日志(ID子账号 interface{}, 内容 string) {
 func user_son_消费(账号 user_son, 金额 int, log string) {
 	账号.O余额 = 账号.O余额 - 金额
 	db_user_son.Select("余额").Updates(账号)
-	user_son_日志(账号.ID子账号, fmt.Sprintf("余额:%v;%v", 账号.O余额, log))
+	user_son_日志(账号.ID子账号, fmt.Sprintf("余额:%-8v;%v", 账号.O余额, log))
 }
 
 func user_son_查询所有卡密(ctx *gin.Context) {
@@ -160,7 +160,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %v=价格%v * 数量%v * 天%v", 消费, 价格, a.Num, a.Available_time))
+	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-3v * 数量%-3v * 天%-3v;%-2v;", 消费, 价格, a.Num, a.Available_time, a.Software))
 
 }
 
@@ -188,7 +188,7 @@ func user_son_加时长(ctx *gin.Context) {
 		return
 	}
 	成功数量, 失败数量 := add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time, a.Software)
-	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %v=价格%v * 数量%v * 天%v  (成功:%v,失败:%v)", 消费, 价格, 成功数量, a.Add_time, 成功数量, 失败数量))
+	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-3v * 数量%-3v * 天%-3v  (成功:%v,失败:%v);%-2v;", 消费, 价格, 成功数量, a.Add_time, 成功数量, 失败数量, a.Software))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -230,6 +230,26 @@ func user_son_修改卡密(ctx *gin.Context) {
 	修改卡密(ctx, 账号.ID子账号, 账号.O父Name, a.Card, a)
 	user_son_日志(账号.ID子账号, fmt.Sprintf("修改卡密;%v", a.Card))
 }
+func user_son_冻卡s(ctx *gin.Context) {
+	var b struct {
+		Name string
+	}
+	ctx.ShouldBindBodyWith(&b, binding.JSON)
+	账号 := user_son_取账号信息(ctx)
+	var a struct {
+		// Software   int
+		Cards      []string
+		Card_state int
+	}
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	修改卡密_批量(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, struct{ Card_state int }{Card_state: a.Card_state})
+	user_son_日志(账号.ID子账号, fmt.Sprintf("批量修改;数量%v;%v;%v", len(a.Cards), a.Card_state, a.Cards))
+}
 func user_son_查询软件列表(ctx *gin.Context) {
 	var a struct {
 		Name     string
@@ -265,7 +285,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 消费%v=价格%v * 数量%v * 天%v * 次数%v", 消费, 价格, a.Num, a.Add_time, a.O充值次数))
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-3v * 数量%-3v * 天%-3v * 次数%-3v;%-2v;", 消费, 价格, a.Num, a.Add_time, a.O充值次数, a.Software))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)

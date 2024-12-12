@@ -805,6 +805,34 @@ func 修改卡密(ctx *gin.Context, ID子账号 int, Name string, Card string, d
 	卡密_删除缓存(Name, Card)
 	日志("log/"+Name+time.Now().Format("200601"), fmt.Sprintf("修改;%v;", Card))
 }
+func 管理员_冻卡s(ctx *gin.Context) {
+	var a struct {
+		Name       string
+		Password   string
+		Cards      []string
+		Card_state int
+	}
+	// software 需要判断下name的
+	err := ctx.ShouldBindBodyWith(&a, binding.JSON)
+	if err != nil {
+		fmt.Println(err)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误!!"})
+		return
+	}
+	修改卡密_批量(ctx, 0, a.Name, a.Cards, struct{ Card_state int }{Card_state: a.Card_state})
+}
+func 修改卡密_批量(ctx *gin.Context, ID子账号 int, Name string, Cards []string, data interface{}) {
+	for _, Card := range Cards {
+		b := db.Table("card_"+Name).Where("card = ?", Card)
+		if ID子账号 != 0 {
+			b.Where("ID子账号=?", ID子账号)
+		}
+		b.Updates(data)
+		卡密_删除缓存(Name, Card)
+	}
+	ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
+	日志("log/"+Name+time.Now().Format("200601"), fmt.Sprintf("批量修改;数量%v个;%v;%v", len(Cards), data, Cards))
+}
 func modify_card_configContent(ctx *gin.Context) {
 	// var b struct {
 	// 	Type string

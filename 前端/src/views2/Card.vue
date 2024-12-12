@@ -25,14 +25,15 @@
         <el-option v-for="(item, index) in 类型列表" :label="item[1]" :value="item[0]" />
       </el-select>
 
-      <el-input v-model="卡密" placeholder="卡密" style="width: auto" />
-      <el-input v-model="备注" placeholder="备注" style="width: auto" />
+      <el-input v-model="卡密" placeholder="卡密" style="width: auto" @keypress.enter="查询所有卡密()"/>
+      <el-input v-model="备注" placeholder="备注" style="width: auto" @keypress.enter="查询所有卡密()"/>
       <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
 
       <el-button style="border: 0px; margin: 0px" type="primary">导出</el-button>
       <el-button style="border: 0px; margin: 0px" type="success" @click="续费按钮">续费</el-button>
       <el-button style="border: 0px; margin: 0px" type="danger" @click="删除选择的卡密">删除</el-button>
-      <el-button style="border: 0px; margin: 0px" type="danger" disabled>删除</el-button>
+      <el-button style="border: 0px; margin: 0px" type="info" @click="冻结选择的卡密('冻结')">冻结</el-button>
+      <el-button style="border: 0px; margin: 0px" type="success" @click="冻结选择的卡密('解冻')">解冻</el-button>
     </div>
 
     <el-table :data="所有卡密" :cell-style="cellState" @selection-change="记录打钩的" border>
@@ -480,11 +481,29 @@ const 确定续费卡密 = function () {
       查询所有卡密();
 
     }
-
   )
-
-
 }
+const 冻结卡密 = function (cards,冻结或者解冻) {
+  // [row.card] 
+  // 已勾的卡密.value
+  let 状态 = 2
+  if (冻结或者解冻=='冻结'){
+    状态 = 4
+  }else if (冻结或者解冻=='解冻'){
+    状态 = 2
+  }
+  ElMessageBox.confirm('确认'+冻结或者解冻 + cards.length + "个吗?").then(() => {
+    post("/冻卡s", { cards: cards,Card_state:状态 }).then(function (res) {
+      返回提示(res.data.msg)
+      查询所有卡密();
+    });
+  })
+}
+
+const 冻结选择的卡密 = function (冻结或者解冻) {
+  冻结卡密(已勾的卡密.value,冻结或者解冻)
+};
+
 const shortcuts = [
   {
     text: '明天',

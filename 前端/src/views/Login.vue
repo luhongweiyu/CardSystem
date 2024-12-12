@@ -3,12 +3,12 @@
     <div>
       <img src="/favicon.png" style=" width: 200px;">
       <div>
-        <el-input v-model="账号" placeholder="请输入账号">
+        <el-input v-model="账号" placeholder="请输入账号" @keydown.enter="登录(true)" @keydown.esc="登录(null)">
           <template #prepend>账号</template>
         </el-input>
       </div>
       <div class="container">
-        <el-input v-model="密码" type="password" placeholder="请输入密码" show-password>
+        <el-input v-model="密码" type="password" placeholder="请输入密码" show-password @keydown.enter="登录(true)" @keydown.esc="登录(null)">
           <template #prepend>密码</template>
         </el-input>
       </div>
@@ -22,7 +22,7 @@
       <el-row :span="24">
         <el-col :span="8"><el-button @click="注册()">注册</el-button></el-col>
         <!-- <el-col :span="8"> <el-button @click="登录(null)">管理</el-button></el-col> -->
-        <el-col :span="8"><el-button @click="登录(true)" @keydown.enter="按下键盘">登录</el-button></el-col>
+        <el-col :span="8"><el-button @click="登录(true)">登录</el-button></el-col>
       </el-row>
     </div>
   </div>
@@ -155,7 +155,7 @@ const 按下键盘 = (event: all) => {
   // console.log(`按下键: key = ${key}, keyCode = ${keyCode}`);
 }
 
-window.addEventListener('keydown', 按下键盘);
+// window.addEventListener('keydown', 按下键盘);
 账号.value = Cookies.get('name', 账号.value)
 密码.value = Cookies.get('password', 密码.value)
 

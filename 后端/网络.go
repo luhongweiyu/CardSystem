@@ -150,6 +150,7 @@ func 启动网络() {
 		user.POST("/add_new_card", 管理员_add_new_card)
 		user.POST("/delete_card", 管理员_delete_card)
 		user.POST("/modify_card", modify_card)
+		user.POST("/冻卡s", 管理员_冻卡s)
 		user.POST("/add_card_time", 管理员_add_card_time)
 		user.POST("/充值卡_生成", 充值卡_生成_管理员)
 		user.POST("/充值卡_查询", 充值卡_查询_管理员)
@@ -169,6 +170,7 @@ func 启动网络() {
 		son.POST("/delete_card", user_son_删除卡密)
 		son.POST("/add_card_time", user_son_加时长)
 		son.POST("/modify_card", user_son_修改卡密)
+		son.POST("/冻卡s", user_son_冻卡s)
 		son.POST("/user_query_soft_list", user_son_查询软件列表)
 
 		son.POST("/充值卡_生成", user_son_充值卡_生成)

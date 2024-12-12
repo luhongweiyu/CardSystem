@@ -3,9 +3,9 @@
     <img src="/favicon.png" style="position: fixed; width: 200px;right: 0px;bottom: 0px">
     <div>
       <div v-loading="加载中">
-        <el-input v-model="卡密" placeholder="卡密(后3位可省略)" style="width: auto" />
+        <el-input v-model="卡密" placeholder="卡密(后3位可省略)" style="width: auto" @keypress.enter="查询所有卡密()"/>
         <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
-        <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" />
+        <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" @keypress.enter="查询充值卡()" />
         <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询充值卡()" />
         <el-button style="border: 0px; margin: 0px" type="primary" @click="续费按钮">续费 </el-button>
       </div>
