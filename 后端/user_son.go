@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -102,6 +103,33 @@ func user_son_取价格(ctx *gin.Context) map[int]int {
 	json.Unmarshal([]byte(子账号信息.O价格), &价格)
 	return 价格
 }
+func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 int) int {
+	c, _ := ctx.Get("子账号信息")
+	子账号信息, _ := c.(user_son)
+	价格表 := make(map[int]interface{})
+	json.Unmarshal([]byte(子账号信息.O价格), &价格表)
+	价格表2 := 价格表[软件]
+	fmt.Println(价格表2)
+	switch v := 价格表2.(type) {
+	case int:
+		// 如果价格是直接的数值
+		return 价格表2.(int)
+	case map[string]interface{}:
+		最小价格 := 0
+		for 时长段, 价格 := range v {
+			时长段2, err := strconv.Atoi(时长段)
+			if err == nil {
+				if 时长段2 <= 时长 {
+					if (最小价格 == 0) || (int(价格.(float64)) < 最小价格) {
+						最小价格 = int(价格.(float64))
+					}
+				}
+			}
+		}
+		return 最小价格
+	}
+	return 0
+}
 func user_son_日志(ID子账号 interface{}, 内容 string) {
 	日志(fmt.Sprintf("log/子账号%v_%v", ID子账号, time.Now().Format("200601")), 内容)
 }
@@ -150,8 +178,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 		return
 	}
 	账号 := user_son_取账号信息(ctx)
-	价格表 := user_son_取价格(ctx)
-	价格, _ := 价格表[a.Software]
+	价格 := user_son_取价格2(ctx, a.Software, int(a.Available_time))
 	消费 := 价格 * a.Num * int(a.Available_time)
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
@@ -180,8 +207,7 @@ func user_son_加时长(ctx *gin.Context) {
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	账号 := user_son_取账号信息(ctx)
-	价格表 := user_son_取价格(ctx)
-	价格, _ := 价格表[a.Software]
+	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
 	消费 := 价格 * len(a.Cards) * int(a.Add_time)
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
@@ -267,7 +293,6 @@ func user_son_查询软件列表(ctx *gin.Context) {
 }
 func user_son_充值卡_生成(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
-	价格表 := user_son_取价格(ctx)
 	a := struct {
 		Name     string
 		Software int
@@ -276,7 +301,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 		O充值次数    int `json:"充值次数"`
 	}{}
 	取josn参数表(ctx, &a)
-	价格, _ := 价格表[a.Software]
+	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
 	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})

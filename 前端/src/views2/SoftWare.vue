@@ -44,7 +44,7 @@
       <!-- <span v-for="(软件, k2) in [{ID:1,Software:'软件名'},{ID:2,Software:'软件名2'}]" :key="k2"> -->
       <span v-show="user_1.价格[(soft.ID) + ''] || user_1.价格[(soft.ID) + ''] == 0">
         {{ soft.Software }}
-        <el-input-number v-model="user_1['价格'][soft.ID]" :min="-999" :max="999" controls-position="right"/>
+        <el-input v-model="user_1['价格'][soft.ID]"  style="width: 200px" />
       </span>
     </template>
   </div>
@@ -64,7 +64,7 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCounterStore } from "../stores/counter";
 import { reactive, ref } from "vue";
-import { tr } from "element-plus/es/locale";
+import { tr } from "element-plus/es/locale"; 
 const 软件列表 = ref([]);
 const 新增软件名 = ref("");
 const 加载中 = ref(false)
@@ -154,13 +154,18 @@ const 查询子账号 = function () {
       // console.log(typeof(res.data.data[0]))
 
       for (let i = 0; i < res.data.data.length; i++) {
-        res.data.data[i].价格 = res.data.data[i].价格 || "{}"
-        res.data.data[i].价格 = JSON.parse(res.data.data[i].价格)
+        let 用户 = res.data.data[i]
+        用户.价格 = 用户.价格 || "{}"
+        用户.价格 = JSON.parse(用户.价格)
         // res.data.data[i].价格 = ref( JSON.parse(res.data.data[i].价格))
-        res.data.data[i].原始余额 = res.data.data[i].余额
+        用户.原始余额 = 用户.余额
         for (let i2 = 0; i2 < 软件列表.value.length; i2++) {
-          res.data.data[i].价格[软件列表.value[i2].ID] = res.data.data[i].价格[软件列表.value[i2].ID] || 0
-          // res.data.data[i].价格.value[软件列表.value[i2].ID] = res.data.data[i].价格.value[软件列表.value[i2].ID] || 0
+          let 软件ID = 软件列表.value[i2].ID
+          用户.价格[软件ID] = 用户.价格[软件ID] || {}
+          if (typeof 用户.价格[软件ID]  === 'number'){
+            用户.价格[软件ID] = { 0: 用户.价格[软件ID] }
+          }
+          用户.价格[软件ID] = JSON.stringify(用户.价格[软件ID])
         }
       }
       console.log(res.data.data)
@@ -177,10 +182,28 @@ const 查询子账号 = function () {
   });
 }
 const 保存授权设置 = function (账号) {
-  console.log(账号.价格)
-  JSON.stringify(账号.价格)
+  let 价格表 = {}
+  for( let key in 账号.价格){
+    价格表[key] = {}
+    try {
+      let b = JSON.parse(账号.价格[key]);
+      价格表[key] = b
+      for (let key in b){
+        // console.log(typeof key)
+        // console.log(typeof b[key])
+        // || (typeof [key] !== 'number')
+        if( (typeof b[key] !== 'number')  ){
+          ElMessage.error("错误,必须为整数");
+          return false;
+        }
+      }
+    } catch (e) {
+      ElMessage.error("错误,请检查扣点设置是否正确");
+      return false;
+    }
+  }
   let data = {
-    价格: JSON.stringify(账号.价格),
+    价格: JSON.stringify(价格表),
     ID子账号: 账号.ID子账号,
     name: 账号.name,
     password: 账号.password,

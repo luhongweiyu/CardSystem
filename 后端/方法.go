@@ -282,6 +282,7 @@ func card_login(ctx *gin.Context) {
 			"endtime_timestamp": list.End_time.Unix(),
 			"less_time":         fmt.Sprintf("%.2f天", float32(list.End_time.Unix()-time.Now().Unix())/(60*60*24)),
 			"endtime":           fmt.Sprint(list.End_time.Format("2006年01月02日03:04:05")),
+			"id2":               list.ID子账号,
 		})
 
 	} else {
