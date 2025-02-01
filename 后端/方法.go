@@ -564,7 +564,7 @@ func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, 
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "软件id不存在"})
 		return
 	}
-	if a.Available_time <= 0 {
+	if a.Available_time < 0 {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": "充值天数不正确"})
 		return
 	}
@@ -628,10 +628,8 @@ func add_new_card(ctx *gin.Context, ID子账号 int, Name string, Software int, 
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "code": 1, "data": strings.Join(成功的卡密, "\n"), "msg": "成功生成" + strconv.Itoa(len(成功的卡密)) + "个:\n" + strings.Join(成功的卡密, "\n") + "\n失败:\n" + strings.Join(失败的卡密, ",")})
 	日志("log/"+a.Name+time.Now().Format("200601"), fmt.Sprintf("账号:%v;新增;软件:%v;数量:%v个;时长:%v天;成功:%v", ID子账号, a.Software, len(成功的卡密), a.Available_time, strings.Join(成功的卡密, ",")))
-
-	if a.Latest_activation_time == 0 {
+	if a.Latest_activation_time == 0 || a.Available_time <= 0 {
 		for _, card := range cards_tab {
-
 			激活卡密(a.Name, card)
 		}
 	}

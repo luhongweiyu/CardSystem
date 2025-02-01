@@ -115,12 +115,12 @@ func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 int) int {
 		// 如果价格是直接的数值
 		return 价格表2.(int)
 	case map[string]interface{}:
-		最小价格 := 0
+		最小价格 := -1
 		for 时长段, 价格 := range v {
 			时长段2, err := strconv.Atoi(时长段)
 			if err == nil {
 				if 时长段2 <= 时长 {
-					if (最小价格 == 0) || (int(价格.(float64)) < 最小价格) {
+					if (最小价格 == -1) || (int(价格.(float64)) < 最小价格) {
 						最小价格 = int(价格.(float64))
 					}
 				}
@@ -128,7 +128,7 @@ func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 int) int {
 		}
 		return 最小价格
 	}
-	return 0
+	return -1
 }
 func user_son_日志(ID子账号 interface{}, 内容 string) {
 	日志(fmt.Sprintf("log/子账号%v_%v", ID子账号, time.Now().Format("200601")), 内容)
@@ -179,6 +179,10 @@ func user_son_添加卡密(ctx *gin.Context) {
 	}
 	账号 := user_son_取账号信息(ctx)
 	价格 := user_son_取价格2(ctx, a.Software, int(a.Available_time))
+	if 价格 < 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
+		return
+	}
 	消费 := 价格 * a.Num * int(a.Available_time)
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
@@ -208,6 +212,10 @@ func user_son_加时长(ctx *gin.Context) {
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	账号 := user_son_取账号信息(ctx)
 	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
+	if 价格 < 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
+		return
+	}
 	消费 := 价格 * len(a.Cards) * int(a.Add_time)
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
@@ -302,6 +310,10 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	}{}
 	取josn参数表(ctx, &a)
 	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
+	if 价格 < 0 {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
+		return
+	}
 	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})

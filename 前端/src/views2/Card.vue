@@ -242,7 +242,7 @@ const 卡密 = ref("");
 const 备注 = ref("");
 const 新卡 = ref({
   software: null,
-  available_time: 1,
+  available_time: 0,
   num: 1,
   config_content: "",
   notes: "",
