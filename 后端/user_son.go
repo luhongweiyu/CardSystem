@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -103,7 +104,7 @@ func user_son_取价格(ctx *gin.Context) map[int]int {
 	json.Unmarshal([]byte(子账号信息.O价格), &价格)
 	return 价格
 }
-func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 int) int {
+func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 float64) float64 {
 	c, _ := ctx.Get("子账号信息")
 	子账号信息, _ := c.(user_son)
 	价格表 := make(map[int]interface{})
@@ -113,22 +114,25 @@ func user_son_取价格2(ctx *gin.Context, 软件 int, 时长 int) int {
 	switch v := 价格表2.(type) {
 	case int:
 		// 如果价格是直接的数值
-		return 价格表2.(int)
+		return float64(价格表2.(int))
 	case map[string]interface{}:
-		最小价格 := -1
+		最近价格 := float64(-1)
+		最近时间段 := -1
 		for 时长段, 价格 := range v {
 			时长段2, err := strconv.Atoi(时长段)
 			if err == nil {
-				if 时长段2 <= 时长 {
-					if (最小价格 == -1) || (int(价格.(float64)) < 最小价格) {
-						最小价格 = int(价格.(float64))
-					}
+				if float64(时长段2) <= 时长 && 时长段2 >= 最近时间段 {
+					最近时间段 = 时长段2
+					最近价格 = 价格.(float64)
 				}
 			}
 		}
-		return 最小价格
+		if 最近时间段 > 0 {
+			return 最近价格 / float64(最近时间段)
+		}
+		return 最近价格
 	}
-	return -1
+	return float64(-1)
 }
 func user_son_日志(ID子账号 interface{}, 内容 string) {
 	日志(fmt.Sprintf("log/子账号%v_%v", ID子账号, time.Now().Format("200601")), 内容)
@@ -157,6 +161,9 @@ func user_son_查询所有卡密(ctx *gin.Context) {
 	// b := db.Table("card_" + 账号.O父Name)
 	查询所有卡密(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Card_state, a.Available_time, a.Card, a.Notes)
 }
+func 计算_Ceil(数字 float64) int {
+	return int(math.Ceil(数字))
+}
 func user_son_添加卡密(ctx *gin.Context) {
 	var a struct {
 		Name                   string
@@ -178,12 +185,12 @@ func user_son_添加卡密(ctx *gin.Context) {
 		return
 	}
 	账号 := user_son_取账号信息(ctx)
-	价格 := user_son_取价格2(ctx, a.Software, int(a.Available_time))
+	价格 := user_son_取价格2(ctx, a.Software, a.Available_time)
 	if 价格 < 0 {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
 		return
 	}
-	消费 := 价格 * a.Num * int(a.Available_time)
+	消费 := 计算_Ceil(价格 * float64(a.Num) * float64(a.Available_time))
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
@@ -191,8 +198,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-3v * 数量%-3v * 天%-3v;%-2v;", 消费, 价格, a.Num, a.Available_time, a.Software))
-
+	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-5v * 数量%-3v * 天%-3v;%-2v(%-3v);", 消费, fmt.Sprintf("%.2f", 价格), a.Num, a.Available_time, a.Software, 价格*30))
 }
 
 func user_son_加时长(ctx *gin.Context) {
@@ -211,18 +217,18 @@ func user_son_加时长(ctx *gin.Context) {
 	}
 	// cards := regexp.MustCompile(`[\w+d]{7,}`).FindAllString(a.Cards, -1)
 	账号 := user_son_取账号信息(ctx)
-	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
+	价格 := user_son_取价格2(ctx, a.Software, a.Add_time)
 	if 价格 < 0 {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
 		return
 	}
-	消费 := 价格 * len(a.Cards) * int(a.Add_time)
+	消费 := 计算_Ceil(价格 * float64(len(a.Cards)) * float64(a.Add_time))
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
 	}
 	成功数量, 失败数量 := add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time, a.Software)
-	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-3v * 数量%-3v * 天%-3v  (成功:%v,失败:%v);%-2v;", 消费, 价格, 成功数量, a.Add_time, 成功数量, 失败数量, a.Software))
+	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-5v * 数量%-3v * 天%-3v  (成功:%v,失败:%v);%-2v(%-3v);", 消费, fmt.Sprintf("%.2f", 价格), 成功数量, a.Add_time, 成功数量, 失败数量, a.Software, 价格*30))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -309,12 +315,12 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 		O充值次数    int `json:"充值次数"`
 	}{}
 	取josn参数表(ctx, &a)
-	价格 := user_son_取价格2(ctx, a.Software, int(a.Add_time))
+	价格 := user_son_取价格2(ctx, a.Software, a.Add_time)
 	if 价格 < 0 {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "消费扣点异常"})
 		return
 	}
-	消费 := 价格 * a.Num * int(a.Add_time) * a.O充值次数
+	消费 := 计算_Ceil(价格 * float64(a.Num) * a.Add_time * float64(a.O充值次数))
 	if (账号.O余额 < 消费) || (账号.O余额 == 0) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "余额不足"})
 		return
@@ -322,7 +328,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-3v * 数量%-3v * 天%-3v * 次数%-3v;%-2v;", 消费, 价格, a.Num, a.Add_time, a.O充值次数, a.Software))
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-5v * 数量%-3v * 天%-3v * 次数%-3v;%-2v(%-3v);", 消费, fmt.Sprintf("%.2f", 价格), a.Num, a.Add_time, a.O充值次数, a.Software, 价格*30))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)

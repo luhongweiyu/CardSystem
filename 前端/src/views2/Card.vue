@@ -212,7 +212,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { tr } from "element-plus/es/locale";
 import axios, { Axios } from "axios";
 const 是子账号=useCounterStore().是子账号
-
+const 账号信息=useCounterStore().账号信息
 const post = useCounterStore().post;
 const 软件列表 = ref([] as any[]);
 const 状态列表 = reactive([
@@ -304,12 +304,16 @@ const 查询所有卡密 = function () {
   });
 };
 const 查询软件列表 = function () {
+  if (是子账号){
+    软件列表.value = 账号信息.软件列表;
+    return;
+  }
   post("/user_query_soft_list", {}).then(function (res) {
     if (res.data.state) {
+      let list = res.data.data
       ElMessage.success("刷新软件列表获取成功");
-      console.log(res.data.data);
-      res.data.data.push({ ID: 0, Software: "全部软件" });
-      软件列表.value = res.data.data;
+      list.push({ ID: 0, Software: "全部软件" });
+      软件列表.value = list;
     } else {
       ElMessage.error(res.data.msg);
     }
@@ -363,7 +367,6 @@ const cellState = (row, rowIndex) => {
 };
 const 添加卡密 = () => { };
 const 时间转字符串 = function (时间) {
-  console.log(时间)
   if (!时间 || 时间 == null) {
     return "";
   }

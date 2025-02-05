@@ -82,6 +82,9 @@ const 登录 = function (是否代理) {
       console.log(response.data);
       if (response.data.state) {
         账号信息.value = response.data
+        if (账号信息.value.价格){
+          账号信息.value.价格 = JSON.parse(账号信息.value.价格)
+        }
         if (是子账号.value) {
           router.replace('/index')
         }
