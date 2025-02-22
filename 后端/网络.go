@@ -72,6 +72,11 @@ func 管理员验证(ctx *gin.Context) {
 		ctx.Abort()
 	}
 }
+func ip验证(ctx *gin.Context) {
+	if ctx.ClientIP() != viper.GetString("api.管理员ip") {
+		ctx.Abort()
+	}
+}
 func 子账号验证(ctx *gin.Context) {
 	if !user_son_验证用户(ctx) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "密码错误"})
@@ -159,6 +164,10 @@ func 启动网络() {
 		// user.POST("/新增子账号", 新增子账号)
 		user.POST("/设置子账号", 设置子账号)
 		user.POST("/查询子账号", 查询子账号)
+	}
+	{
+		api := router.Group("/api", ip验证)
+		api.POST("/设置子账号_充值", 设置子账号_充值)
 	}
 
 	son := router.Group("/admin_son", 子账号验证)

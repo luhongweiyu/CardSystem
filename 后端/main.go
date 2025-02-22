@@ -47,7 +47,6 @@ func 初始化() {
 	// fmt.Println(config.GetString("123"))
 }
 func main() {
-
 	初始化()
 	fmt.Println("开始运行:")
 	连接数据库()

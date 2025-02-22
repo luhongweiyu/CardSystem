@@ -10,3 +10,5 @@
   host: localhost
   管理页: http://localhost:5173
 dev: true
+api:
+ 管理员ip: 127.0.0.1
