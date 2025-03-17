@@ -412,13 +412,14 @@ func 设置子账号_充值(ctx *gin.Context) {
 		O充值金额 int `json:"Amount" gorm:"column:余额;default:0"`
 	}
 	if 取josn参数表(ctx, &a) != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误1"})
 		return
 	}
 	var b user_son
 	原始余额 := 0
 	影响行 := db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").First(&b).RowsAffected
 	if 影响行 == 0 {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误"})
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误2"})
 		return
 	}
 	原始余额 = b.O余额
@@ -426,7 +427,7 @@ func 设置子账号_充值(ctx *gin.Context) {
 	db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").Updates(b)
 	// ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	ctx.String(http.StatusOK, "ok")
-	s := fmt.Sprintf("充值余额 充值:%v;充值前:%v;修改后:%v", a.O充值金额, 原始余额, b.O余额)
+	s := fmt.Sprintf("余额:%-8v;充值余额 充值:%-5v;充值前:%-5v;充值后:%-5v", b.O余额, a.O充值金额, 原始余额, b.O余额)
 	user_son_日志(a.ID子账号, s)
 	user_son_日志("充值记录", fmt.Sprintf("%v,%v", a.ID子账号, s))
 }

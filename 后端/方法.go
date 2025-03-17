@@ -50,6 +50,13 @@ func 日志(filePath string, info string) {
 	s := fmt.Sprintf("%s:%s", time.Now().Format("2006-01-02 15:04:05"), info)
 	写入文件_追加(filePath, "\n"+s)
 }
+func 拒绝日志(ctx *gin.Context) {
+	ip := ctx.ClientIP()
+	card := input(ctx, "card")
+	请求方式 := ctx.Request.Method
+	请求链接 := ctx.Request.RequestURI
+	日志("log/拒绝"+time.Now().Format("200601"), fmt.Sprintf("ip:%-15v;请求方式:%-6v;card:%-20v;请求链接:%v", ip, 请求方式, card, 请求链接))
+}
 func GetRandomString(n int, 大小写 string) string {
 	a := []byte{}
 	for i := 0; i < n; i++ {
@@ -63,6 +70,7 @@ func card_id获取用户设置(ctx *gin.Context) {
 	card := input(ctx, "card")
 	if card == "" {
 		失败提示(ctx, "card错误")
+		拒绝日志(ctx)
 		ctx.Abort()
 		return
 	}
@@ -87,6 +95,7 @@ func card_id获取用户设置(ctx *gin.Context) {
 	}
 	if !ok {
 		失败提示(ctx, "center_id或name错误")
+		拒绝日志(ctx)
 		ctx.Abort()
 		return
 	}
@@ -141,6 +150,7 @@ func 卡密md5验证(ctx *gin.Context) {
 	if (int64(t)-time.Now().Unix()) > 10*60 || (int64(t)-time.Now().Unix()) < -10*60 {
 		// 超时
 		失败提示(ctx, "时间不正确")
+		拒绝日志(ctx)
 		ctx.Abort()
 		return
 	}
@@ -149,6 +159,7 @@ func 卡密md5验证(ctx *gin.Context) {
 		return
 	} else {
 		失败提示(ctx, "sign错误")
+		拒绝日志(ctx)
 		ctx.Abort()
 		return
 	}
@@ -234,7 +245,7 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		状态 = "冻结"
 	}
 	s2 := fmt.Sprintf("卡密:%v\n使用时间:  %v\n到期时间:  %v\n激活天数:%v天,状态:%v\n登录记录:\n%v", list.Card, 使用时间, 到期时间, list.Available_time, 状态, strings.Join(s, "\n"))
-	成功提示(ctx, s2)
+	成功提示(ctx, gin.H{"data": s2, "id2": list.ID子账号})
 	// ctx.String(http.StatusOK, s2)
 }
 func card_login(ctx *gin.Context) {
