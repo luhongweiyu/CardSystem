@@ -198,7 +198,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-5v * 数量%-3v * 天%-3v;%-2v(%.2f);", 消费, fmt.Sprintf("%.2f", 价格), a.Num, a.Available_time, a.Software, 价格*30))
+	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-5v * 数量%-3v(%-3v天);%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Available_time), a.Num, a.Available_time, a.Software))
 }
 
 func user_son_加时长(ctx *gin.Context) {
@@ -228,7 +228,7 @@ func user_son_加时长(ctx *gin.Context) {
 		return
 	}
 	成功数量, 失败数量 := add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time, a.Software)
-	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-5v * 数量%-3v * 天%-3v  (成功:%v,失败:%v);%-2v(%.2f);", 消费, fmt.Sprintf("%.2f", 价格), 成功数量, a.Add_time, 成功数量, 失败数量, a.Software, 价格*30))
+	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-5v * 数量%-3v(%-3v天)  (成功:%v,失败:%v);%-2v;", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), 成功数量, a.Add_time, 成功数量, 失败数量, a.Software))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -328,7 +328,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-5v * 数量%-3v * 天%-3v * 次数%-3v;%-2v(%.2f);", 消费, fmt.Sprintf("%.2f", 价格), a.Num, a.Add_time, a.O充值次数, a.Software, 价格*30))
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-5v * 数量%-3v(%-3v天) * 次数%-3v;%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), a.Num, a.Add_time, a.O充值次数, a.Software))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)

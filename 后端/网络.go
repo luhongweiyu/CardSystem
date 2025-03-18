@@ -203,16 +203,16 @@ func 启动网络() {
 	}
 	card := router.Group("/card", card_id获取用户设置, 卡密md5验证)
 	{
-		card.Any("/card_login", card_login)
-		card.Any("/card_ping", card_ping)
-		card.Any("/config", modify_card_configContent)
+		card.Match([]string{"POST", "GET"}, "/card_login", card_login)
+		card.Match([]string{"POST", "GET"}, "/card_ping", card_ping)
+		card.Match([]string{"POST", "GET"}, "/config", modify_card_configContent)
 		// router.Any("/card/card_time_dec", 管理员验证)
 	}
 	card2 := router.Group("/card", card_id获取用户设置)
 	{
-		card2.Any("/query", 卡密_查询心跳)
-		card2.Any("/bulletin", card_get_bulletin)
-		card2.Any("/recharge", card_recharge)
+		card2.Match([]string{"POST", "GET"}, "/query", 卡密_查询心跳)
+		card2.Match([]string{"POST", "GET"}, "/bulletin", card_get_bulletin)
+		card2.Match([]string{"POST", "GET"}, "/recharge", card_recharge)
 	}
 	visitor := router.Group("/visitor", visitor_验证对应id)
 	{
