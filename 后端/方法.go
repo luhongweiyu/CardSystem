@@ -245,7 +245,7 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		状态 = "冻结"
 	}
 	s2 := fmt.Sprintf("卡密:%v\n使用时间:  %v\n到期时间:  %v\n激活天数:%v天,状态:%v\n登录记录:\n%v", list.Card, 使用时间, 到期时间, list.Available_time, 状态, strings.Join(s, "\n"))
-	成功提示(ctx, gin.H{"data": s2, "id2": list.ID子账号})
+	成功提示(ctx, gin.H{"data": s2, "id2": list.ID子账号, "id": 用户设置.ID, "id3": list.Software})
 	// ctx.String(http.StatusOK, s2)
 }
 func card_login(ctx *gin.Context) {

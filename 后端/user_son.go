@@ -408,8 +408,9 @@ func 设置子账号(ctx *gin.Context) {
 }
 func 设置子账号_充值(ctx *gin.Context) {
 	var a struct {
-		ID子账号 int `json:"ID" gorm:"column:ID子账号;primaryKey;AUTO_INCREMENT;"`
-		O充值金额 int `json:"Amount" gorm:"column:余额;default:0"`
+		ID子账号 int     `json:"ID" gorm:"column:ID子账号;primaryKey;AUTO_INCREMENT;"`
+		O充值金额 int     `json:"Amount" gorm:"column:余额;default:0"`
+		Note  *string `json:"Note"`
 	}
 	if 取josn参数表(ctx, &a) != nil {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误1"})
@@ -422,14 +423,23 @@ func 设置子账号_充值(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误2"})
 		return
 	}
+	备注 := "充值备注"
+	if ip验证(ctx) {
+		备注 = "自动"
+	} else if a.Note != nil {
+		备注 = "手动:" + *a.Note
+	} else {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "错误"})
+		return
+	}
 	原始余额 = b.O余额
 	b.O余额 = 原始余额 + a.O充值金额
 	db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").Updates(b)
 	// ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	ctx.String(http.StatusOK, "ok")
-	s := fmt.Sprintf("余额:%-8v;充值余额 充值:%-5v;充值前:%-5v;充值后:%-5v", b.O余额, a.O充值金额, 原始余额, b.O余额)
+	s := fmt.Sprintf("余额:%-8v;充值余额 充值:%-5v;充值前:%-5v;充值后:%-5v;备注:%v", b.O余额, a.O充值金额, 原始余额, b.O余额, 备注)
 	user_son_日志(a.ID子账号, s)
-	user_son_日志("充值记录", fmt.Sprintf("%v,%v", a.ID子账号, s))
+	user_son_日志("充值记录", fmt.Sprintf("%-3v,%v", a.ID子账号, s+" "+ctx.ClientIP()))
 }
 
 func 查询子账号(ctx *gin.Context) {
