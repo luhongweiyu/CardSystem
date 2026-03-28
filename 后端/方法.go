@@ -16,6 +16,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var 卡密缓存 = make(map[string]卡密表样式)
@@ -878,58 +880,75 @@ func card_recharge(ctx *gin.Context) {
 	}
 	a1 := 卡密表样式{}
 	a2 := 卡密表样式{}
-	记录数1 := db.Table("card_"+name).Where("card=?", card1).First(&a1).RowsAffected
-	记录数2 := db.Table("card_"+name).Where("card=?", card2).First(&a2).RowsAffected
-	if 记录数1 < 1 || 记录数2 < 1 {
-		失败提示(ctx, "卡密或充值卡不正确")
+	错误提示 := ""
+	事务错误 := db.Transaction(func(tx *gorm.DB) error {
+		查询1 := tx.Table("card_"+name).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card=?", card1).First(&a1)
+		查询2 := tx.Table("card_"+name).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card=?", card2).First(&a2)
+		if 查询1.RowsAffected < 1 || 查询2.RowsAffected < 1 {
+			错误提示 = "卡密或充值卡不正确"
+			return fmt.Errorf("卡密或充值卡不正确")
+		}
+		if 查询1.Error != nil {
+			return 查询1.Error
+		}
+		if 查询2.Error != nil {
+			return 查询2.Error
+		}
+		if a1.Software != a2.Software {
+			错误提示 = "卡密类型不一样"
+			return fmt.Errorf("卡密类型不一样")
+		}
+		if a2.Card_state != 2 {
+			错误提示 = "充值卡状态不正常"
+			return fmt.Errorf("充值卡状态不正常")
+		}
+		if a2.Available_time <= 0 {
+			错误提示 = "充值卡剩余时间不足"
+			return fmt.Errorf("充值卡剩余时间不足")
+		}
+		if a1.End_time.IsZero() {
+			错误提示 = "激活码[" + a1.Card + "]必须是被激活使用的卡密"
+			return fmt.Errorf(错误提示)
+		}
+		if !a2.End_time.IsZero() {
+			错误提示 = "充值卡[" + a2.Card + "]必须是未激活未使用的卡密"
+			return fmt.Errorf(错误提示)
+		}
+		end_time := a1.End_time
+		if end_time.Unix() < time.Now().Unix() {
+			end_time = time.Now()
+		}
+		end_time = time.Time(end_time).Add(time.Duration(a2.Available_time*24*60) * time.Minute)
+		// 修改充值卡
+		修改结果2 := tx.Table("card_" + name).Where(map[string]interface{}{"card": a2.Card}).Updates(map[string]interface{}{"card_state": 卡密状态_冻结, "available_time": -1 * a2.Available_time, "notes": a2.Notes + ">充值给:" + a1.Card})
+		if 修改结果2.Error != nil {
+			return 修改结果2.Error
+		}
+		if 修改结果2.RowsAffected < 1 {
+			错误提示 = "保存充值卡记录失败"
+			return fmt.Errorf("保存充值卡记录失败")
+		}
+		// 修改激活码 , "notes": fmt.Sprintf("%v>使用[%v]充值%v天", a1.Notes, a2.Card, a2.Available_time)
+		修改结果1 := tx.Table("card_" + name).Where(map[string]interface{}{"card": a1.Card}).Updates(map[string]interface{}{"end_time": end_time})
+		if 修改结果1.Error != nil {
+			return 修改结果1.Error
+		}
+		if 修改结果1.RowsAffected < 1 {
+			错误提示 = "保存激活码记录失败"
+			return fmt.Errorf("保存激活码记录失败")
+		}
+		return nil
+	})
+	if 事务错误 != nil {
+		if 错误提示 == "" {
+			错误提示 = "充值失败"
+		}
+		失败提示(ctx, 错误提示)
 		ctx.Abort()
 		return
 	}
-	if a1.Software != a2.Software {
-		失败提示(ctx, "卡密类型不一样")
-		ctx.Abort()
-		return
-	}
-	if a2.Card_state != 2 {
-		失败提示(ctx, "充值卡状态不正常")
-		ctx.Abort()
-		return
-	}
-	if a2.Available_time <= 0 {
-		失败提示(ctx, "充值卡剩余时间不足")
-		ctx.Abort()
-		return
-	}
-	if a1.End_time.IsZero() {
-		失败提示(ctx, "激活码["+a1.Card+"]必须是被激活使用的卡密")
-		ctx.Abort()
-		return
-	}
-	if !a2.End_time.IsZero() {
-		失败提示(ctx, "充值卡["+a2.Card+"]必须是未激活未使用的卡密")
-		ctx.Abort()
-		return
-	}
-	end_time := a1.End_time
-	if end_time.Unix() < time.Now().Unix() {
-		end_time = time.Now()
-	}
-	end_time = time.Time(end_time).Add(time.Duration(a2.Available_time*24*60) * time.Minute)
-	// 修改充值卡
-	修改行2 := db.Table("card_" + name).Where(map[string]interface{}{"card": a2.Card}).Updates(map[string]interface{}{"card_state": 卡密状态_冻结, "available_time": -1 * a2.Available_time, "notes": a2.Notes + ">充值给:" + a1.Card}).RowsAffected
-	if 修改行2 < 1 {
-		失败提示(ctx, "保存充值卡记录失败")
-		ctx.Abort()
-		return
-	}
-	// 修改激活码 , "notes": fmt.Sprintf("%v>使用[%v]充值%v天", a1.Notes, a2.Card, a2.Available_time)
-	修改行1 := db.Table("card_" + name).Where(map[string]interface{}{"card": a1.Card}).Updates(map[string]interface{}{"end_time": end_time}).RowsAffected
 	卡密_删除缓存(name, a1.Card)
-	if 修改行1 < 1 {
-		失败提示(ctx, "保存激活码记录失败")
-		ctx.Abort()
-		return
-	}
+	卡密_删除缓存(name, a2.Card)
 	日志("log/"+name+time.Now().Format("200601"), fmt.Sprintf("充值;数量:1个;时长:%v天;激活码:%v;充值卡:%v", a2.Available_time, a1.Card, a2.Card))
 	成功提示(ctx, "充值成功")
 }

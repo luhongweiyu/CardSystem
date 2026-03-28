@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type user_son struct {
@@ -416,13 +417,6 @@ func 设置子账号_充值(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误1"})
 		return
 	}
-	var b user_son
-	原始余额 := 0
-	影响行 := db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").First(&b).RowsAffected
-	if 影响行 == 0 {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "数据错误2"})
-		return
-	}
 	备注 := "充值备注"
 	if ip验证(ctx) {
 		备注 = "自动"
@@ -432,9 +426,36 @@ func 设置子账号_充值(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "错误"})
 		return
 	}
-	原始余额 = b.O余额
-	b.O余额 = 原始余额 + a.O充值金额
-	db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").Updates(b)
+	var b user_son
+	原始余额 := 0
+	错误提示 := ""
+	事务错误 := db_user_son.Transaction(func(tx *gorm.DB) error {
+		查询余额 := tx.Model(&user_son{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("ID子账号 = ?", a.ID子账号).Select("余额").First(&b)
+		if 查询余额.RowsAffected == 0 {
+			错误提示 = "数据错误2"
+			return fmt.Errorf("数据错误2")
+		}
+		if 查询余额.Error != nil {
+			return 查询余额.Error
+		}
+		原始余额 = b.O余额
+		更新余额 := tx.Model(&user_son{}).Where("ID子账号 = ?", a.ID子账号).UpdateColumn("余额", gorm.Expr("余额 + ?", a.O充值金额))
+		if 更新余额.Error != nil {
+			return 更新余额.Error
+		}
+		if 更新余额.RowsAffected == 0 {
+			错误提示 = "充值失败"
+			return fmt.Errorf("充值失败")
+		}
+		return tx.Model(&user_son{}).Where("ID子账号 = ?", a.ID子账号).Select("余额").First(&b).Error
+	})
+	if 事务错误 != nil {
+		if 错误提示 == "" {
+			错误提示 = "充值失败"
+		}
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": 错误提示})
+		return
+	}
 	// ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	ctx.String(http.StatusOK, "ok")
 	s := fmt.Sprintf("余额:%-8v;充值余额 %-5v(充值);充值前:%-5v;充值后:%-5v;备注:%v", b.O余额, a.O充值金额, 原始余额, b.O余额, 备注)

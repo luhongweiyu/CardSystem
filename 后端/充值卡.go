@@ -11,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var visitor_锁 sync.RWMutex
@@ -331,62 +333,95 @@ func visitor_续费卡密(ctx *gin.Context) {
 	}
 	name := ctx.GetString("name")
 	cards := a.Cards
-	// 查询充值卡余额
-	var 充值卡 数据库表_充值卡
-	db.Table("visitor_recharge").Where("card = ?", a.Rechargeable_card).Where("admin = ?", name).Find(&充值卡)
-	if 充值卡.State == 卡密状态_冻结 {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "充值卡被冻结"})
-		return
-	}
-	if 充值卡.Balance < len(cards) {
-		// 充值卡余额不足
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "剩余次数余额不足或充值卡不正确"})
-		return
-	}
-	if 充值卡.Expiration_date.Unix() < time.Now().Unix() {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "充值卡过期"})
-		return
-
-	}
-	if len(cards) < 1 {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "请输入需要充值的数据"})
-		return
-	}
-	if 充值卡.Card != a.Rechargeable_card {
-		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "请检测下充值卡大小写"})
-		return
-	}
 	失败的卡密 := []string{}
 	成功的卡密 := []string{}
-	充值卡原次数 := 充值卡.Balance
-	for _, card := range cards {
-		list := map[string]interface{}{}
-		修改行 := db.Table("card_"+name).Where("card=?", card).Where("software=?", 充值卡.Software).Find(&list).RowsAffected
-		if 修改行 > 0 {
-			修改行 = 0
-			end_time, ok := list["end_time"].(time.Time)
-			if ok {
-				if end_time.Unix() < time.Now().Unix() {
-					end_time = time.Now()
+	s := ""
+	s2 := ""
+	错误提示 := ""
+	var 充值卡 数据库表_充值卡
+	事务错误 := db.Transaction(func(tx *gorm.DB) error {
+		查询充值卡 := tx.Table("visitor_recharge").Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", a.Rechargeable_card).Where("admin = ?", name).First(&充值卡)
+		if 查询充值卡.RowsAffected < 1 {
+			错误提示 = "剩余次数余额不足或充值卡不正确"
+			return fmt.Errorf("剩余次数余额不足或充值卡不正确")
+		}
+		if 查询充值卡.Error != nil {
+			return 查询充值卡.Error
+		}
+		if 充值卡.State == 卡密状态_冻结 {
+			错误提示 = "充值卡被冻结"
+			return fmt.Errorf("充值卡被冻结")
+		}
+		if 充值卡.Balance < len(cards) {
+			错误提示 = "剩余次数余额不足或充值卡不正确"
+			return fmt.Errorf("剩余次数余额不足或充值卡不正确")
+		}
+		if 充值卡.Expiration_date.Unix() < time.Now().Unix() {
+			错误提示 = "充值卡过期"
+			return fmt.Errorf("充值卡过期")
+		}
+		if len(cards) < 1 {
+			错误提示 = "请输入需要充值的数据"
+			return fmt.Errorf("请输入需要充值的数据")
+		}
+		if 充值卡.Card != a.Rechargeable_card {
+			错误提示 = "请检测下充值卡大小写"
+			return fmt.Errorf("请检测下充值卡大小写")
+		}
+
+		充值卡原次数 := 充值卡.Balance
+		剩余次数 := 充值卡.Balance
+		for _, card := range cards {
+			list := map[string]interface{}{}
+			查询卡密 := tx.Table("card_"+name).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card=?", card).Where("software=?", 充值卡.Software).Find(&list)
+			修改行 := int64(0)
+			if 查询卡密.Error != nil {
+				return 查询卡密.Error
+			}
+			if 查询卡密.RowsAffected > 0 {
+				end_time, ok := list["end_time"].(time.Time)
+				if ok {
+					if end_time.Unix() < time.Now().Unix() {
+						end_time = time.Now()
+					}
+					end_time = time.Time(end_time).Add(time.Duration(充值卡.AddTime*24*60) * time.Minute)
+					修改结果 := tx.Table("card_" + name).Where(map[string]interface{}{"card": card}).Updates(map[string]interface{}{"end_time": end_time})
+					if 修改结果.Error != nil {
+						return 修改结果.Error
+					}
+					修改行 = 修改结果.RowsAffected
+					if 修改行 > 0 {
+						剩余次数 = 剩余次数 - 1
+					}
 				}
-				充值卡.Balance = 充值卡.Balance - 1
-				end_time = time.Time(end_time).Add(time.Duration(充值卡.AddTime*24*60) * time.Minute)
-				db.Table("visitor_recharge").Where("card=?", 充值卡.Card).Update("balance", 充值卡.Balance)
-				修改行 = db.Table("card_" + name).Where(map[string]interface{}{"card": card}).Updates(map[string]interface{}{"end_time": end_time}).RowsAffected
+			}
+			if 修改行 > 0 {
+				成功的卡密 = append(成功的卡密, card)
+			} else {
+				失败的卡密 = append(失败的卡密, card)
+			}
+			卡密_删除缓存(name, card)
+		}
+		充值卡.Balance = 剩余次数
+		s = fmt.Sprintf("充值卡:%v;充值:%v天;本次后余额:%v;成功数量:%v个;失败数量:%v个;成功:%v;失败:%v;", 充值卡.Card, 充值卡.AddTime, 充值卡.Balance, len(成功的卡密), len(失败的卡密), strings.Join(成功的卡密, ","), strings.Join(失败的卡密, ","))
+		s2 = fmt.Sprintf("\n%s;%s", time.Now().Format("2006-01-02 15:04:05"), s)
+		if 充值卡原次数 != 充值卡.Balance || len(成功的卡密) > 0 {
+			充值卡.Record = 充值卡.Record + s2
+			更新充值卡 := tx.Table("visitor_recharge").Where("card = ?", 充值卡.Card).Where("admin = ?", name).Updates(map[string]interface{}{"balance": 充值卡.Balance, "record": 充值卡.Record})
+			if 更新充值卡.Error != nil {
+				return 更新充值卡.Error
 			}
 		}
-		if 修改行 > 0 {
-			成功的卡密 = append(成功的卡密, card)
-		} else {
-			失败的卡密 = append(失败的卡密, card)
+		return nil
+	})
+	if 事务错误 != nil {
+		if 错误提示 == "" {
+			错误提示 = "充值失败,请稍后再试"
 		}
-		卡密_删除缓存(name, card)
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": 错误提示})
+		return
 	}
-	s := fmt.Sprintf("充值卡:%v;充值:%v天;本次后余额:%v;成功数量:%v个;失败数量:%v个;成功:%v;失败:%v;", 充值卡.Card, 充值卡.AddTime, 充值卡.Balance, len(成功的卡密), len(失败的卡密), strings.Join(成功的卡密, ","), strings.Join(失败的卡密, ","))
-	s2 := fmt.Sprintf("\n%s;%s", time.Now().Format("2006-01-02 15:04:05"), s)
-	if 充值卡原次数 != 充值卡.Balance || len(成功的卡密) > 0 {
-		充值卡.Record = 充值卡.Record + s2
-		db.Table("visitor_recharge").Updates(&充值卡)
+	if len(成功的卡密) > 0 {
 		日志("log/"+name+time.Now().Format("200601"), "充值:"+s)
 	}
 	if len(失败的卡密) > 0 {

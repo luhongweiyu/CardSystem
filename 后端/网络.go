@@ -186,7 +186,7 @@ func 启动网络() {
 	}
 
 	son := router.Group("/admin_son", 子账号验证)
-	router.POST("/admin_son/user_register", user_son_register)
+	// router.POST("/admin_son/user_register", user_son_register)
 	{
 		son.POST("/user_login", user_son_login)
 		son.POST("/user_query_card", user_son_查询所有卡密)
