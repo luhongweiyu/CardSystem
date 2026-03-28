@@ -198,7 +198,7 @@ func user_son_添加卡密(ctx *gin.Context) {
 	if !add_new_card(ctx, 账号.ID子账号, 账号.O父Name, a.Software, a.Available_time, a.Num, a.Latest_activation_time, a.Cards, a.Notes, a.Config_content, a.O指定类型) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 %-5v=价格%-5v * 数量%-3v(%-3v天);%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Available_time), a.Num, a.Available_time, a.Software))
+	user_son_消费(账号, 消费, fmt.Sprintf("加卡消费 -%-5v=价格%-5v * 数量%-3v(%-3v天);%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Available_time), a.Num, a.Available_time, a.Software))
 }
 
 func user_son_加时长(ctx *gin.Context) {
@@ -228,7 +228,7 @@ func user_son_加时长(ctx *gin.Context) {
 		return
 	}
 	成功数量, 失败数量 := add_card_time(ctx, 账号.ID子账号, 账号.O父Name, a.Cards, a.Add_time, a.Software)
-	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 %-5v=价格%-5v * 数量%-3v(%-3v天)  (成功:%v,失败:%v);%-2v;", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), 成功数量, a.Add_time, 成功数量, 失败数量, a.Software))
+	user_son_消费(账号, 消费, fmt.Sprintf("加时消费 -%-5v=价格%-5v * 数量%-3v(%-3v天)  (成功:%v,失败:%v);%-2v;", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), 成功数量, a.Add_time, 成功数量, 失败数量, a.Software))
 }
 func user_son_删除卡密(ctx *gin.Context) {
 	var a struct {
@@ -328,7 +328,7 @@ func user_son_充值卡_生成(ctx *gin.Context) {
 	if !充值卡_生成(ctx, 账号.ID子账号, 账号.O父Name) {
 		return
 	}
-	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 %-5v=价格%-5v * 数量%-3v(%-3v天) * 次数%-3v;%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), a.Num, a.Add_time, a.O充值次数, a.Software))
+	user_son_消费(账号, 消费, fmt.Sprintf("充值消费 -%-5v=价格%-5v * 数量%-3v(%-3v天) * 次数%-3v;%-2v", 消费, fmt.Sprintf("%.2f", 价格*a.Add_time), a.Num, a.Add_time, a.O充值次数, a.Software))
 }
 func user_son_充值卡_查询(ctx *gin.Context) {
 	账号 := user_son_取账号信息(ctx)
@@ -437,7 +437,7 @@ func 设置子账号_充值(ctx *gin.Context) {
 	db_user_son.Where("ID子账号 = ?", a.ID子账号).Select("余额").Updates(b)
 	// ctx.JSON(http.StatusOK, gin.H{"state": true, "msg": "修改成功"})
 	ctx.String(http.StatusOK, "ok")
-	s := fmt.Sprintf("余额:%-8v;充值余额 充值:%-5v;充值前:%-5v;充值后:%-5v;备注:%v", b.O余额, a.O充值金额, 原始余额, b.O余额, 备注)
+	s := fmt.Sprintf("余额:%-8v;充值余额 %-5v(充值);充值前:%-5v;充值后:%-5v;备注:%v", b.O余额, a.O充值金额, 原始余额, b.O余额, 备注)
 	user_son_日志(a.ID子账号, s)
 	user_son_日志("充值记录", fmt.Sprintf("%-3v,%v", a.ID子账号, s+" "+ctx.ClientIP()))
 }

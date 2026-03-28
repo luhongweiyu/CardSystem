@@ -40,6 +40,7 @@
     余额:<el-input-number v-model="user_1.余额" style="width: 150px" placeholder="余额" controls-position="right"/>
 
     <el-button link type="primary" size="small" @click="保存授权设置(user_1)" style="display:inline">保存授权设置</el-button>
+    <el-button link type="primary" size="small" @click="Object.assign(子账号充值弹框, { 显示: true, ID: user_1.ID子账号, 金额: null, 备注: '' })" style="display:inline">充值</el-button>
     <template v-for="(soft, k2) in 软件列表" :key="k2">
       <!-- <span v-for="(软件, k2) in [{ID:1,Software:'软件名'},{ID:2,Software:'软件名2'}]" :key="k2"> -->
       <span v-show="user_1.价格[(soft.ID) + ''] || user_1.价格[(soft.ID) + ''] == 0">
@@ -47,6 +48,7 @@
         <el-input v-model="user_1['价格'][soft.ID]"  style="width: 200px" />
       </span>
     </template>
+  
   </div>
 
   <el-dialog v-model="软件名称输入显示" title="输入软件名称">
@@ -58,6 +60,33 @@
       <el-button type="info" @click="软件名称输入显示 = false"> 取消</el-button>
     </div>
   </el-dialog>
+
+  <el-dialog v-model="子账号充值弹框.显示" title="子账号充值" width="500px">
+    <div style="margin-bottom: 12px;">子账号ID: {{ 子账号充值弹框.ID }}</div>
+    <div style="margin-bottom: 12px;">
+      金额:
+      <el-input-number
+        v-model="子账号充值弹框.金额"
+        style="width: 100%"
+        controls-position="right"
+        placeholder="请输入充值金额"
+      />
+    </div>
+    <div style="margin-bottom: 12px;">
+      备注:
+      <el-input
+        v-model="子账号充值弹框.备注"
+        type="textarea"
+        :rows="3"
+        placeholder="请输入备注"
+      />
+    </div>
+    <template #footer>
+      <el-button @click="子账号充值弹框.显示 = false">取消</el-button>
+      <el-button type="primary" @click="子账号充值(子账号充值弹框.ID, 子账号充值弹框.金额, 子账号充值弹框.备注)">确认充值</el-button>
+    </template>
+  </el-dialog>
+
 </template>
 
 <script lang="ts" setup>
@@ -88,6 +117,7 @@ const 返回提示 = function (msg) {
   });
 }
 const 授权列表 = ref([]);
+const 子账号充值弹框 = reactive({ 显示: false, ID: 0, 金额: null as number | null, 备注: "" });
 const 添加软件 = function () {
   软件名称输入显示.value = false;
   post("/user_add_soft", {
@@ -220,6 +250,36 @@ const 保存授权设置 = function (账号) {
 
     } else {
       ElMessage.error(res.data.msg);
+    }
+  });
+}
+const 子账号充值 = function(充值ID,充值金额,充值备注){
+  if (充值金额 === null || 充值金额 === undefined) {
+    ElMessage.error("金额必须是数字");
+    return Promise.resolve(false);
+  }
+  const 金额数字 = Number(充值金额);
+  if (!Number.isFinite(金额数字)) {
+    ElMessage.error("金额必须是数字");
+    return Promise.resolve(false);
+  }
+  let data = {
+    ID:充值ID,
+    Amount:金额数字,
+    Note: ((充值备注 || "") + " " + new Date().toLocaleString()).trim()
+  }
+  console.log("子账号充值请求参数", data)
+  return post("/设置子账号_充值", data).then(function (res) {
+    console.log("子账号充值接口返回", res.data)
+    if (res.data === 'ok') {
+      ElMessage.success("充值成功，已刷新授权账号列表");
+      console.log(res.data.data);
+      子账号充值弹框.显示 = false;
+      查询子账号()
+      return true;
+    } else {
+      ElMessage.error(res.data.msg);
+      return false;
     }
   });
 }

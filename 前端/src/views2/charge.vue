@@ -32,9 +32,13 @@
       <el-table-column :show-overflow-tooltip="true" prop="add_time" label="时间" width="60px" />
       <el-table-column :show-overflow-tooltip="true" prop="face_value" label="次数" width="60px" />
       <el-table-column :show-overflow-tooltip="true" prop="balance" label="剩余" width="60px" />
-      <el-table-column :show-overflow-tooltip="true" prop="expiration_date" label="有效期" width="200px" />
-      <el-table-column :show-overflow-tooltip="true" prop="create_time" label="创建时间" width="200px" />
-      <el-table-column :show-overflow-tooltip="true" prop="record" label="使用记录" width="1600px">
+      <el-table-column :show-overflow-tooltip="true" prop="create_time" label="创建时间" width="140px">
+        <template #default="scope"> {{ 时间转字符串(scope.row.create_time) }}</template>
+      </el-table-column>
+      <el-table-column :show-overflow-tooltip="true" prop="expiration_date" label="有效期" width="140px">
+        <template #default="scope"> {{ 时间转字符串(scope.row.expiration_date) }}</template>
+      </el-table-column>
+      <el-table-column :show-overflow-tooltip="true" prop="record" label="使用记录" width="300px">
         <template #default="scope">
           <el-button style="border: 0px; margin: 0px" size="small" type="warning" @click="查看充值记录(scope.row)"> 查看记录
           </el-button>
@@ -113,7 +117,13 @@ const 所有卡密 = ref([])
 const 卡密 = ref('')
 const post = useCounterStore().post
 const soft = ref(0)
-
+const 时间转字符串 = function (时间) {
+  if (!时间 || 时间 == null) {
+    return "";
+  }
+  return new Date(时间).toLocaleString();
+  // return  new Date(时间).format('YYYY-MM-DD HH:mm:ss');
+};
 const 计算所属软件 = function (id) {
   for (const key in 软件列表.value) {
     if (软件列表.value[key].ID == id) {

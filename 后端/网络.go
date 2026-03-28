@@ -178,6 +178,7 @@ func 启动网络() {
 		// user.POST("/新增子账号", 新增子账号)
 		user.POST("/设置子账号", 设置子账号)
 		user.POST("/查询子账号", 查询子账号)
+		user.POST("/设置子账号_充值", 设置子账号_充值)
 	}
 	{
 		api := router.Group("/api")
