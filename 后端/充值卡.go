@@ -250,7 +250,7 @@ func 充值卡_修改(ctx *gin.Context, ID子账号 int, Name string) {
 func visitor_验证对应id(ctx *gin.Context) {
 	visitor_锁.Lock()
 	defer func() {
-		time.Sleep(1 * time.Second)
+		// time.Sleep(1 * time.Second)
 		visitor_锁.Unlock()
 	}()
 	id, _ := strconv.Atoi(input(ctx, "center_id"))
