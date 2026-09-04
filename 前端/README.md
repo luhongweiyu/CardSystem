@@ -1,29 +1,34 @@
-# vue-project
+# 卡密系统前端
 
-This template should help get you started developing with Vue 3 in Vite.
+前端使用 Vue 3、Vite、Pinia 和 Element Plus，包含管理员/代理账号管理端、持卡人查询页和访客查询页。页面只保留纯点卡
+所需功能：软件与周期价格、点卡生成与管理、点数流水、账号设置和运行日志。
 
-## Recommended IDE Setup
-
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur) + [TypeScript Vue Plugin (Volar)](https://marketplace.visualstudio.com/items?itemName=Vue.vscode-typescript-vue-plugin).
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vitejs.dev/config/).
-
-## Project Setup
+## 开发与构建
 
 ```sh
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
-```
-
-### Compile and Minify for Production
-
-```sh
 npm run build
 ```
+
+开发服务器把 `/admin`、`/agent`、`/card` 和访客 API 代理到 `http://127.0.0.1:802`。生产环境默认请求当前站点的同源
+API，也可以用 `VITE_API_BASE_URL` 指定独立 API 地址。
+
+系统支持 HTTP，不要求客户端必须支持 HTTPS。若使用 HTTP，建议开启后端接口口令校验并限制管理端的网络暴露范围；该校验
+不提供加密，也不能阻止链路上的窃听或重放。
+
+## 页面说明
+
+- **点卡**：按软件和点数生成卡密，支持指定卡密、批量冻结/解冻/删除、备注和配置编辑、管理员手工补扣点，以及导出当前
+  页。
+- **软件与计费周期**：设置默认登录周期、心跳周期和多个周期价格；默认周期必须对应一个启用价格，所有启用周期必须不少
+  于心跳周期的 2 倍。管理员可创建、设置、充值或删除代理账号。
+- **点数流水**：分页查看所有真实余额变化。每行包含时间、卡密、软件、增减、变动前后余额和备注；扣费备注中包含设备
+  ID/别名快照。
+- **持卡查询页**（`/usercard/index.html`）：查询卡密余额、状态、有效授权设备数和自己的点数流水。
+- **访客页**（`/visitor/index.html?center_id=...`）：按管理员公开链接和完整卡密精确查询余额、状态及流水，不允许枚举
+  卡密。
+
+客户端点卡流程是“登录 → 按心跳周期发送心跳 → 退出”。登录必须提交持久化的 `device_id`，可选提交 `device_alias` 和
+`period_seconds`；登录响应中的 `needle` 要原样保存并用于后续心跳。退出必须提交 `device_id`，也可同时提交 `needle`
+做附加校验。相同设备在授权截止时间前重复登录不会重复扣点，换设备会按新设备扣点。

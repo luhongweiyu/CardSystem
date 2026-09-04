@@ -1,301 +1,179 @@
 <template>
-  <div style="background-color: rgb(22, 22, 22, 0.9);">
-    <img src="/favicon.png" style="position: fixed; width: 200px;right: 0px;bottom: 0px">
-    <div>
-      <div v-loading="加载中">
-        <el-input v-model="卡密" placeholder="卡密(后3位可省略)" style="width: auto" @keypress.enter="查询所有卡密()"/>
-        <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
-        <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" @keypress.enter="查询充值卡()" />
-        <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询充值卡()" />
-        <el-button style="border: 0px; margin: 0px" type="primary" @click="续费按钮">续费 </el-button>
-      </div>
-    </div>
-    
-    <el-table :data="所有卡密" :cell-style="cellState" @selection-change="记录打钩的" border v-loading="加载中">
-      <el-table-column type="selection" width="30" />
-      <el-table-column :show-overflow-tooltip="true" prop="card" label="卡密" width="180px" />
-      <el-table-column :show-overflow-tooltip="true" prop="address" label="状态" width="60px">
+  <main class="访客页" v-loading="加载中">
+    <el-card shadow="never" class="查询区">
+      <h2>点卡查询</h2>
+      <p>只展示卡密基础状态和点数余额，不会公开管理端配置。</p>
+      <el-input v-model="筛选" clearable placeholder="请输入完整卡密" @keyup.enter="查询列表;" />
+      <el-button type="primary" class="按钮" @click="查询列表;">查询</el-button>
+    </el-card>
+
+    <el-table :data="列表" border stripe>
+      <el-table-column prop="card" label="卡密" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="software" label="软件ID" width="90" />
+      <el-table-column label="余额" width="110">
+        <template #default="scope">{{ scope.row.point_balance }} 点</template>
+      </el-table-column>
+      <el-table-column label="状态" width="90">
         <template #default="scope">
-          <span v-if="scope.row.card_state == 4" style="color:red">冻结</span>
-          <span v-else-if="判断到期(scope.row.end_time)" style="color:rgb(131, 71, 71)">到期</span>
-          <span v-else-if="scope.row.end_time" style="color:rgb(9, 255, 0)">激活</span>
+          <el-tag :type="scope.row.card_state === 4 ? 'danger' : 'success'">
+            {{ scope.row.card_state === 4 ? '冻结' : '正常' }}
+          </el-tag>
         </template>
       </el-table-column>
-
-      <el-table-column :show-overflow-tooltip="true" prop="use_time" label="最近登录" width="160px">
-        <template #default="scope"> {{ 时间转字符串(scope.row.use_time) }}</template>
-      </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="end_time" label="到期时间" width="160px">
-        <template #default="scope"> {{ 时间转字符串(scope.row.end_time) }}</template>
-      </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="s" label="类型" width="50px" />
-      <el-table-column label="操作" width="180px">
+      <el-table-column label="操作" width="120">
         <template #default="scope">
-          <!-- <template #default="scope"> {{ 时间转字符串(scope.row.end_time) }}</template> -->
-          <el-popconfirm title="确定冻结?" @confirm="冻时(scope.row.card, scope.row.s, scope.row)"> <template #reference>
-              <el-button type="info" size="small" :disabled="!(scope.row.left_time == 0 || scope.row.left_time == null)">冻时</el-button>
-            </template>
-          </el-popconfirm>
-          <el-popconfirm :title="'确定解除冻结吗?' + Math.floor(scope.row.left_time * 100) / 100 + '天'"
-            @confirm="解冻(scope.row.card, scope.row.s, scope.row)">
-            <template #reference>
-              <el-button type="success" size="small" :disabled="scope.row.left_time <= 0">
-                解冻
-              </el-button>
-            </template>
-          </el-popconfirm>
-          <!-- <el-button type="info" size="small" @click="冻时(scope.row.card, scope.row.s)">冻时</el-button> -->
-          <!-- <el-button type="success" size="small" @click="解冻(scope.row.card, scope.row.s)">解冻</el-button> -->
+          <el-button link type="primary" @click="查看流水(scope.row)">查看流水</el-button>
         </template>
       </el-table-column>
     </el-table>
+    <el-empty v-if="!加载中 && !列表.length" description="暂无匹配的点卡" />
 
-    <el-dialog v-model="显示续费卡密界面" title="续费卡密" width="80%">
-      <el-form label-position="right" label-width="100px" style="max-width: 460px" v-loading="加载中">
-        <el-button style="border: 10px; margin: 10px" type="success" @click="确定续费卡密()">确定续费</el-button>
-        <el-input v-model="充值卡" placeholder="充值卡" style="width: auto" />
-        <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询充值卡()" />
-        <el-form-item label="">
-        </el-form-item> 请核对需要续费的卡密:(共{{ 已勾的卡密.length }}个) <el-form-item label="卡密">
-          <!--  v-if="新卡.指定类型 == 2" -->
-          <el-input v-model="待续费卡密.续费卡密" :autosize="{ minRows: 3 }" type="textarea" placeholder="输入需要续费的卡密"
-            style="width: 300px" :disabled="true" />
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="流水框.显示" title="点数流水" width="900px">
+      <div class="流水摘要">卡密：{{ 流水框.card }}　当前余额：{{ 流水框.balance }} 点</div>
+      <el-table :data="流水框.rows" border v-loading="流水框.加载中">
+        <el-table-column prop="created_at" label="时间" width="175" />
+        <el-table-column label="类型" width="80">
+          <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
+        </el-table-column>
+        <el-table-column label="变动" width="80">
+          <template #default="scope">
+            <span :class="scope.row.change > 0 ? '增加' : '扣除'">
+              {{ scope.row.change > 0 ? '+' : '' }}{{ scope.row.change }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="余额" width="130">
+          <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注（含设备信息）" min-width="340" show-overflow-tooltip />
+      </el-table>
+      <el-pagination
+        v-model:current-page="流水框.page"
+        v-model:page-size="流水框.page_size"
+        class="分页"
+        layout="total, prev, pager, next"
+        :total="流水框.total"
+        @current-change="查询流水(false)"
+      />
     </el-dialog>
-
-  </div>
+  </main>
 </template>
 
-<script lang="ts" setup>
-import { Check, Delete, Edit, Message, Search, Star } from "@element-plus/icons-vue";
-import { reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { fa, tr } from "element-plus/es/locale";
-import axios, { Axios } from "axios";
+<script setup>
+import { reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import apiClient, { 获取接口错误提示, 规范化卡密 } from '../src/api/请求客户端.js'
 
-
-
-const post = function (链接, 参数) {
-  // return axios.post("http://localhost:802/admin" + 链接, 参数, { headers: { "Content-Type": "application/json" } });
-  return axios.post("http://" + window.location.hostname + ":802/visitor" + 链接 + window.location.search, 参数, { headers: { "Content-Type": "application/json" } });
-};
-
-
-
-
-
-const 状态列表 = reactive([
-  [0, "全部状态"],
-  [1, "未激活"],
-  [2, "已激活"],
-  [3, "到期"],
-  [4, "正常"],
-  [5, "冻结"],
-]);
-const 所有卡密_当前页 = ref(1)
-const 所有卡密数量 = ref(0)
-const 每页卡密数量 = ref(20)
-const soft = ref(0);
-const state = ref(0);
-const 卡密 = ref("");
-const 充值卡 = ref("");
-const 所有卡密 = ref([]);
-const 显示续费卡密界面 = ref(false);
-const 加载中 = ref(false);
-const 已勾的卡密 = ref([] as any[]);
-
-const 待续费卡密 = ref({
-  续费时间: 0,
-  续费卡密: "",
+const centerID = new URLSearchParams(window.location.search).get('center_id') || ''
+const 筛选 = ref('')
+const 列表 = ref([])
+const 加载中 = ref(false)
+const 流水框 = reactive({
+  显示: false,
+  加载中: false,
+  card: '',
+  software: 0,
+  balance: 0,
+  rows: [],
+  page: 1,
+  page_size: 20,
+  total: 0
 })
-const 判断到期 = function (a) {
-  if (!a) {
-    return false
+const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
+const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
+const 请求 = (path, data = {}) => apiClient.post('/visitor' + path, { ...data, center_id: centerID })
+
+const 查询列表 = function () {
+  列表.value = []
+  if (!centerID) {
+    ElMessage.error('查询链接缺少 center_id')
+    return
   }
-  const currentTime = new Date();
-  const targetTime = new Date(a);
-  return currentTime > targetTime
+  const card = 规范化卡密(筛选.value)
+  if (!card) {
+    ElMessage.warning('请输入7至63位完整卡密，只能包含字母、数字、下划线或短横线')
+    return
+  }
+  筛选.value = card
+  加载中.value = true
+  请求('/查询所有卡密', { card })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
+      列表.value = res.data.data || []
+    })
+    .catch(错误)
+    .finally(() => {
+      加载中.value = false
+    })
 }
-
-const 返回提示 = function (msg) {
-  var s = '<pre> ' + msg + '</pre>'
-  ElMessageBox.alert(s, {
-    dangerouslyUseHTMLString: true,
-  });
-  // console.log("返回提示");
-
-  // ElMessage({
-  //   dangerouslyUseHTMLString: true,
-  //   showClose: true,
-  //   message: s,
-  //   duration: 0,
-  // })
-
-}
-const 警告提示 = function (msg) {
-  // var s = '<pre> ' + msg + '</pre>'  
-  ElMessage({
-    // dangerouslyUseHTMLString: true,
-    showClose: true,
-    message: msg,
-    duration: 0,
-    type: 'error',
+const 查看流水 = function (row) {
+  Object.assign(流水框, {
+    显示: true,
+    card: row.card,
+    software: Number(row.software || 0),
+    balance: Number(row.point_balance || 0),
+    rows: [],
+    page: 1,
+    total: 0
   })
-
+  查询流水(true)
 }
-const cellState = (row, rowIndex) => {
-  return {
-    padding: "2px",
-  };
-};
-const 时间转字符串 = function (时间) {
-  if (!时间 || 时间 == null) {
-    return "";
-  }
-  return new Date(时间).toLocaleString();
-  // return  new Date(时间).format('YYYY-MM-DD HH:mm:ss');
-};
-const 记录打钩的 = (val) => {
-  // 已勾的卡密=[]
-  var a = [] as any[];
-  for (const key in val) {
-    a.push(val[key].card);
-  }
-  已勾的卡密.value = a;
-  console.log(a);
-};
-const 续费按钮 = function () {
-  待续费卡密.value.续费卡密 = 已勾的卡密.value.join("\n")
-  显示续费卡密界面.value = true
-}
-const 查询所有卡密 = function () {
-  加载中.value = true
-  post("/查询所有卡密", {
-    card: 卡密.value
-  }).then(function (res) {
-    加载中.value = false
-    console.log(res.data.data);
-    所有卡密.value = res.data.data;
-    // 所有卡密数量.value = res.data.num
-  });
-};
-const 查询充值卡 = function () {
-  加载中.value = true
-  post("/查询充值卡", {
-    Rechargeable_card: 充值卡.value
-  }).then(function (res) {
-    加载中.value = false
-    console.log(res);
-    if (!res.data.state) {
-      警告提示(res.data.msg)
-      return
-    }
-    let data = res.data.data
-    let msg = "\n有效期:" + data.Expiration_date
-      + "\n剩余:" + data.Balance + "次"
-      + " 每次:" + data.AddTime + "天"
-      + "\n类型:" + data.S
-      + "  类型:" + data.S
-      + "  类型:" + data.S
-      + "\n使用记录:" + data.Record
-    返回提示(msg)
-
+const 查询流水 = function (resetPage = false) {
+  if (!流水框.card) return
+  if (resetPage) 流水框.page = 1
+  流水框.加载中 = true
+  请求('/point_ledger/query', {
+    card: 流水框.card,
+    software: 流水框.software,
+    page: 流水框.page,
+    page_size: 流水框.page_size
   })
-
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询流水失败')
+      流水框.rows = res.data.data || []
+      流水框.total = Number(res.data.num || 0)
+      流水框.balance = Number(res.data.balance ?? 流水框.balance)
+    })
+    .catch(错误)
+    .finally(() => {
+      流水框.加载中 = false
+    })
 }
-const 确定续费卡密 = function () {
-  const res = 待续费卡密.value.续费卡密.match(/[a-zA-Z0-9]+/g)
-  if (!res) {
-    console.log("没有卡")
-    警告提示("请选择需要续费的卡密")
-    return
-  }
-  if (充值卡.value.length < 6) {
-    警告提示("请输入正确的充值卡")
-    return
-  }
-  加载中.value = true
-  post("/续费卡密", { Rechargeable_card: 充值卡.value, cards: res }).then(
-    function (res) {
-      加载中.value = false
-      if (!res.data.state) {
-        警告提示(res.data.msg)
-        return
-      }
-      返回提示(res.data.msg)
-      查询所有卡密();
-    }
-  )
-}
-const 冻时 = function (card, s, row) {
-  if (row.card_state != 2) {
-    警告提示("使用状态不正常")
-    return
-  }
-  if (row.left_time != 0 && row.left_time != null) {
-    警告提示("已经冻结了,请勿重复冻结")
-    return
-  }
-  console.log('冻结:' + card)
-  加载中.value = true
-  row.left_time = -1
-  post("/暂停时长", { Card: card, Software: s }).then(
-    function (res) {
-      console.log(res.data)
-      加载中.value = false
-      if (!res.data.state) {
-        警告提示(res.data.msg)
-        return
-      }
-      返回提示(res.data.msg)
-    }
-  )
-}
-const 解冻 = function (card, s, row) {
-  let 可解冻时长 = row.left_time
-  if (可解冻时长 <= 0) {
-    警告提示("没有可解冻时长")
-    return
-  }
-  console.log('解冻:' + card)
-  加载中.value = true
-  row.left_time = -1
-  post("/恢复时长", { card: card, Software: s }).then(
-    function (res) {
-      console.log(res.data)
-      加载中.value = false
-      if (!res.data.state) {
-        警告提示(res.data.msg)
-        return
-      }
-      返回提示(res.data.msg)
-    }
-  )
-}
-// 查询软件列表();
-// 查询所有卡密();
 </script>
-<style scoped>
-.el-table :deep(.cell) {
-  /* white-space: nowrap; */
-  padding: 0px;
-}
 
-/* :global(.cell) {
-    color: #ff0;
-  } */
-</style>
-
-<style type="text/css">
+<style>
 html,
-body {
-    width: 100%;
-    height: 100%;
-    color: #fff;
-    background: #222;
-    background-image: url('https://t.mwm.moe/pc');
-    background-size: cover;
-    background-size: 100%;
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+  background: #20242d;
+}
+.访客页 {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 18px;
+}
+.查询区 {
+  margin-bottom: 16px;
+}
+.查询区 p {
+  color: #9da7b5;
+}
+.按钮 {
+  margin-top: 12px;
+}
+.流水摘要 {
+  margin-bottom: 12px;
+}
+.分页 {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+.增加 {
+  color: #67c23a;
+}
+.扣除 {
+  color: #f56c6c;
 }
 </style>

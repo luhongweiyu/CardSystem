@@ -1,289 +1,567 @@
 <template>
-  <div>
-    <h1>SoftWare软件</h1>
-  </div>
-  <el-button type="success" @click="软件名称输入显示 = true">添加软件</el-button>
-  <el-table :data="软件列表" style="width: 100%">
-    <el-table-column prop="ID" label="软件ID" width="70" />
-    <el-table-column prop="Software" label="软件名称" width="200">
-      <template #default="scope">
-        <el-input v-model="scope.row.Software" placeholder="请输入软件名" />
-      </template>
-
-    </el-table-column>
-    <el-table-column prop="bulletin" label="公告" width="280">
-      <template #default="scope">
-        <el-input v-model="scope.row.Bulletin" autosize type="textarea" placeholder="请输入公告内容" style="display:inline"
-          width="100px" />
-      </template>
-    </el-table-column>
-    <el-table-column prop="bulletin" label="暂停扣时(天)" width="280">
-      <template #default="scope">
-        <el-input-number v-model="scope.row.暂停扣时" :min="-999" :max="999" />
-      </template>
-    </el-table-column>
-
-    <el-table-column label="操作" width="200">
-      <template #default="scope">
-        <el-button link type="primary" size="small" @click="保存公告(scope.row)" style="display:inline">保存</el-button>
-        <el-button link type="primary" size="small" @click="删除软件(scope.row.ID)">删除</el-button>
-      </template>
-    </el-table-column>
-  </el-table>
-
-  <el-button link type="primary" size="small" @click="查询子账号" style="display:inline">查询授权账号</el-button>
-
-  <div v-for="user_1, k1 in 授权列表" :key="k1">
-    <span style="width: 25px;display: inline-block;">{{ user_1.ID子账号 }}</span>    
-    账号: <el-input v-model="user_1.name" style="width: 100px" placeholder="Please input" disabled/>
-    密码:<el-input v-model="user_1.password" style="width: 100px" placeholder="Please input" />
-    余额:<el-input-number v-model="user_1.余额" style="width: 150px" placeholder="余额" controls-position="right"/>
-
-    <el-button link type="primary" size="small" @click="保存授权设置(user_1)" style="display:inline">保存授权设置</el-button>
-    <el-button link type="primary" size="small" @click="Object.assign(子账号充值弹框, { 显示: true, ID: user_1.ID子账号, 金额: null, 备注: '' })" style="display:inline">充值</el-button>
-    <template v-for="(soft, k2) in 软件列表" :key="k2">
-      <!-- <span v-for="(软件, k2) in [{ID:1,Software:'软件名'},{ID:2,Software:'软件名2'}]" :key="k2"> -->
-      <span v-show="user_1.价格[(soft.ID) + ''] || user_1.价格[(soft.ID) + ''] == 0">
-        {{ soft.Software }}
-        <el-input v-model="user_1['价格'][soft.ID]"  style="width: 200px" />
-      </span>
-    </template>
-  
-  </div>
-
-  <el-dialog v-model="软件名称输入显示" title="输入软件名称">
-    {{ 新增软件名 }}
-    <el-input v-model="新增软件名" placeholder="软件名称" />
-    <div style="margin: 20px">
-      <el-button type="success" @click="添加软件()">确定</el-button>
-
-      <el-button type="info" @click="软件名称输入显示 = false"> 取消</el-button>
+  <section class="页面" v-loading="加载中">
+    <div class="页面标题行">
+      <div>
+        <h2>软件与计费周期</h2>
+        <p class="说明">客户端只提交周期秒数，实际扣点价格始终由服务端决定。</p>
+      </div>
+      <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑;">新增软件</el-button>
     </div>
-  </el-dialog>
 
-  <el-dialog v-model="子账号充值弹框.显示" title="子账号充值" width="500px">
-    <div style="margin-bottom: 12px;">子账号ID: {{ 子账号充值弹框.ID }}</div>
-    <div style="margin-bottom: 12px;">
-      金额:
-      <el-input-number
-        v-model="子账号充值弹框.金额"
-        style="width: 100%"
-        controls-position="right"
-        placeholder="请输入充值金额"
-      />
-    </div>
-    <div style="margin-bottom: 12px;">
-      备注:
-      <el-input
-        v-model="子账号充值弹框.备注"
-        type="textarea"
-        :rows="3"
-        placeholder="请输入备注"
-      />
-    </div>
-    <template #footer>
-      <el-button @click="子账号充值弹框.显示 = false">取消</el-button>
-      <el-button type="primary" @click="子账号充值(子账号充值弹框.ID, 子账号充值弹框.金额, 子账号充值弹框.备注)">确认充值</el-button>
-    </template>
-  </el-dialog>
+    <el-table :data="软件列表" border stripe row-key="ID">
+      <el-table-column prop="ID" label="ID" width="70" />
+      <el-table-column prop="Software" label="软件名称" min-width="170" />
+      <el-table-column label="默认周期" width="130">
+        <template #default="scope">{{ 周期文本(scope.row.default_period_seconds) }}</template>
+      </el-table-column>
+      <el-table-column label="心跳周期" width="130">
+        <template #default="scope">{{ 周期文本(scope.row.heartbeat_interval_seconds) }}</template>
+      </el-table-column>
+      <el-table-column prop="Bulletin" label="公告" min-width="220" show-overflow-tooltip />
+      <el-table-column v-if="!是代理账号" label="操作" width="230" fixed="right">
+        <template #default="scope">
+          <el-button link type="primary" @click="编辑软件(scope.row)">编辑</el-button>
+          <el-button link type="success" @click="打开价格(scope.row)">周期价格</el-button>
+          <el-button link type="danger" @click="删除软件(scope.row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
 
+    <el-card v-if="是代理账号" shadow="never" class="代理提示">
+      代理账号只能使用管理员分配的软件和点数价格。
+    </el-card>
+
+    <section v-if="!是代理账号" class="代理区">
+      <div class="子标题行">
+        <h3>代理账号</h3>
+        <el-button type="primary" plain @click="打开代理创建;">新增代理账号</el-button>
+      </div>
+      <el-table :data="代理列表" border stripe>
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="name" label="账号" width="160" />
+        <el-table-column prop="balance" label="余额（点）" width="120" />
+        <el-table-column label="操作" min-width="260">
+          <template #default="scope">
+            <el-button link type="primary" @click="编辑代理(scope.row)">价格与密码</el-button>
+            <el-button link type="success" @click="打开代理充值(scope.row)">充值点数</el-button>
+            <el-button link type="danger" @click="删除代理(scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
+
+    <!-- 软件编辑 -->
+    <el-dialog v-model="软件框.显示" :title="软件框.id ? '编辑软件' : '新增软件'" width="500px" destroy-on-close>
+      <el-form label-width="125px" v-loading="软件框.加载中">
+        <el-form-item label="软件名称" required>
+          <el-input v-model="软件框.software" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="默认周期（秒）" required>
+          <el-input-number
+            v-model="软件框.default_period_seconds"
+            :min="1"
+            :max="31536000"
+            :precision="0"
+            controls-position="right"
+          />
+        </el-form-item>
+        <el-form-item label="心跳周期（秒）" required>
+          <el-input-number
+            v-model="软件框.heartbeat_interval_seconds"
+            :min="1"
+            :max="86400"
+            :precision="0"
+            controls-position="right"
+          />
+        </el-form-item>
+        <el-alert type="info" :closable="false" show-icon title="所有启用计费周期都必须不少于心跳周期的 2 倍。" />
+        <el-form-item label="公告">
+          <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="软件框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="保存软件;">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 周期价格 -->
+    <el-dialog v-model="价格框.显示" title="周期价格" width="760px" destroy-on-close>
+      <div class="价格标题">
+        <span>{{ 价格框.softwareName }}</span>
+        <el-button type="primary" size="small" @click="新增价格;">新增周期</el-button>
+      </div>
+      <el-table :data="价格框.rows" border>
+        <el-table-column label="周期" width="150">
+          <template #default="scope">{{ 周期文本(scope.row.period_seconds) }}</template>
+        </el-table-column>
+        <el-table-column prop="period_seconds" label="秒数" width="110" />
+        <el-table-column prop="cost" label="扣点" width="90" />
+        <el-table-column label="状态" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.enabled ? 'success' : 'info'">
+              {{ scope.row.enabled ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="默认" width="80">
+          <template #default="scope">{{ scope.row.is_default ? '是' : '' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="150">
+          <template #default="scope">
+            <el-button link type="primary" @click="编辑价格(scope.row)">编辑</el-button>
+            <el-button link type="danger" @click="删除价格(scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!价格框.rows.length" description="尚未配置周期价格" />
+    </el-dialog>
+
+    <el-dialog
+      v-model="价格编辑框.显示"
+      :title="价格编辑框.id ? '编辑周期价格' : '新增周期价格'"
+      width="420px"
+      destroy-on-close
+    >
+      <el-form label-width="120px">
+        <el-form-item label="周期（秒）">
+          <el-input-number
+            v-model="价格编辑框.period_seconds"
+            :min="1"
+            :max="31536000"
+            :precision="0"
+            controls-position="right"
+            :disabled="!!价格编辑框.id"
+          />
+        </el-form-item>
+        <el-form-item label="扣点价格">
+          <el-input-number
+            v-model="价格编辑框.cost"
+            :min="1"
+            :max="1000000000"
+            :precision="0"
+            controls-position="right"
+          />
+        </el-form-item>
+        <el-form-item label="启用"><el-switch v-model="价格编辑框.enabled" /></el-form-item>
+        <el-form-item label="设为默认"><el-switch v-model="价格编辑框.is_default" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="价格编辑框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="保存价格;">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 代理账号 -->
+    <el-dialog v-model="代理框.显示" title="新增代理账号" width="420px" destroy-on-close>
+      <el-form label-width="100px">
+        <el-form-item label="账号"><el-input v-model="代理框.name" maxlength="32" /></el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="代理框.password" type="password" show-password />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="代理框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="创建代理;">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="代理编辑框.显示" title="代理账号设置" width="620px" destroy-on-close>
+      <p>账号：{{ 代理编辑框.name }}　当前余额：{{ 代理编辑框.balance }} 点</p>
+      <el-form label-width="150px">
+        <el-form-item v-for="item in 软件列表" :key="item.ID" :label="`${item.Software}（每点价格）`">
+          <el-input-number
+            v-model="代理编辑框.prices[item.ID]"
+            :min="0"
+            :max="1000000000"
+            :precision="2"
+            controls-position="right"
+          />
+          <span class="价格说明">0 表示不授权该软件</span>
+        </el-form-item>
+        <el-form-item label="新密码（可选）">
+          <el-input v-model="代理编辑框.password" type="password" show-password placeholder="留空表示不修改" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="代理编辑框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="保存代理;">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="代理充值框.显示" title="给代理账号充值" width="420px" destroy-on-close>
+      <p>账号：{{ 代理充值框.name }}</p>
+      <el-form label-width="90px">
+        <el-form-item label="点数">
+          <el-input-number
+            v-model="代理充值框.amount"
+            :min="1"
+            :max="1000000000"
+            :precision="0"
+            controls-position="right"
+          />
+        </el-form-item>
+        <el-form-item label="备注"><el-input v-model="代理充值框.note" maxlength="200" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="代理充值框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="代理充值;">确认充值</el-button>
+      </template>
+    </el-dialog>
+  </section>
 </template>
 
-<script lang="ts" setup>
-import { ElMessage, ElMessageBox } from "element-plus";
-import { useCounterStore } from "../stores/counter";
-import { reactive, ref } from "vue";
-import { tr } from "element-plus/es/locale"; 
-const 软件列表 = ref([]);
-const 新增软件名 = ref("");
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { use登录状态Store } from '../stores/登录状态.js'
+import { 获取接口错误提示 } from '../api/请求客户端.js'
+
+const stores = use登录状态Store()
+const post = stores.post
+const 是代理账号 = computed(() => Boolean(stores.是代理账号))
 const 加载中 = ref(false)
-const 软件名称输入显示 = ref(false);
-const 充值卡输入显示 = ref(false);
-const post = useCounterStore().post;
-const 充值卡_新卡 = reactive({
-  软件名: 0,
-  num: 1,
-  software: 0,
-  add_time: 30,
-  充值次数: 1,
-  有效期至: new Date(),
-  指定类型: 2,
-  cards: ""
+const 软件列表 = ref([])
+const 代理列表 = ref([])
+const 软件框 = reactive({
+  显示: false,
+  加载中: false,
+  id: 0,
+  software: '',
+  bulletin: '',
+  default_period_seconds: 3600,
+  heartbeat_interval_seconds: 300
 })
-const 返回提示 = function (msg) {
-  var s = '<pre> ' + msg + '</pre>'
-  ElMessageBox.alert(s, {
-    dangerouslyUseHTMLString: true,
-  });
-}
-const 授权列表 = ref([]);
-const 子账号充值弹框 = reactive({ 显示: false, ID: 0, 金额: null as number | null, 备注: "" });
-const 添加软件 = function () {
-  软件名称输入显示.value = false;
-  post("/user_add_soft", {
-    software: 新增软件名.value
-  }).then(function (res) {
-    if (res.data.state) {
-      ElMessage.success("添加成功");
-      查询软件列表();
-    } else {
-      ElMessage.error(res.data.msg);
-    }
-  });
-};
-const 删除软件 = function (id) {
-  var 确认数字 = Math.round(Math.random() * 10000000000)
+const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', heartbeatSeconds: 300, rows: [] })
+const 价格编辑框 = reactive({
+  显示: false,
+  id: 0,
+  software: 0,
+  period_seconds: 3600,
+  cost: 1,
+  enabled: true,
+  is_default: false
+})
+const 代理框 = reactive({ 显示: false, name: '', password: '' })
+const 代理编辑框 = reactive({ 显示: false, id: 0, name: '', balance: 0, prices: {}, password: '' })
+const 代理充值框 = reactive({ 显示: false, id: 0, name: '', amount: 100, note: '' })
 
-  ElMessageBox.prompt('请输入数字:' + 确认数字 + '确认删除', '确认删除id为:' + id + "的软件吗?", {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
+const 周期文本 = function (seconds) {
+  const value = Number(seconds || 0)
+  if (!value) return '-'
+  if (value % 86400 === 0) return `${value / 86400} 天`
+  if (value % 3600 === 0) return `${value / 3600} 小时`
+  if (value % 60 === 0) return `${value / 60} 分钟`
+  return `${value} 秒`
+}
+
+const 查询软件 = function () {
+  return post('/user_query_soft_list', {}).then((res) => {
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
+    软件列表.value = res.data.data || []
   })
-    .then(({ value }) => {
-      if (value == 确认数字) {
-        post("/user_del_soft", { id: id }).then(function (res) {
-          if (res.data.state) {
-            ElMessage.success("删除成功");
-            查询软件列表();
-          } else {
-            ElMessage.error(res.data.msg);
-          }
-        });
-      } else {
-        ElMessage.error("输入的数字错误");
-      }
+}
+const 查询代理 = function () {
+  if (是代理账号.value) return Promise.resolve()
+  return post('/查询代理账号', {}).then((res) => {
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询代理账号失败')
+    代理列表.value = res.data.data || []
+  })
+}
+const 打开软件编辑 = function () {
+  Object.assign(软件框, {
+    显示: true,
+    id: 0,
+    software: '',
+    bulletin: '',
+    default_period_seconds: 3600,
+    heartbeat_interval_seconds: 300
+  })
+}
+const 编辑软件 = function (row) {
+  Object.assign(软件框, {
+    显示: true,
+    id: row.ID,
+    software: row.Software,
+    bulletin: row.Bulletin || '',
+    default_period_seconds: Number(row.default_period_seconds || 3600),
+    heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300)
+  })
+}
+const 保存软件 = function () {
+  if (!软件框.software.trim()) {
+    ElMessage.warning('请输入软件名称')
+    return
+  }
+  if (
+    !Number.isInteger(软件框.default_period_seconds) ||
+    软件框.default_period_seconds < 1 ||
+    软件框.default_period_seconds > 31536000
+  ) {
+    ElMessage.warning('默认周期必须在1至31536000秒之间')
+    return
+  }
+  if (
+    !Number.isInteger(软件框.heartbeat_interval_seconds) ||
+    软件框.heartbeat_interval_seconds < 1 ||
+    软件框.heartbeat_interval_seconds > 86400
+  ) {
+    ElMessage.warning('心跳周期必须在1至86400秒之间')
+    return
+  }
+  if (软件框.default_period_seconds < 软件框.heartbeat_interval_seconds * 2) {
+    ElMessage.warning('默认计费周期不能短于心跳周期的2倍')
+    return
+  }
+  软件框.加载中 = true
+  const url = 软件框.id ? '/user_modify_bulletin' : '/user_add_soft'
+  post(url, {
+    id: 软件框.id,
+    software: 软件框.software,
+    bulletin: 软件框.bulletin,
+    default_period_seconds: 软件框.default_period_seconds,
+    heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存软件失败')
+      ElMessage.success('保存成功')
+      软件框.显示 = false
+      return 查询软件()
     })
-};
-const 保存公告 = function (row) {
-  post("/user_modify_bulletin", { ID: row.ID, Software: row.Software, Bulletin: row.Bulletin, 暂停扣时: row.暂停扣时 }).then(function (res) {
-    if (res.data.state) {
-      ElMessage.success("修改成功");
-      查询软件列表();
-    } else {
-      ElMessage.error(res.data.msg);
-    }
-  });
-};
-const 查询软件列表 = function () {
-  post("/user_query_soft_list", {}).then(function (res) {
-    if (res.data.state) {
-      ElMessage.success("刷新软件列表获取成功");
-      console.log(res.data.data);
-      软件列表.value = res.data.data;
-    } else {
-      ElMessage.error(res.data.msg);
-    }
-    // 查询软件列表()
-  });
-};
-const 查询子账号 = function () {
-  post("/查询子账号", {}).then(function (res) {
-    console.log(res.data)
-    if (res.data.state) {
-      ElMessage.success("刷新授权账号列表成功");
-      console.log(res.data.data);
-      // console.log(typeof(res.data.data[0]))
-
-      for (let i = 0; i < res.data.data.length; i++) {
-        let 用户 = res.data.data[i]
-        用户.价格 = 用户.价格 || "{}"
-        用户.价格 = JSON.parse(用户.价格)
-        // res.data.data[i].价格 = ref( JSON.parse(res.data.data[i].价格))
-        用户.原始余额 = 用户.余额
-        for (let i2 = 0; i2 < 软件列表.value.length; i2++) {
-          let 软件ID = 软件列表.value[i2].ID
-          用户.价格[软件ID] = 用户.价格[软件ID] || {}
-          if (typeof 用户.价格[软件ID]  === 'number'){
-            用户.价格[软件ID] = { 0: 用户.价格[软件ID] }
-          }
-          用户.价格[软件ID] = JSON.stringify(用户.价格[软件ID])
-        }
-      }
-      console.log(res.data.data)
-
-      // res.data.data[0].价格 = JSON.parse(res.data.data[0].价格)
-      // if (!res.data.data[0].价格) {
-      //   res.data.data[0].价格 = {}
-      // }
-
-      授权列表.value = res.data.data;
-    } else {
-      ElMessage.error(res.data.msg);
-    }
-  });
+    .catch(显示错误)
+    .finally(() => {
+      软件框.加载中 = false
+    })
 }
-const 保存授权设置 = function (账号) {
-  let 价格表 = {}
-  for( let key in 账号.价格){
-    价格表[key] = {}
-    try {
-      let b = JSON.parse(账号.价格[key]);
-      价格表[key] = b
-      for (let key in b){
-        // console.log(typeof key)
-        // console.log(typeof b[key])
-        // || (typeof [key] !== 'number')
-        if( (typeof b[key] !== 'number')  ){
-          ElMessage.error("错误,必须为整数");
-          return false;
-        }
-      }
-    } catch (e) {
-      ElMessage.error("错误,请检查扣点设置是否正确");
-      return false;
-    }
-  }
-  let data = {
-    价格: JSON.stringify(价格表),
-    ID子账号: 账号.ID子账号,
-    name: 账号.name,
-    password: 账号.password,
-    余额: 账号.余额,
-    原始余额: 账号.原始余额,
-  }
-  // console.log(data)
-  post("/设置子账号", { data: data }).then(function (res) {
-    console.log(res.data)
-    if (res.data.state) {
-      ElMessage.success("刷新授权账号列表成功");
-      console.log(res.data.data);
-      查询子账号()
+const 删除软件 = function (row) {
+  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡和设备会话，流水会保留。继续？`, '确认删除', {
+    type: 'warning'
+  })
+    .then(() => post('/user_del_soft', { id: row.ID }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除软件失败')
+      ElMessage.success('删除成功')
+      查询软件()
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
 
-    } else {
-      ElMessage.error(res.data.msg);
-    }
-  });
+const 打开价格 = function (row) {
+  Object.assign(价格框, {
+    显示: true,
+    software: row.ID,
+    softwareName: row.Software,
+    heartbeatSeconds: Number(row.heartbeat_interval_seconds || 300),
+    rows: []
+  })
+  查询价格()
 }
-const 子账号充值 = function(充值ID,充值金额,充值备注){
-  if (充值金额 === null || 充值金额 === undefined) {
-    ElMessage.error("金额必须是数字");
-    return Promise.resolve(false);
-  }
-  const 金额数字 = Number(充值金额);
-  if (!Number.isFinite(金额数字)) {
-    ElMessage.error("金额必须是数字");
-    return Promise.resolve(false);
-  }
-  let data = {
-    ID:充值ID,
-    Amount:金额数字,
-    Note: ((充值备注 || "") + " " + new Date().toLocaleString()).trim()
-  }
-  console.log("子账号充值请求参数", data)
-  return post("/设置子账号_充值", data).then(function (res) {
-    console.log("子账号充值接口返回", res.data)
-    if (res.data === 'ok') {
-      ElMessage.success("充值成功，已刷新授权账号列表");
-      console.log(res.data.data);
-      子账号充值弹框.显示 = false;
-      查询子账号()
-      return true;
-    } else {
-      ElMessage.error(res.data.msg);
-      return false;
-    }
-  });
+const 查询价格 = function () {
+  return post('/point_period_price/list', { software: 价格框.software })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询周期价格失败')
+      价格框.rows = res.data.data || []
+    })
+    .catch(显示错误)
 }
-// 查询子账号()
-查询软件列表();
+const 新增价格 = function () {
+  Object.assign(价格编辑框, {
+    显示: true,
+    id: 0,
+    software: 价格框.software,
+    period_seconds: 3600,
+    cost: 1,
+    enabled: true,
+    is_default: !价格框.rows.length
+  })
+}
+const 编辑价格 = function (row) {
+  Object.assign(价格编辑框, {
+    显示: true,
+    id: row.id,
+    software: row.software,
+    period_seconds: Number(row.period_seconds),
+    cost: Number(row.cost),
+    enabled: Boolean(row.enabled),
+    is_default: Boolean(row.is_default)
+  })
+}
+const 保存价格 = function () {
+  if (价格编辑框.enabled && 价格编辑框.period_seconds < 价格框.heartbeatSeconds * 2) {
+    ElMessage.warning('启用计费周期不能短于心跳周期的2倍')
+    return
+  }
+  post('/point_period_price/save', {
+    software: 价格编辑框.software,
+    period_seconds: 价格编辑框.period_seconds,
+    cost: 价格编辑框.cost,
+    enabled: 价格编辑框.enabled,
+    is_default: 价格编辑框.is_default
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存价格失败')
+      ElMessage.success('保存成功')
+      价格编辑框.显示 = false
+      return Promise.all([查询价格(), 查询软件()])
+    })
+    .catch(显示错误)
+}
+const 删除价格 = function (row) {
+  ElMessageBox.confirm('删除后使用该周期的登录会被拒绝，确定删除？', '确认删除', { type: 'warning' })
+    .then(() => post('/point_period_price/delete', { id: row.id }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
+      查询价格()
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+
+const 创建代理 = function () {
+  const passwordBytes = new TextEncoder().encode(代理框.password || '').length
+  if (!/^[A-Za-z0-9_]{3,32}$/.test(代理框.name)) {
+    ElMessage.warning('代理账号只能使用3至32位字母、数字或下划线')
+    return
+  }
+  if (passwordBytes < 6 || passwordBytes > 72) {
+    ElMessage.warning('密码长度必须为6至72个字节')
+    return
+  }
+  post('/创建代理账号', { agent_name: 代理框.name, agent_password: 代理框.password })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '创建失败')
+      ElMessage.success('创建成功')
+      代理框.显示 = false
+      Object.assign(代理框, { name: '', password: '' })
+      查询代理()
+    })
+    .catch(显示错误)
+}
+const 打开代理创建 = function () {
+  Object.assign(代理框, { 显示: true, name: '', password: '' })
+}
+const 编辑代理 = function (row) {
+  let prices = {}
+  try {
+    prices = typeof row.prices === 'string' ? JSON.parse(row.prices || '{}') : row.prices || {}
+  } catch {
+    prices = {}
+  }
+  const normalized = {}
+  软件列表.value.forEach((item) => {
+    const value = Number(prices[item.ID] ?? prices[String(item.ID)] ?? 0)
+    normalized[item.ID] = Number.isFinite(value) && value >= 0 ? value : 0
+  })
+  Object.assign(代理编辑框, {
+    显示: true,
+    id: row.id,
+    name: row.name,
+    balance: row.balance,
+    prices: normalized,
+    password: ''
+  })
+}
+const 保存代理 = function () {
+  if (代理编辑框.password) {
+    const passwordBytes = new TextEncoder().encode(代理编辑框.password).length
+    if (passwordBytes < 6 || passwordBytes > 72) {
+      ElMessage.warning('新密码长度必须为6至72个字节')
+      return
+    }
+  }
+  // 价格为 0 的软件不写入映射，缺少映射即表示代理无权为该软件发卡。
+  const prices = {}
+  Object.keys(代理编辑框.prices).forEach((key) => {
+    const value = Number(代理编辑框.prices[key] || 0)
+    if (Number.isFinite(value) && value > 0) prices[key] = value
+  })
+  post('/设置代理账号', {
+    data: { id: 代理编辑框.id, password: 代理编辑框.password, prices: JSON.stringify(prices) }
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存代理账号失败')
+      ElMessage.success('保存成功')
+      代理编辑框.显示 = false
+      查询代理()
+    })
+    .catch(显示错误)
+}
+const 打开代理充值 = function (row) {
+  Object.assign(代理充值框, { 显示: true, id: row.id, name: row.name, amount: 100, note: '' })
+}
+const 代理充值 = function () {
+  if (!代理充值框.amount || 代理充值框.amount < 1) {
+    ElMessage.warning('请输入充值点数')
+    return
+  }
+  post('/代理账号充值', { id: 代理充值框.id, amount: 代理充值框.amount, note: 代理充值框.note })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '充值失败')
+      ElMessage.success('充值成功')
+      代理充值框.显示 = false
+      查询代理()
+    })
+    .catch(显示错误)
+}
+const 删除代理 = function (row) {
+  ElMessageBox.confirm(`确定删除代理账号“${row.name}”？已生成的点卡和流水会保留。`, '确认删除', {
+    type: 'warning'
+  })
+    .then(() => post('/删除代理账号', { id: row.id }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
+      ElMessage.success('删除成功')
+      查询代理()
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+
+onMounted(() => {
+  Promise.all([查询软件(), 查询代理()]).catch(() => {})
+})
 </script>
-<style scoped></style>
+
+<style scoped>
+.页面 {
+  padding: 16px;
+  color: #e6eaf2;
+}
+.标题行,
+.子标题行,
+.价格标题 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+h2,
+h3 {
+  margin: 0 0 6px;
+}
+.说明 {
+  margin: 0 0 12px;
+  color: #aeb6c3;
+  font-size: 13px;
+}
+.代理区 {
+  margin-top: 24px;
+}
+.代理提示 {
+  margin-top: 20px;
+  color: #aeb6c3;
+}
+.价格标题 {
+  margin-bottom: 12px;
+}
+.价格说明 {
+  margin-left: 10px;
+  color: #9099a8;
+  font-size: 12px;
+}
+</style>

@@ -1,104 +1,57 @@
 <script setup>
-import { ref, reactive, computed } from "vue";
-import { RouterLink, RouterView } from "vue-router";
-import Indexhtml from "./views/IndexView.vue";
-import HeaderView from "./views/HeaderView.vue";
-import Login from "./views/Login.vue";
-import Home from "./views/HomeView.vue";
-import HelloWorld from "./components/HelloWorld.vue";
-import { useCounterStore } from "./stores/counter.js";
-import { storeToRefs } from "pinia";
-const stores = useCounterStore();
+import { RouterView } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { use登录状态Store } from './stores/登录状态.js'
+import HeaderView from './views/HeaderView.vue'
+import IndexView from './views/IndexView.vue'
+import Login from './views/Login.vue'
 
-const { 账号, 密码, 登录状态 } = storeToRefs(stores);
-// const isCollapse = dhkg();
-const 导航宽 = computed(() => {
-  if (stores.导航开关) {
-    return "0px";
-  } else {
-    return "200px";
-  }
-});
+const stores = use登录状态Store()
+const { 登录状态 } = storeToRefs(stores)
 </script>
 
 <template>
-  <div class="backimg">
-  </div>
   <Login v-if="!登录状态" />
-
-  <div v-if="登录状态">
-    <el-container>
-      <el-header>
-        <HeaderView />
-      </el-header>
-      <el-main>
-        <div>
-          <Indexhtml />
-        </div>
-        <div>
-          <RouterView />
-        </div>
-        <!-- </div> -->
-      </el-main>
+  <el-container v-else class="应用">
+    <el-header class="头部"><HeaderView /></el-header>
+    <el-container class="主体">
+      <el-aside :width="stores.导航开关 ? '64px' : '200px'" class="侧栏"><IndexView /></el-aside>
+      <el-main class="内容"><RouterView /></el-main>
     </el-container>
-  </div>
+  </el-container>
 </template>
-<style type="text/css">
+
+<style>
 html,
 body,
 #app {
-  top: 0px;
-  padding: 0px;
-  margin: 0px;
+  width: 100%;
+  min-height: 100%;
   height: 100%;
-  color: #fff;
-  background: #222;
-  background-image: url('https://t.mwm.moe/pc');
-  background-size: 100%;
-  /* width: 100%; */
-  /* overflow: auto; */
-}
-</style>
-
-<style scoped>
-.el-main {
-  padding: 0px;
-  width: 100%;
-  display: flex;
-  flex-direction: row;
-}
-
-.el-header {
-  padding: 0px;
-  margin: 0px;
-  width: 100%;
-  height: auto;
-}
-
-.left {
-  float: left;
-  top: 0px;
-  /* margin: 0px; */
-  /* padding: 0px; */
-  /* position: sticky; */
-}
-
-.el-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-
-.backimg {
-  position: absolute;
   margin: 0;
+  background: #20242d;
+  color: #e6eaf2;
+}
+.应用 {
+  min-height: 100vh;
+  background: rgba(24, 28, 36, 0.92);
+}
+.头部 {
+  height: auto;
+  min-height: 48px;
   padding: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: rgb(22, 22, 22, 0.9);
-  /* background: #000; */
+  border-bottom: 1px solid #343b48;
+}
+.主体 {
+  min-height: calc(100vh - 49px);
+}
+.侧栏 {
+  transition: width 0.2s;
+  background: #545c64;
+  overflow: hidden;
+}
+.内容 {
+  padding: 0;
+  overflow: auto;
 }
 </style>

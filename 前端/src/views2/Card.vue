@@ -1,548 +1,623 @@
 <template>
-  <div  v-loading="加载中">
-    <div>
-      <el-row>
-        <el-col :span="12"> 卡密列表 </el-col>
-        <el-col :span="12">
-          <el-button style="border: 0px; margin: 0px" type="success" @click="显示生成卡密界面 = true"> 添加卡密</el-button>
-        </el-col>
-      </el-row>
-    </div>
-    <div>
-      <el-select v-model="soft" placeholder="所属软件" style="width: 100px" @change="查询所有卡密()">
-        <!-- <el-option label="Zone one" value="shanghai" /> -->
-        <el-option v-for="(item, index) in 软件列表" :label="item.Software" :value="item.ID" />
-      </el-select>
-
-      <el-select v-model="state" placeholder="状态" style="width: 100px">
-        <el-option v-for="(item, index) in 状态列表" :label="item[1]" :value="item[0]" />
-      </el-select>
-
-      <el-select v-model="类型" placeholder="类型" style="width: 100px" allow-create>
-        <!-- <el-input-number v-model="类型" :min="-1" :max="365" controls-position="right" style="width: 100px"  placeholder="类型天数"  /> -->
-        <!-- <el-input v-model="类型" placeholder="类型天数" style="width: 100px" /> -->
-        <el-input-number v-model="类型" placeholder="类型天数" style="width: 200px" />
-        <el-option v-for="(item, index) in 类型列表" :label="item[1]" :value="item[0]" />
-      </el-select>
-
-      <el-input v-model="卡密" placeholder="卡密" style="width: auto" @keypress.enter="查询所有卡密()"/>
-      <el-input v-model="备注" placeholder="备注" style="width: auto" @keypress.enter="查询所有卡密()"/>
-      <el-button type="success" :icon="Search" circle style="margin: 10px" @click="查询所有卡密()" />
-
-      <el-button style="border: 0px; margin: 0px" type="primary">导出</el-button>
-      <el-button style="border: 0px; margin: 0px" type="success" @click="续费按钮">续费</el-button>
-      <el-button style="border: 0px; margin: 0px" type="danger" @click="删除选择的卡密">删除</el-button>
-      <el-button style="border: 0px; margin: 0px" type="info" @click="冻结选择的卡密('冻结')">冻结</el-button>
-      <el-button style="border: 0px; margin: 0px" type="success" @click="冻结选择的卡密('解冻')">解冻</el-button>
+  <section class="页面" v-loading="加载中">
+    <div class="页面标题行">
+      <div>
+        <h2>点卡管理</h2>
+        <p class="说明">一张卡可在多台设备使用；同一设备在授权周期内重复登录不会重复扣点。</p>
+      </div>
+      <el-button type="primary" @click="打开生成;">生成点卡</el-button>
     </div>
 
-    <el-table :data="所有卡密" :cell-style="cellState" @selection-change="记录打钩的" border>
-      <el-table-column type="selection" width="30" />
-      <!-- 卡密,类型,在线状态,所属软件,生成日期,最近使用,到期时间,备注,操作 -->
-      <el-table-column :show-overflow-tooltip="true" prop="card" label="卡密" width="180px" />
-      <el-table-column :show-overflow-tooltip="true" label="类型" width="60px">
-        <template #default="scope"> {{ 计算卡密类型(scope.row.available_time) }}</template>
+    <el-card shadow="never" class="筛选卡片">
+      <el-form :inline="true" @submit.prevent>
+        <el-form-item label="软件">
+          <el-select
+            v-model="筛选.software"
+            clearable
+            placeholder="全部软件"
+            style="width: 170px"
+            @change="查询卡密(true)"
+          >
+            <el-option v-for="item in 软件列表" :key="item.ID" :label="item.Software" :value="item.ID" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select
+            v-model="筛选.card_state"
+            clearable
+            placeholder="全部状态"
+            style="width: 130px"
+            @change="查询卡密(true)"
+          >
+            <el-option label="正常" :value="2" />
+            <el-option label="冻结" :value="4" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="卡密">
+          <el-input
+            v-model="筛选.card"
+            clearable
+            placeholder="支持模糊搜索"
+            style="width: 210px"
+            @keyup.enter="查询卡密(true)"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="筛选.notes"
+            clearable
+            placeholder="支持模糊搜索"
+            style="width: 180px"
+            @keyup.enter="查询卡密(true)"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="查询卡密(true)">查询</el-button>
+          <el-button @click="重置筛选;">重置</el-button>
+        </el-form-item>
+      </el-form>
+      <div class="批量操作">
+        <span>已选 {{ 已选卡密.length }} 张</span>
+        <el-button size="small" type="warning" :disabled="!已选卡密.length" @click="批量修改状态(4)">
+          冻结
+        </el-button>
+        <el-button size="small" type="success" :disabled="!已选卡密.length" @click="批量修改状态(2)">
+          解冻
+        </el-button>
+        <el-button size="small" type="danger" :disabled="!已选卡密.length" @click="批量删除;">删除</el-button>
+        <el-button size="small" :disabled="!卡密列表.length" @click="导出当前页;">导出当前页</el-button>
+      </div>
+    </el-card>
+
+    <el-table :data="卡密列表" border stripe row-key="card" @selection-change="选择变化;">
+      <el-table-column type="selection" width="44" />
+      <el-table-column prop="card" label="卡密" min-width="190" show-overflow-tooltip />
+      <el-table-column label="软件" width="150" show-overflow-tooltip>
+        <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="address" label="状态" width="60px">
+      <el-table-column label="余额" width="100" align="right">
+        <template #default="scope">{{ scope.row.point_balance }} 点</template>
+      </el-table-column>
+      <el-table-column label="状态" width="80">
         <template #default="scope">
-          <span v-if="scope.row.card_state == 4" style="color:red">冻结</span>
-          <span v-else-if="scope.row.storage_time > 0" style="color:rgb(255, 255, 0)">暂停</span>
-          <span v-else-if="判断到期(scope.row.end_time)" style="color:rgb(131, 71, 71)">到期</span>
-          <span v-else-if="scope.row.end_time" style="color:rgb(9, 255, 0)">激活</span>
+          <el-tag :type="scope.row.card_state === 4 ? 'danger' : 'success'">
+            {{ scope.row.card_state === 4 ? '冻结' : '正常' }}
+          </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" label="所属软件" width="100px">
-        <template #default="scope"> {{ 计算所属软件(scope.row.software) }}</template>
+      <el-table-column prop="authorized_device_count" label="授权设备" width="90" align="right" />
+      <el-table-column label="生成时间" width="170">
+        <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
       </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="create_time" label="生成日期" width="130px">
-        <template #default="scope"> {{ 时间转字符串(scope.row.create_time) }}</template>
+      <el-table-column label="最近扣点" width="170">
+        <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
       </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="use_time" label="最近使用" width="130px">
-        <template #default="scope"> {{ 时间转字符串(scope.row.use_time) }}</template>
-      </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="end_time" label="到期时间" width="130px">
-        <template #default="scope"> {{ 时间转字符串(scope.row.end_time) }}</template>
-      </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="address" label="操作" width="100px">
+      <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="scope">
-          <el-button style="border: 0px; margin: 0px" size="small" type="warning"
-            @click="修改单个卡密(scope.row)">修改</el-button>
-          <el-button style="border: 0px; margin: 0px" size="small" type="danger" @click="删除单个卡密(scope.row)">删除</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column :show-overflow-tooltip="true" prop="notes" label="备注" />
-      <el-table-column :show-overflow-tooltip="true" prop="config_content" label="配置" />
-      <el-table-column :show-overflow-tooltip="true" prop="history" label="最近登录"  width="230px"/>
-      <el-table-column :show-overflow-tooltip="true" label="其他">
-        <template #default="scope">
-          {{ scope.row.ID子账号 }}
-          <span v-if="scope.row.storage_time > 0" style="color:rgb(255, 255, 0)">暂停{{ Math.floor( scope.row.storage_time*10)/10 }}天</span>
+          <el-button link type="primary" @click="打开流水(scope.row)">流水</el-button>
+          <el-button link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
+          <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-pagination v-model:current-page="所有卡密_当前页" v-model:page-size="每页卡密数量" :page-sizes="[20, 100, 200, 300, 400, 500]"
-      background layout="total, sizes,prev, pager, next,jumper" :total="所有卡密数量" @size-change="查询所有卡密"
-      @current-change="查询所有卡密" />
-    <!-- 所属软件  -->
-    <!-- 全部状态 -->
-    <!-- 选择类型  -->
-    <!-- 代理人id -->
-    <!-- 卡密备注 -->
-    <!-- 操作 -->
-    <!-- 批量操作 -->
-    <!-- 导出 -->
-    <!-- 续期 -->
-    <!-- 删除 -->
-    <!-- 生成卡密界面 -->
-    <el-dialog v-model="显示生成卡密界面" title="生成卡密" width="80%">
-      <el-form label-position="right" label-width="100px" style="max-width: 460px" v-loading="加载中">
-        <el-form-item label="所属软件">
-          <el-select v-model="新卡.software" placeholder="所属软件" style="width: 200px">
-            <!-- <el-option label="Zone one" value="shanghai" /> -->
-            <el-option v-for="( item, index ) in  软件列表 " :label="item.Software" :value="item.ID" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="卡密类型">
-          <el-select v-model="新卡.available_time" placeholder="类型" style="width: 200px" allow-create>
-            <!-- <el-input-number v-model="类型" :min="-1" :max="365" controls-position="right" style="width: 100px"  placeholder="类型天数"  /> -->
-            <!-- <el-input v-model="新卡.available_time" placeholder="类型天数" style="width: 200px" /> -->
-            <el-input-number v-model="新卡.available_time" placeholder="类型天数" style="width: 200px" />
-            <el-option v-for="( item, index ) in  类型列表 " :label="item[1]" :value="item[0]" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="生成数量">
-          <el-input-number v-model="新卡.num" :min="1" :max="1000" style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="配置">
-          <el-input v-model="新卡.config_content" placeholder="配置" style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="新卡.notes" placeholder="备注" style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="最晚激活时间"> <el-input-number v-model="新卡.latest_activation_time" :min="-1" :max="1000"
-            style="width: 100px" />天内(-1表示不限制,0表示立即激活) </el-form-item>
+    <el-pagination
+      v-model:current-page="分页.page"
+      v-model:page-size="分页.page_size"
+      class="分页"
+      background
+      layout="total, sizes, prev, pager, next, jumper"
+      :page-sizes="[20, 50, 100, 200]"
+      :total="分页.total"
+      @size-change="查询卡密(true)"
+      @current-change="查询卡密(false)"
+    />
 
-        <el-form-item label="生成类型">
-          <el-radio-group v-model="新卡.指定类型" class="ml-4">
-            <el-radio :label="1" size="large">随机生成</el-radio>
-            <el-radio :label="2" size="large">指定卡密</el-radio>
+    <!-- 生成点卡 -->
+    <el-dialog v-model="生成框.显示" title="生成点卡" width="560px" destroy-on-close>
+      <el-form label-width="100px" v-loading="生成框.加载中">
+        <el-form-item label="所属软件" required>
+          <el-select v-model="生成框.software" placeholder="请选择软件" style="width: 280px">
+            <el-option v-for="item in 可发卡软件列表" :key="item.ID" :label="item.Software" :value="item.ID" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="每张点数" required>
+          <el-input-number
+            v-model="生成框.points"
+            :min="1"
+            :max="1000000000"
+            :precision="0"
+            controls-position="right"
+          />
+          <span class="单位">点</span>
+        </el-form-item>
+        <el-form-item label="生成数量" required>
+          <el-input-number v-model="生成框.num" :min="1" :max="1000" :precision="0" controls-position="right" />
+          <span v-if="是代理账号" class="费用提示">预计消耗代理余额 {{ 预计代理费用 }} 点</span>
+        </el-form-item>
+        <el-form-item label="生成方式">
+          <el-radio-group v-model="生成框.random">
+            <el-radio :label="true">随机生成</el-radio>
+            <el-radio :label="false">指定卡密</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="确定">
-          <el-button style="border: 10px; margin: 10px" type="success" @click="确定生成卡密()">生成卡密</el-button>
-          <el-button style="border: 10px; margin: 10px" @click="复制生成的卡密()">复制卡密</el-button>
-        </el-form-item>
-
-        <el-form-item label="卡密">
-          <!--  v-if="新卡.指定类型 == 2" -->
-          <el-input v-model="新卡.cards" :autosize="{ minRows: 3 }" type="textarea" placeholder="输入自定义卡密内容"
-            style="width: 300px" />
-        </el-form-item>
-      </el-form>
-    </el-dialog>
-    <!-- 修改卡密界面 -->
-    <el-dialog v-model="显示修改卡密界面" title="修改卡密" width="80%">
-      <el-form label-position="right" label-width="100px" style="max-width: 460px;display: inline-block;" v-loading="加载中">
-        <el-form-item label=" ">
-          {{ 待修改卡密.card }}
-        </el-form-item>
-        <el-form-item label="创建日期">
-          {{ 待修改卡密.create_time }}
-        </el-form-item>
-        <el-form-item label="所属软件">
-          <el-select v-model="待修改卡密.software" placeholder="所属软件" style="width: 200px" :disabled="是子账号">
-            <el-option v-for="( item, index ) in  软件列表 " :label="item.Software" :value="item.ID" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="到期时间" >
-          <el-date-picker v-model="待修改卡密.end_time" type="datetime" placeholder="选择时间" style="width: 200px"
-            :default-time="new Date()" :shortcuts="shortcuts" :disabled="是子账号" />
-
-        </el-form-item>
-        <el-form-item label="配置">
-          <el-input v-model="待修改卡密.config_content" placeholder="配置" style="width: 200px" :disabled="是子账号"/>
-
+        <el-form-item v-if="!生成框.random" label="卡密内容" required>
+          <el-input v-model="生成框.cards" type="textarea" :rows="4" placeholder="每行一张，也可用逗号分隔" />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="待修改卡密.notes" placeholder="备注" style="width: 200px" :disabled="是子账号"/>
+          <el-input v-model="生成框.notes" maxlength="500" show-word-limit />
         </el-form-item>
-        <el-form-item label="冻结状态">
-          <el-radio-group v-model="待修改卡密.card_state">
+        <el-form-item label="配置">
+          <el-input v-model="生成框.config_content" type="textarea" :rows="3" placeholder="留空表示无配置" />
+        </el-form-item>
+        <el-form-item v-if="生成框结果" label="生成结果">
+          <el-input v-model="生成框结果" type="textarea" :rows="5" readonly />
+          <el-button class="复制按钮" @click="复制文本(生成框结果)">复制</el-button>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="生成框.显示 = false">取消</el-button>
+        <el-button type="primary" @click="生成点卡;">生成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑点卡及管理员补扣点 -->
+    <el-dialog v-model="编辑框.显示" title="编辑点卡" width="520px" destroy-on-close>
+      <el-form label-width="100px" v-loading="编辑框.加载中">
+        <el-form-item label="卡密">
+          <span class="卡密文本">{{ 编辑框.card }}</span>
+        </el-form-item>
+        <el-form-item label="所属软件">
+          <span>{{ 软件名称(编辑框.software) }}</span>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="编辑框.card_state">
             <el-radio :label="2">正常</el-radio>
             <el-radio :label="4">冻结</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label=" ">
-          <el-button style="border: 0px; margin: 0px" type="success" @click="保存修改的卡密()">保存修改</el-button>
+        <el-form-item label="备注"><el-input v-model="编辑框.notes" maxlength="500" /></el-form-item>
+        <el-form-item label="配置">
+          <el-input v-model="编辑框.config_content" type="textarea" :rows="3" />
         </el-form-item>
+        <template v-if="!是代理账号">
+          <el-divider content-position="left">调整余额</el-divider>
+          <el-form-item label="当前余额">
+            <span>{{ 编辑框.point_balance }} 点</span>
+          </el-form-item>
+          <el-form-item label="变动点数">
+            <el-input-number
+              v-model="调整.amount"
+              :min="-1000000000"
+              :max="1000000000"
+              :precision="0"
+              controls-position="right"
+            />
+          </el-form-item>
+          <el-form-item label="调整原因">
+            <el-input v-model="调整.reason" maxlength="255" placeholder="例如：人工补点" />
+          </el-form-item>
+        </template>
       </el-form>
-      <div style="display: inline-block; margin: 50px; vertical-align: top">
-        <pre>
-          {{ 单个卡密详情 }}
-        </pre>
-      </div>
-    </el-dialog>
-    <!-- 续费界面 -->
-    <!-- 续费时间 -->
-    <el-dialog v-model="显示续费卡密界面" title="续费卡密" width="80%">
-      <el-form label-position="right" label-width="100px" style="max-width: 460px" v-loading="加载中">
-        <el-form-item label="续费时间">
-          <el-input-number v-model="待续费卡密.续费时间" :min="-1000" :max="1000" style="width: 200px" />天
-        </el-form-item>
-        <el-form-item label="">
-          <el-button style="border: 10px; margin: 10px" type="success" @click="确定续费卡密()">确定续费</el-button>
-        </el-form-item>
-        <el-form-item label="卡密">
-          <!--  v-if="新卡.指定类型 == 2" -->
-          <el-input v-model="待续费卡密.续费卡密" :autosize="{ minRows: 3 }" type="textarea" placeholder="输入需要续费的卡密"
-            style="width: 300px" />
-        </el-form-item>
-      </el-form>
+      <template #footer>
+        <el-button @click="编辑框.显示 = false">取消</el-button>
+        <el-button v-if="!是代理账号" type="warning" :disabled="!调整.amount" @click="调整余额;">
+          调整余额
+        </el-button>
+        <el-button type="primary" @click="保存编辑;">保存</el-button>
+      </template>
     </el-dialog>
 
-  </div>
+    <!-- 点数流水 -->
+    <el-dialog v-model="流水框.显示" title="点数流水" width="920px" destroy-on-close>
+      <div class="流水摘要">卡密：{{ 流水框.card }}　当前余额：{{ 流水框.balance }} 点</div>
+      <el-table :data="流水框.rows" border v-loading="流水框.加载中">
+        <el-table-column prop="created_at" label="时间" width="170" />
+        <el-table-column label="类型" width="90">
+          <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
+        </el-table-column>
+        <el-table-column prop="change" label="变动" width="80" align="right">
+          <template #default="scope">
+            <span :class="scope.row.change > 0 ? '增加' : '扣除'">
+              {{ scope.row.change > 0 ? '+' : '' }}{{ scope.row.change }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="余额" width="130">
+          <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注（含设备信息）" min-width="330" show-overflow-tooltip />
+      </el-table>
+      <el-pagination
+        v-model:current-page="流水框.page"
+        v-model:page-size="流水框.page_size"
+        class="分页"
+        layout="total, prev, pager, next"
+        :total="流水框.total"
+        @current-change="查询流水(false)"
+      />
+    </el-dialog>
+  </section>
 </template>
 
-<script lang="ts" setup>
-import { Check, Delete, Edit, Message, Search, Star } from "@element-plus/icons-vue";
-import { reactive, ref } from "vue";
-import { useCounterStore } from "../stores/counter";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { tr } from "element-plus/es/locale";
-import axios, { Axios } from "axios";
-const 是子账号=useCounterStore().是子账号
-const 账号信息=useCounterStore().账号信息
-const post = useCounterStore().post;
-const 软件列表 = ref([] as any[]);
-const 状态列表 = reactive([
-  [0, "全部状态"],
-  [1, "未激活"],
-  [2, "已激活"],
-  [3, "到期"],
-  [4, "正常"],
-  [5, "冻结"],
-]);
-const 类型列表 = reactive([
-  [0, "全部类型"],
-  [1, "天卡"],
-  [7, "周卡"],
-  [30, "月卡"],
-  [91, "季卡"],
-  [365, "年卡"],
-  [36500, "永久卡"],
-]);
-const 所有卡密_当前页 = ref(1)
-const 所有卡密数量 = ref(0)
-const 每页卡密数量 = ref(20)
-const soft = ref(0);
-const state = ref(0);
-const 类型 = ref(0);
-const 卡密 = ref("");
-const 备注 = ref("");
-const 新卡 = ref({
-  software: null,
-  available_time: 0,
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { use登录状态Store } from '../stores/登录状态.js'
+import { 获取接口错误提示 } from '../api/请求客户端.js'
+
+const stores = use登录状态Store()
+const post = stores.post
+const 是代理账号 = computed(() => stores.是代理账号)
+const 账号信息 = stores.账号信息
+const 加载中 = ref(false)
+const 软件列表 = ref([])
+const 卡密列表 = ref([])
+const 已选卡密 = ref([])
+const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
+const 筛选 = reactive({ software: '', card_state: '', card: '', notes: '' })
+const 生成框 = reactive({
+  显示: false,
+  加载中: false,
+  software: 0,
+  points: 100,
   num: 1,
-  config_content: "",
-  notes: "",
-  latest_activation_time: -1,
-  cards: "",
-  指定类型: 2,
-});
-const 单个卡密详情 = ref("")
-const 所有卡密 = ref([]);
-const 显示生成卡密界面 = ref(false);
-const 显示修改卡密界面 = ref(false);
-const 显示续费卡密界面 = ref(false);
-const 加载中 = ref(false);
-const 已勾的卡密 = ref([] as any[]);
-const 待修改卡密 = ref({
-  create_time: null as string | null,
-  software: null,
-  end_time: null,
-  config_content: null,
-  notes: null,
-  // latest_activation_time: null,
-  card: null,
-  card_state: null,
-
+  random: true,
+  cards: '',
+  notes: '',
+  config_content: ''
 })
-const 待续费卡密 = ref({
-  续费时间: 0,
-  续费卡密: "",
+const 生成框结果 = ref('')
+const 编辑框 = reactive({
+  显示: false,
+  加载中: false,
+  card: '',
+  software: 0,
+  card_state: 2,
+  point_balance: 0,
+  notes: '',
+  config_content: ''
 })
-const 判断到期 = function (a) {
-  if (!a) {
-    return false
-  }
-  const currentTime = new Date();
-  const targetTime = new Date(a);
-  return currentTime > targetTime
+const 调整 = reactive({ amount: 0, reason: '' })
+const 流水框 = reactive({
+  显示: false,
+  加载中: false,
+  card: '',
+  software: 0,
+  balance: 0,
+  rows: [],
+  page: 1,
+  page_size: 20,
+  total: 0
+})
+
+const 预计代理费用 = computed(() => {
+  const prices = 账号信息.prices || {}
+  const value = Number(prices[String(生成框.software)] ?? prices[生成框.software] ?? 0)
+  if (!Number.isFinite(value)) return 0
+  // 与后端一致：先把浮点乘法修正到分，再将整批费用按整数点向上取整。
+  const total = value * Number(生成框.points || 0) * Number(生成框.num || 0)
+  return Math.ceil(Math.round(total * 100) / 100)
+})
+const 可发卡软件列表 = computed(() => {
+  if (!是代理账号.value) return 软件列表.value
+  const prices = 账号信息.prices || {}
+  return 软件列表.value.filter((item) => Number(prices[String(item.ID)] ?? prices[item.ID] ?? 0) > 0)
+})
+
+const 格式化时间 = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) || date.getFullYear() <= 1 ? '' : date.toLocaleString()
 }
-const 返回提示 = function (msg) {
-  var s = '<pre> ' + msg + '</pre>'
-  ElMessageBox.alert(s, {
-    dangerouslyUseHTMLString: true,
-  });
-}
-const 查询所有卡密 = function () {
-  加载中.value=true
-  post("/user_query_card", {
-    software: soft.value,
-    card_state: state.value,
-    available_time: 类型.value,
-    card: 卡密.value,
-    notes: 备注.value,
-    每页: 每页卡密数量.value,
-    当前页: 所有卡密_当前页.value
-  }).then(function (res) {
-    console.log(res.data);
-    所有卡密.value = res.data.data;
-    所有卡密数量.value = res.data.num
-    加载中.value=false
-  });
-};
-const 查询软件列表 = function () {
-  if (是子账号){
-    软件列表.value = 账号信息.软件列表;
-    return;
-  }
-  post("/user_query_soft_list", {}).then(function (res) {
-    if (res.data.state) {
-      let list = res.data.data
-      ElMessage.success("刷新软件列表获取成功");
-      list.push({ ID: 0, Software: "全部软件" });
-      软件列表.value = list;
-    } else {
-      ElMessage.error(res.data.msg);
+const 软件名称 = (id) => 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
+const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
+const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
+
+const 查询软件 = function () {
+  return post('/user_query_soft_list', {}).then((res) => {
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
+    软件列表.value = res.data.data || []
+    if (是代理账号.value) {
+      账号信息.balance = Number(res.data.balance || 0)
+      账号信息.prices = res.data.prices || {}
     }
-    // 查询软件列表()
-  });
-};
-const 确定生成卡密 = function () {
-  console.log(新卡.value);
-  if (!新卡.value.software) {
-    ElMessage.error("请选择所属软件");
-    return;
-  }
-  加载中.value = true;
-  post("/add_new_card", 新卡.value).then(function (res) {
-    // let msg = res.data.msg.replace(/\n/g, "<br/>");
-    let msg = res.data.msg;
-    if (res.data.state == true) {
-      加载中.value = false;
-      ElMessage.success(res.data.msg);
-
-      // 显示生成卡密界面.value = false;
-      查询所有卡密();
-      if (新卡.value.指定类型 == 1) {
-        新卡.value.cards = res.data.data;
-      }
-    } else {
-      加载中.value = false;
-      ElMessage.error(res.data.msg);
+    if (!可发卡软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
+      生成框.software = 可发卡软件列表.value[0]?.ID || 0
     }
-    返回提示(msg)
-  });
-};
-const 复制生成的卡密 = function () {
-  try {
-    navigator.clipboard.writeText(新卡.value.cards);
-    ElMessage.warning("复制成功");
-  } catch (err) { }
-};
-const rowState = (row, rowIndex) => {
-  console.log(row);
-  return {
-    // ["display"]:"inline-block"
-    // backgroundColor: "pink",
-    // color: "#fff"
-  };
-};
-const cellState = (row, rowIndex) => {
-  return {
-    padding: "2px",
-  };
-};
-const 添加卡密 = () => { };
-const 时间转字符串 = function (时间) {
-  if (!时间 || 时间 == null) {
-    return "";
-  }
-  return new Date(时间).toLocaleString();
-  // return  new Date(时间).format('YYYY-MM-DD HH:mm:ss');
-};
-const 计算卡密类型 = function (t) {
-  var a = {
-    [36500]: "永久卡",
-    0.5: "半日",
-    1: "日卡",
-    3.5: "半周卡",
-    7: "周卡",
-    15: "半月卡",
-    30: "月卡",
-    91: "季卡",
-    182: "半年卡",
-    365: "年卡",
-  };
-  return a[t] || t + "天";
-};
-const 计算所属软件 = function (id) {
-  for (const key in 软件列表.value) {
-    if (软件列表.value[key].ID == id) {
-      return 软件列表.value[key].Software;
-    }
-  }
-  return id;
-};
-
-const 修改单个卡密 = function (row) {
-  console.log(row);
-  待修改卡密.value.create_time = 时间转字符串(row.create_time)
-  待修改卡密.value.software = row.software
-  待修改卡密.value.end_time = row.end_time
-  待修改卡密.value.config_content = row.config_content
-  待修改卡密.value.notes = row.notes
-  待修改卡密.value.card = row.card
-  待修改卡密.value.card_state = row.card_state
-
-  显示修改卡密界面.value = true
-  console.log(待修改卡密.value)
-
-
-  单个卡密详情.value = "加载中... "
-
-  axios.post("http://" + window.location.hostname + ":802/card/query?center_id=" + useCounterStore().用户id + "&card=" + row.card).then(function (res) {
-    console.log(res.data)
-    单个卡密详情.value = res.data.data
-
   })
+}
 
-
-};
-const 保存修改的卡密 = function () {
+const 查询卡密 = function (resetPage = false) {
+  if (resetPage) 分页.page = 1
   加载中.value = true
-  post("/modify_card", 待修改卡密.value).then(function (res) {
-    if (res.data.state == true) {
-      ElMessage.success("修改成功")
-    } else {
-      返回提示(res.data.state)
-    }
-    加载中.value = false
-  })
-};
-const 删除卡密 = function (cards) {
-  // [row.card] 
-  // 已勾的卡密.value
-  ElMessageBox.confirm('确认删除' + cards.length + "个吗?").then(() => {
-    post("/delete_card", { cards: cards }).then(function (res) {
-      返回提示(res.data.msg)
-      查询所有卡密();
-    });
-  })
-}
-const 删除单个卡密 = function (row) {
-  删除卡密([row.card])
-};
-
-const 删除选择的卡密 = function () {
-  删除卡密(已勾的卡密.value)
-};
-const 记录打钩的 = (val) => {
-  // 已勾的卡密=[]
-  var a = [] as any[];
-  for (const key in val) {
-    a.push(val[key].card);
-  }
-  已勾的卡密.value = a;
-  console.log(a);
-};
-const 续费按钮 = function () {
-  待续费卡密.value.续费卡密 = 已勾的卡密.value.join("\n")
-  显示续费卡密界面.value = true
-}
-const 确定续费卡密 = function () {
-  const res = 待续费卡密.value.续费卡密.match(/[a-zA-Z0-9]+/g)
-  if (!res) {
-    console.log("没有卡")
-    return
-  }
-  if (是子账号 && soft.value==0) {
-    ElMessage.error('请选择续费软件类型')
-    return
-  }
-  加载中.value = true
-  post("/add_card_time", { add_time: 待续费卡密.value.续费时间, cards: res ,software:soft.value}).then(
-    function (res) {
+  return post('/user_query_card', { ...筛选, page: 分页.page, page_size: 分页.page_size })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询卡密失败')
+      卡密列表.value = res.data.data || []
+      分页.total = Number(res.data.num || 0)
+      已选卡密.value = []
+    })
+    .catch(显示错误)
+    .finally(() => {
       加载中.value = false
-      if (!res.data.state) {
-        ElMessage.error(res.data.msg)
-        return
-      }
-      返回提示(res.data.msg)
-      查询所有卡密();
-
-    }
-  )
+    })
 }
-const 冻结卡密 = function (cards,冻结或者解冻) {
-  // [row.card] 
-  // 已勾的卡密.value
-  let 状态 = 2
-  if (冻结或者解冻=='冻结'){
-    状态 = 4
-  }else if (冻结或者解冻=='解冻'){
-    状态 = 2
+
+const 重置筛选 = function () {
+  Object.assign(筛选, { software: '', card_state: '', card: '', notes: '' })
+  查询卡密(true)
+}
+const 选择变化 = (rows) => {
+  已选卡密.value = rows.map((row) => row.card)
+}
+
+const 打开生成 = function () {
+  if (!可发卡软件列表.value.length) {
+    ElMessage.warning(是代理账号.value ? '管理员尚未给此代理账号分配可发卡软件' : '请先创建软件')
+    return
   }
-  ElMessageBox.confirm('确认'+冻结或者解冻 + cards.length + "个吗?").then(() => {
-    post("/冻卡s", { cards: cards,Card_state:状态 }).then(function (res) {
-      返回提示(res.data.msg)
-      查询所有卡密();
-    });
+  Object.assign(生成框, {
+    显示: true,
+    software: 生成框.software || 可发卡软件列表.value[0].ID,
+    points: 100,
+    num: 1,
+    random: true,
+    cards: '',
+    notes: '',
+    config_content: ''
   })
+  生成框结果.value = ''
+}
+const 生成点卡 = function () {
+  if (!生成框.software || 生成框.points <= 0 || 生成框.num <= 0) {
+    ElMessage.warning('请选择软件并填写有效的点数和数量')
+    return
+  }
+  if (!生成框.random && !生成框.cards.trim()) {
+    ElMessage.warning('请输入指定卡密')
+    return
+  }
+  生成框.加载中 = true
+  post('/add_new_card', {
+    software: 生成框.software,
+    points: 生成框.points,
+    num: 生成框.num,
+    cards: 生成框.cards,
+    random: 生成框.random,
+    notes: 生成框.notes,
+    config_content: 生成框.config_content
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '生成失败')
+      生成框结果.value = res.data.data || ''
+      if (是代理账号.value && res.data.balance !== undefined) {
+        // 代理生成点卡的扣款与卡密写入在同一事务完成，直接采用服务端
+        // 返回的最终余额，避免顶部余额一直停留在登录时的旧值。
+        账号信息.balance = Number(res.data.balance || 0)
+      }
+      ElMessage.success(res.data.msg || '生成成功')
+      查询卡密(true)
+    })
+    .catch(显示错误)
+    .finally(() => {
+      生成框.加载中 = false
+    })
 }
 
-const 冻结选择的卡密 = function (冻结或者解冻) {
-  冻结卡密(已勾的卡密.value,冻结或者解冻)
-};
+const 打开编辑 = function (row) {
+  Object.assign(编辑框, {
+    显示: true,
+    card: row.card,
+    software: row.software,
+    card_state: row.card_state,
+    point_balance: Number(row.point_balance || 0),
+    notes: row.notes || '',
+    config_content: row.config_content || ''
+  })
+  Object.assign(调整, { amount: 0, reason: '' })
+}
+const 保存编辑 = function () {
+  编辑框.加载中 = true
+  post('/modify_card', {
+    card: 编辑框.card,
+    card_state: 编辑框.card_state,
+    notes: 编辑框.notes,
+    config_content: 编辑框.config_content
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存失败')
+      ElMessage.success('保存成功')
+      编辑框.显示 = false
+      查询卡密(false)
+    })
+    .catch(显示错误)
+    .finally(() => {
+      编辑框.加载中 = false
+    })
+}
+const 调整余额 = function () {
+  if (!调整.amount || !调整.reason.trim()) {
+    ElMessage.warning('请填写变动点数和调整原因')
+    return
+  }
+  编辑框.加载中 = true
+  post('/point_card/adjust', { card: 编辑框.card, amount: 调整.amount, reason: 调整.reason })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '调整失败')
+      编辑框.point_balance = Number(res.data.balance || 0)
+      调整.amount = 0
+      调整.reason = ''
+      ElMessage.success('余额调整成功')
+      查询卡密(false)
+    })
+    .catch(显示错误)
+    .finally(() => {
+      编辑框.加载中 = false
+    })
+}
 
-const shortcuts = [
-  {
-    text: '明天',
-    value: () => {
-      const date = new Date()
-      date.setTime(date.getTime() + 3600 * 1000 * 24)
-      return date
-    },
-  },
-  {
-    text: '下周',
-    value: () => {
-      const date = new Date()
-      date.setTime(date.getTime() + 3600 * 1000 * 24 * 7)
-      return date
-    },
-  },
-  {
-    text: '下月',
-    value: () => {
-      const date = new Date()
-      date.setTime(date.getTime() + 3600 * 1000 * 24 * 30)
-      return date
-    },
-  },
-]
-查询软件列表();
-查询所有卡密();
+const 批量修改状态 = function (state) {
+  if (!已选卡密.value.length) return
+  post('/冻卡s', { cards: 已选卡密.value, card_state: state })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '操作失败')
+      ElMessage.success(res.data.msg || '操作成功')
+      查询卡密(false)
+    })
+    .catch(显示错误)
+}
+const 删除单张 = function (row) {
+  ElMessageBox.confirm(`确定删除卡密 ${row.card}？删除后同名卡密可以再次生成，历史流水会保留。`, '确认删除', {
+    type: 'warning'
+  })
+    .then(() => post('/delete_card', { cards: [row.card] }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
+      ElMessage.success('删除成功')
+      查询卡密(false)
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+const 批量删除 = function () {
+  ElMessageBox.confirm(`确定删除已选的 ${已选卡密.value.length} 张点卡？`, '确认删除', { type: 'warning' })
+    .then(() => post('/delete_card', { cards: 已选卡密.value }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
+      ElMessage.success(res.data.msg || '删除完成')
+      查询卡密(false)
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+
+const 打开流水 = function (row) {
+  Object.assign(流水框, {
+    显示: true,
+    card: row.card,
+    software: row.software,
+    balance: Number(row.point_balance || 0),
+    rows: [],
+    page: 1,
+    total: 0
+  })
+  查询流水(true)
+}
+const 查询流水 = function (resetPage = false) {
+  if (resetPage) 流水框.page = 1
+  流水框.加载中 = true
+  // 按卡密查看时不附带当前软件筛选，保证删除后重用同名卡密时，
+  // 旧一代流水（即使属于旧软件）也能完整显示。
+  return post('/point_ledger/query', { card: 流水框.card, page: 流水框.page, page_size: 流水框.page_size })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询流水失败')
+      流水框.rows = res.data.data || []
+      流水框.total = Number(res.data.num || 0)
+      流水框.balance = Number(res.data.balance ?? 流水框.balance)
+    })
+    .catch(显示错误)
+    .finally(() => {
+      流水框.加载中 = false
+    })
+}
+
+const 复制文本 = async function (value) {
+  try {
+    await navigator.clipboard.writeText(value || '')
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = value || ''
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    textarea.remove()
+  }
+  ElMessage.success('已复制')
+}
+const 导出当前页 = function () {
+  const text = 卡密列表.value.map((row) => row.card).join('\n')
+  if (!text) return
+  // 直接下载文本文件比只复制到剪贴板更适合批量发卡；同时保留复制按钮
+  // 给临时使用场景，文件名带日期便于管理员归档。
+  const blob = new Blob([text + '\n'], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `点卡-${new Date().toISOString().slice(0, 10)}.txt`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // 部分浏览器需要在 click 返回后再释放对象 URL，避免下载内容为空。
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  ElMessage.success('已导出当前页')
+}
+
+onMounted(() => {
+  Promise.all([查询软件(), 查询卡密(true)]).catch(() => {})
+})
 </script>
-<style scoped>
-.el-table :deep(.cell) {
-  /* white-space: nowrap; */
-  padding: 0px;
-}
 
-/* :global(.cell) {
-  color: #ff0;
-} */
+<style scoped>
+.页面 {
+  padding: 16px;
+  color: #e6eaf2;
+}
+.标题行 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+h2 {
+  margin: 0 0 6px;
+}
+.说明 {
+  margin: 0;
+  color: #aeb6c3;
+  font-size: 13px;
+}
+.筛选卡片 {
+  margin-bottom: 12px;
+}
+.批量操作 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #9099a8;
+}
+.批量操作 span {
+  margin-right: 6px;
+}
+.分页 {
+  margin-top: 14px;
+  justify-content: flex-end;
+}
+.单位,
+.费用提示 {
+  margin-left: 8px;
+  color: #9099a8;
+}
+.卡密文本 {
+  font-family: monospace;
+  color: #67c23a;
+}
+.复制按钮 {
+  margin-top: 8px;
+}
+.流水摘要 {
+  margin-bottom: 10px;
+  color: #c7ced9;
+}
+.增加 {
+  color: #67c23a;
+}
+.扣除 {
+  color: #f56c6c;
+}
 </style>

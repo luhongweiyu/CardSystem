@@ -1,44 +1,39 @@
-import { fileURLToPath, URL } from "node:url";
+import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from "vite";
-import vue from "@vitejs/plugin-vue";
-import AutoImport from "unplugin-auto-import/vite";
-// import Components from "unplugin-vue-components/vite";
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    vue(),
-    ,
-    AutoImport({
-      //注册
-      imports: [
-        "vue",
-        "vue-router",
-        "pinia",
-        {
-          axios: [
-            // 默认导入
-            ["default", "axios"] // import { default as axios } from 'axios',
-          ]
-        }
-      ],
-      dts: "./auto-imports.d.ts"
-    })
-  ],
+  plugins: [vue()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url))
     }
-  }, build: {
+  },
+  build: {
     rollupOptions: {
       input: {
-        // 配置所有页面路径，使得所有页面都会被打包
         main: 'index.html',
-        pageone: 'usercard/index.html',
-        pageone: 'visitor/index.html',
-        // pagetwo: resolve(__dirname, 'pagetwo/index.html')
+        usercard: 'usercard/index.html',
+        visitor: 'visitor/index.html'
+      }
+    }
+  },
+  server: {
+    proxy: {
+      '/admin': 'http://127.0.0.1:802',
+      '/agent': 'http://127.0.0.1:802',
+      '/card': 'http://127.0.0.1:802',
+      // /visitor 同时是访客多页面入口和后端 API 前缀，入口文件不能被代理到后端。
+      '/visitor': {
+        target: 'http://127.0.0.1:802',
+        bypass(req) {
+          const path = (req.url || '').split('?')[0]
+          if (path === '/visitor' || path === '/visitor/' || path === '/visitor/index.html') {
+            return req.url
+          }
+        }
       }
     }
   }
-});
+})

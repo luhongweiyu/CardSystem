@@ -1,9 +1,9 @@
 <template>
   <el-card class="box-card">
     <div>
-      <div>
+      <div class="卡片标题">
         {{ 标题 }}
-        <el-popover placement="top-start" title="Title" :width="200" trigger="hover" :content="帮助">
+        <el-popover placement="top-start" title="说明" :width="260" trigger="hover" :content="帮助">
           <template #reference>
             <el-icon><QuestionFilled /></el-icon>
           </template>
@@ -24,7 +24,7 @@ defineProps({
     type: String,
     required: true
   }
-});
+})
 </script>
 
 <style scoped>
@@ -37,10 +37,18 @@ defineProps({
 }
 
 .box-card {
-  width: 480px;
-  margin: 10px;
+  width: 100%;
+  margin: 0 0 16px;
+  box-sizing: border-box;
   background-color: #545c64;
-  text-color: #fff;
   color: #fff;
+}
+
+.卡片标题 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-weight: 600;
 }
 </style>

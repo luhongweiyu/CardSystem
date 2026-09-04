@@ -1,177 +1,201 @@
 <template>
-  <div v-loading="loading" class="juzhong">
-    <div>
-      <img src="/favicon.png" style=" width: 200px;">
-      <div>
-        <el-input v-model="账号" placeholder="请输入账号" @keydown.enter="登录(true)" @keydown.esc="登录(null)">
-          <template #prepend>账号</template>
-        </el-input>
+  <div class="登录页">
+    <el-card class="登录卡片" v-loading="加载中">
+      <div class="标题区">
+        <img src="/favicon.png" alt="卡密系统" class="标志" />
+        <h2>卡密管理系统</h2>
+        <p>{{ 注册界面 ? '创建管理员账号' : '请选择账号类型登录' }}</p>
       </div>
-      <div class="container">
-        <el-input v-model="密码" type="password" placeholder="请输入密码" show-password @keydown.enter="登录(true)" @keydown.esc="登录(null)">
-          <template #prepend>密码</template>
-        </el-input>
-      </div>
-      <div class="container" v-if="注册界面">
-        <el-input v-model="再次确认密码" type="password" placeholder="再次输入密码" show-password>
-          <template #prepend>密码</template>
-        </el-input>
-      </div>
-    </div>
-    <div>
-      <el-row :span="24">
-        <el-col :span="8"><el-button @click="注册()">注册</el-button></el-col>
-        <!-- <el-col :span="8"> <el-button @click="登录(null)">管理</el-button></el-col> -->
-        <el-col :span="8"><el-button @click="登录(true)">登录</el-button></el-col>
-      </el-row>
-    </div>
+
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="账号">
+          <el-input v-model="账号" maxlength="32" autocomplete="username" @keyup.enter="提交登录;" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input
+            v-model="密码"
+            type="password"
+            show-password
+            maxlength="72"
+            autocomplete="current-password"
+            @keyup.enter="提交登录;"
+          />
+        </el-form-item>
+        <el-form-item v-if="注册界面" label="确认密码">
+          <el-input v-model="确认密码" type="password" show-password maxlength="72" @keyup.enter="提交注册;" />
+        </el-form-item>
+
+        <div class="按钮行" v-if="!注册界面">
+          <el-button type="primary" @click="登录(false)">管理员登录</el-button>
+          <el-button type="success" @click="登录(true)">代理账号登录</el-button>
+        </div>
+        <div class="按钮行" v-else>
+          <el-button type="primary" @click="提交注册;">确认注册</el-button>
+          <el-button @click="切换注册;">返回登录</el-button>
+        </div>
+        <el-button v-if="!注册界面" link class="注册链接" @click="切换注册;">注册管理员账号</el-button>
+      </el-form>
+    </el-card>
   </div>
 </template>
 
-<script lang="ts" setup>
-// import axios from "axios";
-import { ElMessage } from "element-plus";
-import { ref, reactive, computed } from "vue";
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import Cookies from 'js-cookie'
+import { ElMessage } from 'element-plus'
+import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
+import { use登录状态Store } from '../stores/登录状态.js'
 
-import { useCounterStore } from "../stores/counter.js";
-
-import { storeToRefs } from "pinia";
-import axios from "axios";
-import Cookies from "js-cookie";
-import { tr } from "element-plus/es/locale";
-import { RouterLink, RouterView, useRouter } from "vue-router";
 const router = useRouter()
-const stores = useCounterStore();
-const { 账号, 密码, 登录状态, 用户id, api次数, 是子账号, 账号信息 } = storeToRefs(stores);
-
-const loading = ref(false);
+const stores = use登录状态Store()
+const { 账号, 密码, 登录状态, token, 用户id, api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
+const 加载中 = ref(false)
 const 注册界面 = ref(false)
-const 再次确认密码 = ref("")
+const 确认密码 = ref('')
+// 记住最近一次选择的账号类型，让回车提交和按钮提交保持一致。
+const 当前登录类型是代理 = ref(false)
 
-// const 密码 = ref(stores.密码);
-// const 登录状态 = ref(stores.登录状态);
-const 登录 = function (是否代理) {
-  if (注册界面.value) {
-    注册界面.value = false
-    return
-  }
-  loading.value = true;
-  console.log(window.location)
-  let 链接 = "http://" + window.location.hostname + ":802/admin/user_login"
-  if (是否代理) {
-    链接 = "http://" + window.location.hostname + ":802/admin_son/user_login"
-    是子账号.value = true
-  } else {
-    是子账号.value = false
-
-  }
-  axios
-    .post(
-      链接,
-      {
-        name: 账号.value,
-        password: 密码.value
-      },
-      {
-        headers: {
-          "Content-Type": "application/json"
-        }
-      }
-    )
-    .then(function (response) {
-      console.log(response.data);
-      if (response.data.state) {
-        账号信息.value = response.data
-        if (账号信息.value.价格){
-          账号信息.value.价格 = JSON.parse(账号信息.value.价格)
-        }
-        if (是子账号.value) {
-          router.replace('/index')
-        }
-        ElMessage.success("登录成功");
-        登录状态.value = true;
-        loading.value = false;
-        用户id.value = response.data.id
-        api次数.value = response.data.api
-        Cookies.set('name', 账号.value, { expires: 61 })
-        Cookies.set('password', 密码.value, { expires: 61 })
-      } else {
-        ElMessage.error(response.data.msg);
-        登录状态.value = false;
-        loading.value = false;
-      }
-    })
-    .catch(function (error) {
-      console.log(error);
-    });
-};
-const 注册 = function () {
-  if (!注册界面.value) {
-    注册界面.value = true
-    return
-  }
-  if (再次确认密码.value != 密码.value) {
-    ElMessage.error("两次输入的密码不一样")
-    return
-  }
-  loading.value = true;
-  axios
-    .post(
-      "http://" + window.location.hostname + ":802/admin/user_register",
-      {
-        name: 账号.value,
-        password: 密码.value
-      },
-      {
-        headers: {
-          "Content-Type": "application/json"
-        }
-      }
-    )
-    .then(function (response) {
-      console.log(response.data);
-      if (response.data.state) {
-        ElMessage.success("注册成功");
-        注册界面.value = false
-        登录(null);
-      } else {
-        ElMessage.error(response.data.msg);
-        loading.value = false;
-      }
-    })
-    .catch(function (error) {
-      console.log(error);
-    });
-};
-
-const 按下键盘 = (event: all) => {
-  const key = event.key;
-  const keyCode = event.keyCode;
-  if (key === 'Enter' || keyCode === 13) {
-    登录(true);
-  } else if (key === ' '|| keyCode === 32) {
-    if (密码.value.length > 3) {
-      登录(null);
-    }
-  }
-
-  // console.log(`按下键: key = ${key}, keyCode = ${keyCode}`);
+const 清空账号信息 = function () {
+  Object.keys(账号信息.value).forEach((key) => delete 账号信息.value[key])
+  token.value = ''
+  登录状态.value = false
+  用户id.value = ''
+  api次数.value = 0
+  是代理账号.value = false
 }
 
-// window.addEventListener('keydown', 按下键盘);
-账号.value = Cookies.get('name', 账号.value)
-密码.value = Cookies.get('password', 密码.value)
+const 切换注册 = function () {
+  注册界面.value = !注册界面.value
+  确认密码.value = ''
+}
 
+const 保存登录结果 = function (data, agent) {
+  账号.value = data.name || 账号.value
+  token.value = data.token || ''
+  用户id.value = data.id || ''
+  api次数.value = data.api || 0
+  是代理账号.value = agent
+  账号信息.value = { ...data }
+  登录状态.value = true
+  Cookies.set('name', 账号.value, { expires: 61, sameSite: 'Lax' })
+  Cookies.remove('password')
+  密码.value = ''
+  确认密码.value = ''
+  // 代理账号没有管理员总览页，登录后直接进入它最常用的点卡页面。
+  router.replace(agent ? '/card' : '/index')
+}
+
+const 登录 = function (agent) {
+  当前登录类型是代理.value = agent
+  账号.value = (账号.value || '').trim()
+  if (!账号.value || !密码.value) {
+    ElMessage.error('请输入账号和密码')
+    return
+  }
+  加载中.value = true
+  const prefix = agent ? '/agent' : '/admin'
+  apiClient
+    .post(prefix + '/user_login', { name: 账号.value, password: 密码.value })
+    .then((response) => {
+      if (!response.data?.state) {
+        清空账号信息()
+        ElMessage.error(response.data?.msg || '登录失败')
+        return
+      }
+      保存登录结果(response.data, agent)
+      ElMessage.success('登录成功')
+    })
+    .catch((error) => {
+      清空账号信息()
+      ElMessage.error(获取接口错误提示(error))
+    })
+    .finally(() => {
+      加载中.value = false
+    })
+}
+
+const 提交登录 = function () {
+  登录(当前登录类型是代理.value)
+}
+
+const 提交注册 = function () {
+  账号.value = (账号.value || '').trim()
+  if (密码.value !== 确认密码.value) {
+    ElMessage.error('两次输入的密码不一致')
+    return
+  }
+  if (!/^[A-Za-z0-9_]{3,32}$/.test(账号.value || '')) {
+    ElMessage.error('用户名只能使用3至32位字母、数字或下划线')
+    return
+  }
+  const bytes = new TextEncoder().encode(密码.value || '').length
+  if (bytes < 6 || bytes > 72) {
+    ElMessage.error('密码长度必须为6至72个字节')
+    return
+  }
+  加载中.value = true
+  apiClient
+    .post('/user_register', { name: 账号.value, password: 密码.value })
+    .then((response) => {
+      if (!response.data?.state) {
+        ElMessage.error(response.data?.msg || '注册失败')
+        return
+      }
+      ElMessage.success('注册成功，请登录')
+      注册界面.value = false
+      确认密码.value = ''
+    })
+    .catch((error) => ElMessage.error(获取接口错误提示(error)))
+    .finally(() => {
+      加载中.value = false
+    })
+}
+
+账号.value = Cookies.get('name') || ''
+密码.value = ''
 </script>
+
 <style scoped>
-.juzhong {
-  align: "center";
-  position: absolute;
-  top: 30%;
-  /* bottom: 0; */
-  left: 0;
-  right: 0;
-  margin: auto;
-  width: 300px;
+.登录页 {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.登录卡片 {
+  width: min(420px, 100%);
+  background: rgba(30, 35, 45, 0.94);
+}
+.标题区 {
+  text-align: center;
+  margin-bottom: 18px;
+}
+.标志 {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+}
+.标题区 h2 {
+  margin: 8px 0 4px;
+  color: #fff;
+}
+.标题区 p {
+  margin: 0;
+  color: #aeb6c3;
+}
+.按钮行 {
+  display: flex;
+  gap: 10px;
+}
+.按钮行 .el-button {
+  flex: 1;
+}
+.注册链接 {
+  width: 100%;
+  margin-top: 12px;
 }
 </style>
