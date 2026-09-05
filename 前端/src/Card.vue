@@ -3,10 +3,10 @@
     <el-card class="查询卡片" shadow="never">
       <h2>点卡查询</h2>
       <p class="说明">输入卡密可查看当前点数和有效授权设备数量。</p>
-      <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情;">
+      <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情">
         <template #prepend>卡密</template>
       </el-input>
-      <el-button class="查询按钮" type="primary" @click="查询详情;">查询</el-button>
+      <el-button class="查询按钮" type="primary" @click="查询详情">查询</el-button>
     </el-card>
 
     <el-card v-if="详情" class="结果卡片" shadow="never">
@@ -24,7 +24,7 @@
           {{ 详情.card_state === 4 ? '冻结' : '正常' }}
         </el-tag>
       </div>
-      <el-button type="primary" plain @click="打开流水;">查看点数流水</el-button>
+      <el-button type="primary" plain @click="打开流水">查看点数流水</el-button>
     </el-card>
 
     <el-dialog v-model="流水框.显示" title="点数流水" width="900px">

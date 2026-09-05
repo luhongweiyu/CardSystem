@@ -66,3 +66,27 @@ func Test生成扣点备注包含设备快照(t *testing.T) {
 		}
 	}
 }
+
+// Test退出会话设备标识与登录心跳一致确认省略 device_id 时三条卡端路径
+// 都使用同一个空字符串身份；后端退出实现必须调用可选设备标识规范化函数。
+func Test退出会话设备标识与登录心跳一致(t *testing.T) {
+	for _, input := range []string{"", "   "} {
+		deviceID, ok := 规范化可选设备标识(input)
+		if !ok || deviceID != "" {
+			t.Fatalf("退出时省略 device_id 应规范化为空字符串，输入 %q 得到 %q, %v", input, deviceID, ok)
+		}
+	}
+	deviceID, ok := 规范化可选设备标识(" DEVICE-12345678 ")
+	if !ok || deviceID != "device-12345678" {
+		t.Fatalf("退出时非空 device_id 应与登录、心跳保持同样规范化，得到 %q, %v", deviceID, ok)
+	}
+}
+
+// Test退出会话使用三元身份用函数类型固定退出接口契约：退出只接收管理员、
+// 卡密、device_id 和可选 needle，不再要求客户端提交 software。
+func Test退出会话使用三元身份(t *testing.T) {
+	var logout func(string, string, string, string) error = 退出点卡设备会话
+	if logout == nil {
+		t.Fatal("退出点卡设备会话函数不可用")
+	}
+}

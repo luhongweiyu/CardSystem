@@ -3,8 +3,8 @@
     <el-card shadow="never" class="查询区">
       <h2>点卡查询</h2>
       <p>只展示卡密基础状态和点数余额，不会公开管理端配置。</p>
-      <el-input v-model="筛选" clearable placeholder="请输入完整卡密" @keyup.enter="查询列表;" />
-      <el-button type="primary" class="按钮" @click="查询列表;">查询</el-button>
+      <el-input v-model="筛选" clearable placeholder="请输入完整卡密" @keyup.enter="查询列表" />
+      <el-button type="primary" class="按钮" @click="查询列表">查询</el-button>
     </el-card>
 
     <el-table :data="列表" border stripe>

@@ -37,6 +37,15 @@ func 规范化设备标识(deviceID string) (string, bool) {
 	return deviceID, 设备标识规则.MatchString(deviceID)
 }
 
+// 规范化可选设备标识用于允许省略 device_id 的卡端接口。省略和显式传入
+// 空字符串具有完全相同的含义；非空值仍执行严格格式校验，不能绕过设备标识规则。
+func 规范化可选设备标识(deviceID string) (string, bool) {
+	if strings.TrimSpace(deviceID) == "" {
+		return "", true
+	}
+	return 规范化设备标识(deviceID)
+}
+
 // 规范化可显示文本集中处理会出现在管理页面、用户页面或日志中的短文本。
 // maxRunes 按字符数而非 UTF-8 字节数限制，和 MySQL varchar 的长度语义一致；
 // 控制字符会破坏表格布局或伪造日志行，因此不允许写入。

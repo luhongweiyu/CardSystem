@@ -5,7 +5,7 @@
         <h2>软件与点卡计费</h2>
         <p class="说明">客户端只提交授权时长秒数，实际扣点价格始终由服务端决定。</p>
       </div>
-      <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑;">新增软件</el-button>
+      <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
     </div>
 
     <el-table :data="软件列表" border stripe row-key="ID">
@@ -34,7 +34,7 @@
     <section v-if="!是代理账号" class="代理区">
       <div class="子标题行">
         <h3>渠道合伙人</h3>
-        <el-button type="primary" plain @click="打开代理创建;">新增渠道合伙人</el-button>
+        <el-button type="primary" plain @click="打开代理创建">新增渠道合伙人</el-button>
       </div>
       <el-table :data="代理列表" border stripe>
         <el-table-column prop="id" label="ID" width="70" />
@@ -81,7 +81,7 @@
       </el-form>
       <template #footer>
         <el-button @click="软件框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="保存软件;">保存</el-button>
+        <el-button type="primary" @click="保存软件">保存</el-button>
       </template>
     </el-dialog>
 
@@ -89,7 +89,7 @@
     <el-dialog v-model="价格框.显示" title="点卡计费方案" width="760px" destroy-on-close>
       <div class="价格标题">
         <span>{{ 价格框.softwareName }}</span>
-        <el-button type="primary" size="small" @click="新增价格;">新增计费方案</el-button>
+        <el-button type="primary" size="small" @click="新增价格">新增计费方案</el-button>
       </div>
       <el-table :data="价格框.rows" border>
         <el-table-column label="授权时长" width="150">
@@ -148,7 +148,7 @@
       </el-form>
       <template #footer>
         <el-button @click="价格编辑框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="保存价格;">保存</el-button>
+        <el-button type="primary" @click="保存价格">保存</el-button>
       </template>
     </el-dialog>
 
@@ -162,7 +162,7 @@
       </el-form>
       <template #footer>
         <el-button @click="代理框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="创建代理;">创建</el-button>
+        <el-button type="primary" @click="创建代理">创建</el-button>
       </template>
     </el-dialog>
 
@@ -185,7 +185,7 @@
       </el-form>
       <template #footer>
         <el-button @click="代理编辑框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="保存代理;">保存</el-button>
+        <el-button type="primary" @click="保存代理">保存</el-button>
       </template>
     </el-dialog>
 
@@ -205,7 +205,7 @@
       </el-form>
       <template #footer>
         <el-button @click="代理充值框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="代理充值;">确认充值</el-button>
+        <el-button type="primary" @click="代理充值">确认充值</el-button>
       </template>
     </el-dialog>
   </section>

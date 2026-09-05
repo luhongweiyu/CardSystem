@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -20,6 +21,42 @@ type 点卡周期价格请求 struct {
 	Cost          int64 `json:"cost"`
 	IsDefault     *bool `json:"is_default"`
 	Enabled       *bool `json:"enabled"`
+}
+
+// 点卡周期价格写入值显式组装新增记录的所有业务字段。点卡周期价格模型的
+// Enabled 使用 default:true 兼容旧表默认值；如果直接用结构体 Create，GORM
+// 会把零值 false 替换成模型默认值 true，导致“停用”方案实际被写成启用。
+// 使用 map 将 false 作为明确的数据库值写入，避免把业务输入交给 GORM 的零值默认逻辑。
+func 点卡周期价格写入值(price 点卡周期价格) map[string]interface{} {
+	return map[string]interface{}{
+		"admin":          price.Admin,
+		"software":       price.Software,
+		"period_seconds": price.PeriodSeconds,
+		"cost":           price.Cost,
+		"is_default":     price.IsDefault,
+		"enabled":        price.Enabled,
+		"created_at":     price.CreatedAt,
+		"updated_at":     price.UpdatedAt,
+	}
+}
+
+// 创建点卡周期价格只用于新增方案。map Create 会完整保留 Enabled=false，
+// 随后按唯一业务键重新读取记录，使自增 ID、数据库时间和响应数据保持完整。
+func 创建点卡周期价格(tx *gorm.DB, price *点卡周期价格) error {
+	now := time.Now()
+	if price.CreatedAt.IsZero() {
+		price.CreatedAt = now
+	}
+	if price.UpdatedAt.IsZero() {
+		price.UpdatedAt = price.CreatedAt
+	}
+	if err := tx.Model(&点卡周期价格{}).Table("point_period_price").Create(点卡周期价格写入值(*price)).Error; err != nil {
+		return err
+	}
+	return tx.Table("point_period_price").Where(
+		"admin = ? AND software = ? AND period_seconds = ?",
+		price.Admin, price.Software, price.PeriodSeconds,
+	).First(price).Error
 }
 
 func 管理员名称和软件(ctx *gin.Context, softwareID int) (string, error) {
@@ -106,7 +143,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ?", admin, request.Software, request.PeriodSeconds).First(&saved)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 			saved = 点卡周期价格{Admin: admin, Software: request.Software, PeriodSeconds: request.PeriodSeconds, Cost: request.Cost, IsDefault: isDefault, Enabled: enabled}
-			return tx.Table("point_period_price").Create(&saved).Error
+			return 创建点卡周期价格(tx, &saved)
 		}
 		if query.Error != nil {
 			return fmt.Errorf("读取点卡计费方案失败")

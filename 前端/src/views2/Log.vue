@@ -5,7 +5,7 @@
         <h2>运行日志</h2>
         <p class="说明">这里只展示当前账号最近两个月的操作日志，不包含点数流水。</p>
       </div>
-      <el-button type="primary" :loading="加载中" @click="查询;">刷新日志</el-button>
+      <el-button type="primary" :loading="加载中" @click="查询">刷新日志</el-button>
     </div>
     <el-card shadow="never" class="日志卡片">
       <pre v-if="日志内容">{{ 日志内容 }}</pre>

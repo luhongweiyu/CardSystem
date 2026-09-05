@@ -9,7 +9,7 @@
 
       <el-form label-position="top" @submit.prevent>
         <el-form-item label="账号">
-          <el-input v-model="账号" maxlength="32" autocomplete="username" @keyup.enter="提交登录;" />
+          <el-input v-model="账号" maxlength="32" autocomplete="username" @keyup.enter="提交登录" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input
@@ -18,11 +18,11 @@
             show-password
             maxlength="72"
             autocomplete="current-password"
-            @keyup.enter="提交登录;"
+            @keyup.enter="提交登录"
           />
         </el-form-item>
         <el-form-item v-if="注册界面" label="确认密码">
-          <el-input v-model="确认密码" type="password" show-password maxlength="72" @keyup.enter="提交注册;" />
+          <el-input v-model="确认密码" type="password" show-password maxlength="72" @keyup.enter="提交注册" />
         </el-form-item>
 
         <div class="按钮行" v-if="!注册界面">
@@ -30,10 +30,10 @@
           <el-button type="success" @click="登录(true)">合伙人登录</el-button>
         </div>
         <div class="按钮行" v-else>
-          <el-button type="primary" @click="提交注册;">确认注册</el-button>
-          <el-button @click="切换注册;">返回登录</el-button>
+          <el-button type="primary" @click="提交注册">确认注册</el-button>
+          <el-button @click="切换注册">返回登录</el-button>
         </div>
-        <el-button v-if="!注册界面" link class="注册链接" @click="切换注册;">注册管理员账号</el-button>
+        <el-button v-if="!注册界面" link class="注册链接" @click="切换注册">注册管理员账号</el-button>
       </el-form>
     </el-card>
   </div>

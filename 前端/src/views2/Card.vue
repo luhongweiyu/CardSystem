@@ -5,7 +5,7 @@
         <h2>点卡管理</h2>
         <p class="说明">一张卡可在多台设备使用；同一设备在授权时长内重复登录不会重复扣点。</p>
       </div>
-      <el-button type="primary" @click="打开生成;">生成点卡</el-button>
+      <el-button type="primary" @click="打开生成">生成点卡</el-button>
     </div>
 
     <el-card shadow="never" class="筛选卡片">
@@ -53,7 +53,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="查询卡密(true)">查询</el-button>
-          <el-button @click="重置筛选;">重置</el-button>
+          <el-button @click="重置筛选">重置</el-button>
         </el-form-item>
       </el-form>
       <div class="批量操作">
@@ -64,12 +64,12 @@
         <el-button size="small" type="success" :disabled="!已选卡密.length" @click="批量修改状态(2)">
           解冻
         </el-button>
-        <el-button size="small" type="danger" :disabled="!已选卡密.length" @click="批量删除;">删除</el-button>
-        <el-button size="small" :disabled="!卡密列表.length" @click="导出当前页;">导出当前页</el-button>
+        <el-button size="small" type="danger" :disabled="!已选卡密.length" @click="批量删除">删除</el-button>
+        <el-button size="small" :disabled="!卡密列表.length" @click="导出当前页">导出当前页</el-button>
       </div>
     </el-card>
 
-    <el-table :data="卡密列表" border stripe row-key="card" @selection-change="选择变化;">
+    <el-table :data="卡密列表" border stripe row-key="card" @selection-change="选择变化">
       <el-table-column type="selection" width="44" />
       <el-table-column prop="card" label="卡密" min-width="190" show-overflow-tooltip />
       <el-table-column label="软件" width="150" show-overflow-tooltip>
@@ -158,7 +158,7 @@
       </el-form>
       <template #footer>
         <el-button @click="生成框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="生成点卡;">生成</el-button>
+        <el-button type="primary" @click="生成点卡">生成</el-button>
       </template>
     </el-dialog>
 
@@ -202,10 +202,10 @@
       </el-form>
       <template #footer>
         <el-button @click="编辑框.显示 = false">取消</el-button>
-        <el-button v-if="!是代理账号" type="warning" :disabled="!调整.amount" @click="调整余额;">
+        <el-button v-if="!是代理账号" type="warning" :disabled="!调整.amount" @click="调整余额">
           调整余额
         </el-button>
-        <el-button type="primary" @click="保存编辑;">保存</el-button>
+        <el-button type="primary" @click="保存编辑">保存</el-button>
       </template>
     </el-dialog>
 

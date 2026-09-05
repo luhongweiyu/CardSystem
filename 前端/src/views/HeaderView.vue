@@ -1,6 +1,6 @@
 <template>
   <header class="顶部栏">
-    <el-button text @click="开关导航;" aria-label="切换导航">
+    <el-button text @click="开关导航" aria-label="切换导航">
       <el-icon>
         <DArrowLeft v-if="!导航开关" />
         <DArrowRight v-else />
@@ -13,7 +13,7 @@
       <span>{{ 是代理账号 ? '渠道合伙人' : '管理员' }}：{{ 账号 }}</span>
       <span v-if="是代理账号">余额：{{ 账号信息.balance ?? 0 }} 点</span>
       <span v-else>本小时请求：{{ api次数 }}</span>
-      <el-button type="danger" plain size="small" @click="退出登录;">退出登录</el-button>
+      <el-button type="danger" plain size="small" @click="退出登录">退出登录</el-button>
     </div>
   </header>
 </template>
@@ -52,7 +52,10 @@ const 退出登录 = function () {
     清理本地登录状态()
     return
   }
-  stores.post('/user_logout', {}).finally(清理本地登录状态)
+  // 先清理前端状态，确保网络异常或服务端暂时不可用时，用户点击退出也能立即回到登录页。
+  // 请求仍在后台执行，用于尽快删除服务端内存令牌；即使失败也不影响本地退出结果。
+  stores.post('/user_logout', {}).catch(() => {})
+  清理本地登录状态()
 }
 </script>
 

@@ -28,7 +28,6 @@
 {
   "center_id": 1,
   "card": "1abcdefghijklmnop",
-  "software": 1,
   "device_id": "7f6a0a38-2b1c-4f21-9b9c-3c5d5c7a1e22",
   "device_alias": "办公室电脑",
   "period_seconds": 3600
@@ -37,13 +36,14 @@
 
 字段：
 
-- `software`、`device_id` 必填；设备 ID 应由客户端生成并持久化，不能用 IP。
-- `device_alias` 可选，最长 64 个字符，不参与唯一性，也不要求不重复。
+- `software` 无需提交，服务端始终使用卡密记录中绑定的软件编号。
+- `device_id` 可选；省略时统一按空字符串处理。使用非空设备 ID 时应由客户端生成并持久化，不能使用 IP。
+- `device_alias` 仅登录时可选，最长 64 个字符，不参与唯一性，也不要求不重复。
 - `period_seconds` 可选，含义是授权时长秒数。省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
 
 成功响应重点字段：`needle`、`device_id`、`device_alias`、`renewal_period_seconds`、`authorized_until`、`heartbeat_interval_seconds`、`point_balance`、`charged`、`cost`、`ledger_id`。`charged=false` 表示本次仍在当前授权时长内，没有新增流水。
 
-同一管理员、卡密、软件和设备 ID 只有一条会话。当前授权未到期时重复登录不扣点；如果本次明确选择了另一个有效授权时长，只更新会话的下一次续费时长，不改变当前截止时间。
+同一管理员、卡密和设备 ID 只有一条会话。多个客户端都省略 `device_id` 时会共用空设备 ID 对应的同一条会话。当前授权未到期时重复登录不扣点；如果本次明确选择了另一个有效授权时长，只更新会话的下一次续费时长，不改变当前截止时间。
 
 ## 3. 心跳续费
 
@@ -54,12 +54,11 @@
   "center_id": 1,
   "card": "1abcdefghijklmnop",
   "needle": "登录响应中的随机令牌",
-  "device_id": "7f6a0a38-2b1c-4f21-9b9c-3c5d5c7a1e22",
-  "device_alias": "办公室电脑"
+  "device_id": "7f6a0a38-2b1c-4f21-9b9c-3c5d5c7a1e22"
 }
 ```
 
-`needle` 用于定位和校验会话；`device_id` 可选，但提交时必须与会话一致。别名非空时会更新会话展示值，留空则保留旧别名。响应会再次返回当前 `heartbeat_interval_seconds`，管理员修改心跳间隔后客户端可及时调整下一次发送间隔。
+服务端使用管理员、卡密和 `device_id` 查找设备会话，再使用 `needle` 校验该会话。`device_id` 可选，但必须与登录时保持一致：登录时省略则心跳也省略，登录时提交则心跳必须提交相同值。心跳不接收或更新 `device_alias`。响应会再次返回当前 `heartbeat_interval_seconds`，管理员修改心跳间隔后客户端可及时调整下一次发送间隔。
 
 授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件心跳间隔计算：
 
@@ -73,7 +72,7 @@
 
 `GET/POST /card/card_logout`
 
-提交 `center_id/name`、`card`、`software` 和 `device_id`。可选同时提交 `needle` 作为当前心跳会话的附加校验。接口幂等地删除对应会话；退出不会产生点数流水，`needle` 不是设备唯一键。
+提交 `center_id/name`、`card`；`device_id` 可省略或传空值，统一按空字符串查找会话。软件编号从卡密记录和设备会话读取，不需要提交 `software`。可选同时提交 `needle` 作为当前心跳会话的附加校验。接口按管理员、卡密和设备 ID 幂等地删除对应会话；退出不会产生点数流水，`needle` 不是设备唯一键。
 
 ## 5. 查询卡密和流水
 

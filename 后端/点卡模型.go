@@ -49,10 +49,10 @@ type 点数流水 struct {
 // 一张卡可同时拥有多台设备；设备别名不参与唯一性判断，也不要求唯一。
 type 点卡设备会话 struct {
 	ID                   uint64    `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Admin                string    `gorm:"column:admin;size:32;not null;uniqueIndex:uk_device_session,priority:1" json:"admin"`
-	Card                 string    `gorm:"column:card;size:63;not null;uniqueIndex:uk_device_session,priority:2" json:"card"`
-	Software             int       `gorm:"column:software;not null;uniqueIndex:uk_device_session,priority:3" json:"software"`
-	DeviceID             string    `gorm:"column:device_id;size:128;not null;uniqueIndex:uk_device_session,priority:4" json:"device_id"`
+	Admin                string    `gorm:"column:admin;size:32;not null;uniqueIndex:uk_device_session_identity,priority:1;index:idx_device_session_admin_software,priority:1" json:"admin"`
+	Card                 string    `gorm:"column:card;size:63;not null;uniqueIndex:uk_device_session_identity,priority:2" json:"card"`
+	Software             int       `gorm:"column:software;not null;index:idx_device_session_admin_software,priority:2" json:"software"`
+	DeviceID             string    `gorm:"column:device_id;size:128;not null;uniqueIndex:uk_device_session_identity,priority:3" json:"device_id"`
 	DeviceAlias          string    `gorm:"column:device_alias;size:64" json:"device_alias"`
 	Needle               string    `gorm:"column:needle;size:64;not null;uniqueIndex:uk_device_needle" json:"-"`
 	RenewalPeriodSeconds int64     `gorm:"column:renewal_period_seconds;not null" json:"renewal_period_seconds"`

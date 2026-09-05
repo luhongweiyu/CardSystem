@@ -5,13 +5,13 @@
     <el-card shadow="never" class="说明卡片">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="登录">
-          POST /card/card_login，必须提交 card、software、device_id；可选 period_seconds 和 device_alias。
+          POST /card/card_login，提交 card；可选 device_id、period_seconds 和 device_alias，软件由卡密自动确定。
         </el-descriptions-item>
         <el-descriptions-item label="心跳">
-          POST /card/card_ping，提交登录返回的 needle；建议按软件设置的心跳间隔发送。
+          POST /card/card_ping，提交登录返回的 needle，device_id 必须与登录时保持一致；不提交 device_alias。
         </el-descriptions-item>
         <el-descriptions-item label="退出">
-          POST /card/card_logout，提交 software 与 device_id；可同时提交 needle
+          POST /card/card_logout，提交 card；device_id 可省略或传空值，软件由卡密和设备会话自动确定；可同时提交 needle
           做附加校验，退出后立即释放设备会话。
         </el-descriptions-item>
         <el-descriptions-item label="点卡计费方案">
@@ -22,8 +22,8 @@
         </el-descriptions-item>
       </el-descriptions>
       <p class="提示">
-        device_id 应由客户端生成并持久化；device_alias 只是展示名称，不参与设备唯一性判断。系统支持
-        HTTP，接口安全模式可额外校验签名，但签名不提供传输加密。
+        device_id 可省略，省略时按空字符串处理；使用非空值时应由客户端生成并持久化。device_alias
+        只是登录时设置的展示名称，不参与设备唯一性判断。系统支持 HTTP，接口安全模式可额外校验签名，但签名不提供传输加密。
       </p>
     </el-card>
   </section>

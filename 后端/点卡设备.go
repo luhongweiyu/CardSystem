@@ -31,14 +31,15 @@ func 规范化点卡会话令牌(needle string) (string, bool) {
 	return needle, true
 }
 
-// 规范化点卡设备参数集中处理登录输入。别名允许为空且不参与唯一性判断。
-func 规范化点卡设备参数(admin string, card string, softwareID int, deviceID string, alias string) (string, string, string, error) {
+// 规范化点卡设备参数集中处理登录输入。device_id 允许省略并统一保存为空字符串；
+// device_alias 仅由登录设置，允许为空且不参与会话唯一性判断。
+func 规范化点卡设备参数(admin string, card string, deviceID string, alias string) (string, string, string, error) {
 	admin = strings.TrimSpace(admin)
 	card = strings.ToLower(strings.TrimSpace(card))
-	if !验证管理员名称(admin) || !卡密格式规则.MatchString(card) || softwareID <= 0 {
+	if !验证管理员名称(admin) || !卡密格式规则.MatchString(card) {
 		return "", "", "", fmt.Errorf("会话参数不完整")
 	}
-	deviceID, valid := 规范化设备标识(deviceID)
+	deviceID, valid := 规范化可选设备标识(deviceID)
 	if !valid {
 		return "", "", "", fmt.Errorf("device_id格式不正确")
 	}
@@ -48,14 +49,15 @@ func 规范化点卡设备参数(admin string, card string, softwareID int, devi
 	return admin, card, deviceID, nil
 }
 
-// 查询点卡设备会话按设备是所有会话修改的唯一入口，lock=true 时在当前事务内加行锁。
-func 查询点卡设备会话按设备(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, lock bool) (点卡设备会话, bool, error) {
+// 查询点卡设备会话按设备是所有会话修改的唯一入口。卡密在管理员范围内唯一且
+// 已绑定软件，因此会话身份只使用管理员、卡密和 device_id；lock=true 时加行锁。
+func 查询点卡设备会话按设备(tx *gorm.DB, admin string, card string, deviceID string, lock bool) (点卡设备会话, bool, error) {
 	var session 点卡设备会话
 	query := tx.Table("point_device_session")
 	if lock {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
-	query = query.Where("admin = ? AND card = ? AND software = ? AND device_id = ?", admin, card, softwareID, deviceID).First(&session)
+	query = query.Where("admin = ? AND card = ? AND device_id = ?", admin, card, deviceID).First(&session)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		return session, false, nil
 	}
@@ -123,7 +125,7 @@ func 保存点卡设备会话(tx *gorm.DB, session *点卡设备会话, alias st
 }
 
 func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64, now time.Time) (点卡设备会话, bool, error) {
-	session, found, err := 查询点卡设备会话按设备(tx, admin, card, softwareID, deviceID, true)
+	session, found, err := 查询点卡设备会话按设备(tx, admin, card, deviceID, true)
 	if err != nil || found {
 		return session, found, err
 	}
@@ -136,7 +138,7 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 		}
 		// 并发请求可能已经创建了同一设备会话；重新读取后复用它，
 		// 不把唯一索引冲突误报成系统故障。
-		if existing, exists, readErr := 查询点卡设备会话按设备(tx, admin, card, softwareID, deviceID, true); readErr == nil && exists {
+		if existing, exists, readErr := 查询点卡设备会话按设备(tx, admin, card, deviceID, true); readErr == nil && exists {
 			return existing, true, nil
 		}
 	}
@@ -167,14 +169,14 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 }
 
 // 点卡登录并扣费把卡密锁、会话锁、余额更新、流水和授权截止时间放在同一事务中。
-func 点卡登录并扣费(admin string, card string, softwareID int, deviceID string, deviceAlias string, periodSeconds int64) (点卡登录结果, error) {
-	admin, card, deviceID, err := 规范化点卡设备参数(admin, card, softwareID, deviceID, deviceAlias)
+// 软件编号必须从事务内锁定的卡密行读取，客户端不能选择或覆盖卡密所属软件。
+func 点卡登录并扣费(admin string, card string, deviceID string, deviceAlias string, periodSeconds int64) (点卡登录结果, error) {
+	admin, card, deviceID, err := 规范化点卡设备参数(admin, card, deviceID, deviceAlias)
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
-	params := 点卡扣费参数{Admin: admin, Card: card, Software: softwareID, PeriodSeconds: periodSeconds, DeviceID: deviceID, DeviceAlias: deviceAlias, RemarkPrefix: "登录扣点"}
-	if err := 规范化点卡扣费参数(&params); err != nil {
-		return 点卡登录结果{}, err
+	if periodSeconds < 0 || periodSeconds > 最大计费周期秒 {
+		return 点卡登录结果{}, fmt.Errorf("授权时长必须在1至%d秒之间，0表示使用默认授权时长", 最大计费周期秒)
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
@@ -191,7 +193,15 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 		if query.Error != nil {
 			return fmt.Errorf("读取点卡失败")
 		}
+		softwareID := cardRow.Software
+		if softwareID <= 0 {
+			return fmt.Errorf("卡密所属软件不正确")
+		}
 		if err := 校验点卡状态(cardRow, softwareID); err != nil {
+			return err
+		}
+		params := 点卡扣费参数{Admin: admin, Card: card, Software: softwareID, PeriodSeconds: periodSeconds, DeviceID: deviceID, DeviceAlias: deviceAlias, RemarkPrefix: "登录扣点"}
+		if err := 规范化点卡扣费参数(&params); err != nil {
 			return err
 		}
 		session, found, err := 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0, now)
@@ -273,8 +283,9 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 	return result, nil
 }
 
-// 点卡设备心跳按 needle 找到设备会话，再按卡密->会话顺序加锁，避免并发心跳重复扣费。
-func 点卡设备心跳(admin string, card string, needle string, deviceID string, deviceAlias string) (点卡心跳结果, error) {
+// 点卡设备心跳按管理员、卡密和 device_id 查找会话，再校验 needle。device_id
+// 允许为空，但其规范化结果必须与登录时保存的值完全一致；心跳不接收或更新设备别名。
+func 点卡设备心跳(admin string, card string, needle string, deviceID string) (点卡心跳结果, error) {
 	var result 点卡心跳结果
 	needle, valid := 规范化点卡会话令牌(needle)
 	if !valid {
@@ -285,22 +296,9 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if !验证管理员名称(admin) || !卡密格式规则.MatchString(card) {
 		return result, fmt.Errorf("会话参数不完整")
 	}
-	if normalized, ok := 规范化设备别名(deviceAlias); !ok {
-		return result, fmt.Errorf("device_alias格式不正确或超过64个字符")
-	} else {
-		deviceAlias = normalized
-	}
-	var known 点卡设备会话
-	if query := db.Table("point_device_session").Where("admin = ? AND card = ? AND needle = ?", admin, card, needle).First(&known); errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return result, fmt.Errorf("登录会话不存在或已失效")
-	} else if query.Error != nil {
-		return result, fmt.Errorf("读取设备会话失败")
-	}
-	if deviceID != "" {
-		normalized, ok := 规范化设备标识(deviceID)
-		if !ok || normalized != known.DeviceID {
-			return result, fmt.Errorf("设备标识与登录会话不匹配")
-		}
+	deviceID, valid = 规范化可选设备标识(deviceID)
+	if !valid {
+		return result, fmt.Errorf("device_id格式不正确")
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
@@ -316,17 +314,20 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if query.Error != nil {
 			return fmt.Errorf("读取点卡失败")
 		}
-		if err := 校验点卡状态(cardRow, known.Software); err != nil {
+		if cardRow.Software <= 0 {
+			return fmt.Errorf("卡密所属软件不正确")
+		}
+		if err := 校验点卡状态(cardRow, cardRow.Software); err != nil {
 			return err
 		}
-		session, found, err := 查询点卡设备会话按设备(tx, admin, card, known.Software, known.DeviceID, true)
-		if err != nil || !found || session.ID != known.ID || session.Needle != needle {
+		session, found, err := 查询点卡设备会话按设备(tx, admin, card, deviceID, true)
+		if err != nil {
+			return err
+		}
+		if !found || session.DeviceID != deviceID || session.Needle != needle || session.Software != cardRow.Software {
 			return fmt.Errorf("登录会话不存在或已失效")
 		}
-		if deviceAlias == "" {
-			deviceAlias = session.DeviceAlias
-		}
-		settings, err := 读取软件设置(tx, admin, known.Software)
+		settings, err := 读取软件设置(tx, admin, cardRow.Software)
 		if err != nil {
 			return err
 		}
@@ -336,13 +337,13 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		}
 		charge := 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: session.AuthorizedUntil}
 		if !session.AuthorizedUntil.After(now) {
-			price, _, priceErr := 查询周期价格(tx, admin, known.Software, period)
+			price, _, priceErr := 查询周期价格(tx, admin, cardRow.Software, period)
 			if priceErr != nil {
 				// 保留会话，让客户端可以通过下一次登录明确提交新的有效授权时长；
 				// 这里不能在返回错误的同一事务里删除，否则删除会随事务回滚。
 				return priceErr
 			}
-			params := 点卡扣费参数{Admin: admin, Card: card, Software: known.Software, PeriodSeconds: period, DeviceID: session.DeviceID, DeviceAlias: deviceAlias, RemarkPrefix: "心跳续费"}
+			params := 点卡扣费参数{Admin: admin, Card: card, Software: cardRow.Software, PeriodSeconds: period, DeviceID: session.DeviceID, DeviceAlias: session.DeviceAlias, RemarkPrefix: "心跳续费"}
 			charge, err = 扣除点数事务(tx, tableName, &cardRow, params, price, period, now)
 			if err != nil {
 				// 和登录保持一致，余额不足时保留会话，补点后可继续重试。
@@ -355,7 +356,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 			session.AuthorizedUntil = until
 			charge.AuthorizedUntil = until
 		}
-		if err := 保存点卡设备会话(tx, &session, deviceAlias, period, now); err != nil {
+		if err := 保存点卡设备会话(tx, &session, "", period, now); err != nil {
 			return err
 		}
 		result = 点卡心跳结果{Session: session, Charge: charge, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
@@ -367,17 +368,19 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	return result, nil
 }
 
-// 退出点卡设备会话是幂等操作。device_id 是设备身份并且必须提供；needle 不是
-// 设备标识，客户端若同时提交则只把它作为当前心跳会话的附加校验。
-func 退出点卡设备会话(admin string, card string, softwareID int, deviceID string, needle string) error {
+// 退出点卡设备会话是幂等操作。device_id 与登录、心跳使用同一套可选值规范化：
+// 省略或显式传空字符串都归一为 ""，再按管理员、卡密和 device_id 删除会话。
+// 软件编号从卡密和会话自身维护，退出不接收 software，避免客户端用错误的软件
+// 编号阻止合法会话退出。needle 不是设备标识，若提交只作为附加校验。
+func 退出点卡设备会话(admin string, card string, deviceID string, needle string) error {
 	admin = strings.TrimSpace(admin)
 	card = strings.ToLower(strings.TrimSpace(card))
-	if !验证管理员名称(admin) || !卡密格式规则.MatchString(card) || softwareID <= 0 {
+	if !验证管理员名称(admin) || !卡密格式规则.MatchString(card) {
 		return fmt.Errorf("退出参数不正确")
 	}
-	normalizedDeviceID, ok := 规范化设备标识(deviceID)
+	normalizedDeviceID, ok := 规范化可选设备标识(deviceID)
 	if !ok {
-		return fmt.Errorf("退出时必须提供正确的device_id")
+		return fmt.Errorf("退出时device_id格式不正确")
 	}
 	normalizedNeedle := ""
 	if strings.TrimSpace(needle) != "" {
@@ -388,15 +391,12 @@ func 退出点卡设备会话(admin string, card string, softwareID int, deviceI
 		normalizedNeedle = normalized
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		var session 点卡设备会话
-		query := tx.Table("point_device_session").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("admin = ? AND card = ? AND software = ? AND device_id = ?", admin, card, softwareID, normalizedDeviceID).
-			First(&session)
-		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-			return nil // 会话已经退出时重复调用仍然成功。
+		session, found, err := 查询点卡设备会话按设备(tx, admin, card, normalizedDeviceID, true)
+		if err != nil {
+			return err
 		}
-		if query.Error != nil {
-			return fmt.Errorf("读取设备会话失败")
+		if !found {
+			return nil // 会话已经退出时重复调用仍然成功。
 		}
 		if normalizedNeedle != "" && session.Needle != normalizedNeedle {
 			return fmt.Errorf("登录令牌与设备会话不匹配")

@@ -5,11 +5,11 @@
         <h2>账号设置</h2>
         <p class="说明">管理联系方式、公告和接口安全选项。</p>
       </div>
-      <el-button :loading="加载中" @click="获取设置;">刷新设置</el-button>
+      <el-button :loading="加载中" @click="获取设置">刷新设置</el-button>
     </div>
 
     <el-row :gutter="16">
-      <el-col :xs="24" :md="12">
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard 标题="联系方式" 帮助="用户可以通过这里填写的内容联系您；不需要时可以留空。">
           <el-input
             v-model="设置.contact_information"
@@ -27,7 +27,7 @@
         </InfoCard>
       </el-col>
 
-      <el-col :xs="24" :md="12">
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard 标题="开发者公告" 帮助="公告可通过卡密接口读取，适合发布版本提示或维护通知。">
           <el-input
             v-model="设置.notice"
@@ -41,7 +41,7 @@
         </InfoCard>
       </el-col>
 
-      <el-col :xs="24" :md="12">
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard
           标题="接口安全密码"
           帮助="开启接口安全模式时，客户端需要使用此密码参与签名。密码只用于接口校验，不会在页面中回显。"
@@ -54,15 +54,15 @@
             :placeholder="设置.api_password_set ? '已设置，输入新密码可替换' : '请输入安全密码'"
           />
           <div class="按钮组">
-            <el-button type="primary" @click="保存安全密码;">保存安全密码</el-button>
-            <el-button v-if="设置.api_password_set && !设置.api_safe" type="danger" link @click="清除安全密码;">
+            <el-button type="primary" @click="保存安全密码">保存安全密码</el-button>
+            <el-button v-if="设置.api_password_set && !设置.api_safe" type="danger" link @click="清除安全密码">
               清除
             </el-button>
           </div>
         </InfoCard>
       </el-col>
 
-      <el-col :xs="24" :md="12">
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard 标题="接口安全模式" 帮助="开启后，客户端请求需要通过签名校验；接入方式请查看“接入帮助”。">
           <el-radio-group v-model="设置.api_safe">
             <el-radio :label="0">关闭</el-radio>
@@ -74,7 +74,7 @@
         </InfoCard>
       </el-col>
 
-      <el-col :xs="24" :md="12">
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard 标题="修改登录密码" 帮助="修改成功后旧登录令牌立即失效，当前页面会自动换成新令牌。">
           <el-form label-position="top" @submit.prevent>
             <el-form-item label="当前密码">
@@ -104,7 +104,7 @@
                 autocomplete="new-password"
               />
             </el-form-item>
-            <el-button type="primary" @click="修改登录密码;">修改密码</el-button>
+            <el-button type="primary" @click="修改登录密码">修改密码</el-button>
           </el-form>
         </InfoCard>
       </el-col>

@@ -244,14 +244,9 @@ func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
 	return value, err == nil
 }
 
-// card_login 是点卡客户端的登录入口。period_seconds 可由客户端选择，
-// 服务器会验证该授权时长对应的计费方案是否存在且启用；不传时使用软件默认授权时长。
+// card_login 是点卡客户端的登录入口。软件编号由卡密记录决定，客户端不需要
+// 重复提交；period_seconds 不传时使用该软件的默认授权时长。
 func card_login(ctx *gin.Context) {
-	softwareID, err := strconv.Atoi(input(ctx, "software"))
-	if err != nil || softwareID <= 0 {
-		失败提示(ctx, "software参数错误")
-		return
-	}
 	period, valid := 解析整数参数(ctx, "period_seconds")
 	if !valid || period < 0 {
 		失败提示(ctx, "period_seconds参数错误")
@@ -263,12 +258,7 @@ func card_login(ctx *gin.Context) {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	deviceID := input(ctx, "device_id")
-	if strings.TrimSpace(deviceID) == "" {
-		失败提示(ctx, "点卡登录必须提供device_id")
-		return
-	}
-	result, err := 点卡登录并扣费(cardContext.Name, cardContext.Card, softwareID, deviceID, input(ctx, "device_alias"), period)
+	result, err := 点卡登录并扣费(cardContext.Name, cardContext.Card, input(ctx, "device_id"), input(ctx, "device_alias"), period)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -301,7 +291,7 @@ func card_ping(ctx *gin.Context) {
 		失败提示(ctx, "needle不能为空")
 		return
 	}
-	result, err := 点卡设备心跳(cardContext.Name, cardContext.Card, needle, input(ctx, "device_id"), input(ctx, "device_alias"))
+	result, err := 点卡设备心跳(cardContext.Name, cardContext.Card, needle, input(ctx, "device_id"))
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -309,7 +299,6 @@ func card_ping(ctx *gin.Context) {
 	成功提示(ctx, gin.H{
 		"needle":                     result.Session.Needle,
 		"device_id":                  result.Session.DeviceID,
-		"device_alias":               result.Session.DeviceAlias,
 		"authorized_until":           result.Session.AuthorizedUntil,
 		"renewal_period_seconds":     result.Session.RenewalPeriodSeconds,
 		"heartbeat_interval_seconds": result.HeartbeatSeconds,
@@ -327,12 +316,7 @@ func card_logout(ctx *gin.Context) {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	softwareID, err := strconv.Atoi(input(ctx, "software"))
-	if err != nil || softwareID <= 0 {
-		失败提示(ctx, "software参数错误")
-		return
-	}
-	if err := 退出点卡设备会话(cardContext.Name, cardContext.Card, softwareID, input(ctx, "device_id"), input(ctx, "needle")); err != nil {
+	if err := 退出点卡设备会话(cardContext.Name, cardContext.Card, input(ctx, "device_id"), input(ctx, "needle")); err != nil {
 		失败提示(ctx, err.Error())
 		return
 	}

@@ -36,6 +36,18 @@ func Test规范化设备标识(t *testing.T) {
 	}
 }
 
+func Test规范化可选设备标识(t *testing.T) {
+	if deviceID, ok := 规范化可选设备标识("   "); !ok || deviceID != "" {
+		t.Fatalf("省略设备标识时应统一为空字符串，得到%q, %v", deviceID, ok)
+	}
+	if deviceID, ok := 规范化可选设备标识(" DEVICE-12345678 "); !ok || deviceID != "device-12345678" {
+		t.Fatalf("非空设备标识仍应正常规范化，得到%q, %v", deviceID, ok)
+	}
+	if _, ok := 规范化可选设备标识("short"); ok {
+		t.Fatal("可选设备标识的非空值仍必须满足格式规则")
+	}
+}
+
 func Test规范化设备别名(t *testing.T) {
 	alias, ok := 规范化设备别名("  办公室电脑  ")
 	if !ok || alias != "办公室电脑" {
