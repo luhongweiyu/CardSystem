@@ -245,7 +245,7 @@ func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
 }
 
 // card_login 是点卡客户端的登录入口。period_seconds 可由客户端选择，
-// 服务器会验证该周期是否存在且启用；不传时使用软件默认周期价格。
+// 服务器会验证该授权时长对应的计费方案是否存在且启用；不传时使用软件默认授权时长。
 func card_login(ctx *gin.Context) {
 	softwareID, err := strconv.Atoi(input(ctx, "software"))
 	if err != nil || softwareID <= 0 {

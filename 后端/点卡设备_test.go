@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Test会话仍可能在线覆盖“最后心跳 + 两个心跳周期”的边界，避免清理任务
+// Test会话仍可能在线覆盖“最后心跳 + 两个心跳间隔”的边界，避免清理任务
 // 在刚好到达推断截止时误删会话或重复从当前时间起算。
 func Test会话仍可能在线(t *testing.T) {
 	位置 := time.FixedZone("CST", 8*60*60)
@@ -60,7 +60,7 @@ func Test生成扣点备注包含设备快照(t *testing.T) {
 		DeviceID:     "device-123456",
 		DeviceAlias:  "办公室电脑",
 	}, 3600, 2)
-	for _, expected := range []string{"登录扣点", "周期=3600秒", "扣点=2", "设备ID=device-123456", "设备别名=办公室电脑"} {
+	for _, expected := range []string{"登录扣点", "授权时长=3600秒", "扣点=2", "设备ID=device-123456", "设备别名=办公室电脑"} {
 		if !strings.Contains(remark, expected) {
 			t.Fatalf("流水备注缺少%q: %s", expected, remark)
 		}

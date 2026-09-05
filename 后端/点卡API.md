@@ -4,11 +4,11 @@
 
 卡端接口通过 `center_id`（访客链接中的管理员 ID）或管理员生成的 `name` 定位管理员，再提交 `card`。启用管理员的 API 安全模式后，登录、心跳、退出和配置接口还需要 `timestamp`、`sign`；签名为 `MD5(timestamp + api_password)`，时间偏差允许约 10 分钟。它只提供可选的接口口令校验，不提供传输加密，也不能阻止链路上的窃听或重放。
 
-## 1. 查询可用周期
+## 1. 查询可用点卡计费方案
 
 `GET/POST /card/period_prices`（只读）
 
-参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用周期、价格、软件默认周期和心跳周期：
+参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用点卡计费方案、默认授权时长和心跳间隔：
 
 ```json
 {
@@ -39,11 +39,11 @@
 
 - `software`、`device_id` 必填；设备 ID 应由客户端生成并持久化，不能用 IP。
 - `device_alias` 可选，最长 64 个字符，不参与唯一性，也不要求不重复。
-- `period_seconds` 可选。省略或为 0 时，新会话使用软件默认周期；已有会话沿用上次续费周期。显式提交的周期必须已经配置且启用。
+- `period_seconds` 可选，含义是授权时长秒数。省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
 
-成功响应重点字段：`needle`、`device_id`、`device_alias`、`renewal_period_seconds`、`authorized_until`、`heartbeat_interval_seconds`、`point_balance`、`charged`、`cost`、`ledger_id`。`charged=false` 表示本次仍在当前授权周期内，没有新增流水。
+成功响应重点字段：`needle`、`device_id`、`device_alias`、`renewal_period_seconds`、`authorized_until`、`heartbeat_interval_seconds`、`point_balance`、`charged`、`cost`、`ledger_id`。`charged=false` 表示本次仍在当前授权时长内，没有新增流水。
 
-同一管理员、卡密、软件和设备 ID 只有一条会话。当前授权未到期时重复登录不扣点；如果本次明确选择了另一个有效周期，只更新会话的下一次续费周期，不改变当前截止时间。
+同一管理员、卡密、软件和设备 ID 只有一条会话。当前授权未到期时重复登录不扣点；如果本次明确选择了另一个有效授权时长，只更新会话的下一次续费时长，不改变当前截止时间。
 
 ## 3. 心跳续费
 
@@ -59,15 +59,15 @@
 }
 ```
 
-`needle` 用于定位和校验会话；`device_id` 可选，但提交时必须与会话一致。别名非空时会更新会话展示值，留空则保留旧别名。响应会再次返回当前 `heartbeat_interval_seconds`，管理员修改心跳周期后客户端可及时调整下一次发送间隔。
+`needle` 用于定位和校验会话；`device_id` 可选，但提交时必须与会话一致。别名非空时会更新会话展示值，留空则保留旧别名。响应会再次返回当前 `heartbeat_interval_seconds`，管理员修改心跳间隔后客户端可及时调整下一次发送间隔。
 
-授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件心跳周期计算：
+授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件心跳间隔计算：
 
 `推断截止 = last_heartbeat_at + heartbeat_interval_seconds × 2`
 
-如果推断截止晚于旧 `authorized_until` 且当前时间尚未超过推断截止，视为设备可能仍在线，从旧截止时间加一个周期并扣一次点。超过推断窗口后，实际收到登录或心跳就从当前时间开始新周期；后台清理在没有新请求时会删除该离线会话。三条路径采用同一续费起点规则。
+如果推断截止晚于旧 `authorized_until` 且当前时间尚未超过推断截止，视为设备可能仍在线，从旧截止时间续一个授权时长并扣一次点。超过推断窗口后，实际收到登录或心跳就从当前时间开始新的授权时长；后台清理在没有新请求时会删除该离线会话。三条路径采用同一续费起点规则。
 
-软件的所有启用计费周期必须不少于心跳周期的 2 倍；心跳周期最大为 86400 秒。该约束保证后台一次续费就能覆盖在线推测窗口。
+软件的所有启用授权时长必须不少于心跳间隔的 2 倍；心跳间隔最大为 86400 秒。该约束保证后台一次续费就能覆盖在线推测窗口。
 
 ## 4. 退出
 
@@ -92,14 +92,14 @@
 | `balance_before` / `balance_after` | 变动前后余额 |
 | `remark` | 原因和设备 ID/别名快照（如有） |
 
-只有余额确实改变时才写流水；同一周期内的重复登录/心跳不会重复写入。生成点卡时也会写一条“生成点卡初始点数”补点流水，便于审计。删除后重用同名卡密不会删除旧流水，新旧记录允许混合保存。
+只有余额确实改变时才写流水；同一授权时长内的重复登录/心跳不会重复写入。生成点卡时也会写一条“生成点卡初始点数”补点流水，便于审计。删除后重用同名卡密不会删除旧流水，新旧记录允许混合保存。
 
 ## 6. 管理端和代理账号
 
 管理员接口统一位于 `/admin`：
 
-- `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认周期/心跳设置。
-- `/point_period_price/list|save|delete`：周期价格管理。
+- `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认授权时长/心跳间隔设置。
+- `/point_period_price/list|save|delete`：点卡计费方案管理。
 - `/add_new_card`、`/user_query_card`、`/modify_card`、`/delete_card`、`/冻卡s`：点卡管理。
 - `/point_card/adjust`：管理员手工补点或扣回，金额为有符号整数。
 - `/point_ledger/query`：管理员分页查看流水。

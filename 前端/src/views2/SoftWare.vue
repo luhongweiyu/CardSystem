@@ -2,8 +2,8 @@
   <section class="页面" v-loading="加载中">
     <div class="页面标题行">
       <div>
-        <h2>软件与计费周期</h2>
-        <p class="说明">客户端只提交周期秒数，实际扣点价格始终由服务端决定。</p>
+        <h2>软件与点卡计费</h2>
+        <p class="说明">客户端只提交授权时长秒数，实际扣点价格始终由服务端决定。</p>
       </div>
       <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑;">新增软件</el-button>
     </div>
@@ -11,30 +11,30 @@
     <el-table :data="软件列表" border stripe row-key="ID">
       <el-table-column prop="ID" label="ID" width="70" />
       <el-table-column prop="Software" label="软件名称" min-width="170" />
-      <el-table-column label="默认周期" width="130">
+      <el-table-column label="默认授权时长" width="130">
         <template #default="scope">{{ 周期文本(scope.row.default_period_seconds) }}</template>
       </el-table-column>
-      <el-table-column label="心跳周期" width="130">
+      <el-table-column label="心跳间隔" width="130">
         <template #default="scope">{{ 周期文本(scope.row.heartbeat_interval_seconds) }}</template>
       </el-table-column>
       <el-table-column prop="Bulletin" label="公告" min-width="220" show-overflow-tooltip />
       <el-table-column v-if="!是代理账号" label="操作" width="230" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="编辑软件(scope.row)">编辑</el-button>
-          <el-button link type="success" @click="打开价格(scope.row)">周期价格</el-button>
+          <el-button link type="success" @click="打开价格(scope.row)">点卡计费方案</el-button>
           <el-button link type="danger" @click="删除软件(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-card v-if="是代理账号" shadow="never" class="代理提示">
-      代理账号只能使用管理员分配的软件和点数价格。
+      渠道合伙人只能使用管理员配置的软件和点数价格。
     </el-card>
 
     <section v-if="!是代理账号" class="代理区">
       <div class="子标题行">
-        <h3>代理账号</h3>
-        <el-button type="primary" plain @click="打开代理创建;">新增代理账号</el-button>
+        <h3>渠道合伙人</h3>
+        <el-button type="primary" plain @click="打开代理创建;">新增渠道合伙人</el-button>
       </div>
       <el-table :data="代理列表" border stripe>
         <el-table-column prop="id" label="ID" width="70" />
@@ -42,7 +42,7 @@
         <el-table-column prop="balance" label="余额（点）" width="120" />
         <el-table-column label="操作" min-width="260">
           <template #default="scope">
-            <el-button link type="primary" @click="编辑代理(scope.row)">价格与密码</el-button>
+            <el-button link type="primary" @click="编辑代理(scope.row)">计费方案与密码</el-button>
             <el-button link type="success" @click="打开代理充值(scope.row)">充值点数</el-button>
             <el-button link type="danger" @click="删除代理(scope.row)">删除</el-button>
           </template>
@@ -56,7 +56,7 @@
         <el-form-item label="软件名称" required>
           <el-input v-model="软件框.software" maxlength="64" />
         </el-form-item>
-        <el-form-item label="默认周期（秒）" required>
+        <el-form-item label="默认授权时长（秒）" required>
           <el-input-number
             v-model="软件框.default_period_seconds"
             :min="1"
@@ -65,7 +65,7 @@
             controls-position="right"
           />
         </el-form-item>
-        <el-form-item label="心跳周期（秒）" required>
+        <el-form-item label="心跳间隔（秒）" required>
           <el-input-number
             v-model="软件框.heartbeat_interval_seconds"
             :min="1"
@@ -74,7 +74,7 @@
             controls-position="right"
           />
         </el-form-item>
-        <el-alert type="info" :closable="false" show-icon title="所有启用计费周期都必须不少于心跳周期的 2 倍。" />
+        <el-alert type="info" :closable="false" show-icon title="所有启用授权时长都必须不少于心跳间隔的 2 倍。" />
         <el-form-item label="公告">
           <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
         </el-form-item>
@@ -85,14 +85,14 @@
       </template>
     </el-dialog>
 
-    <!-- 周期价格 -->
-    <el-dialog v-model="价格框.显示" title="周期价格" width="760px" destroy-on-close>
+    <!-- 点卡计费方案 -->
+    <el-dialog v-model="价格框.显示" title="点卡计费方案" width="760px" destroy-on-close>
       <div class="价格标题">
         <span>{{ 价格框.softwareName }}</span>
-        <el-button type="primary" size="small" @click="新增价格;">新增周期</el-button>
+        <el-button type="primary" size="small" @click="新增价格;">新增计费方案</el-button>
       </div>
       <el-table :data="价格框.rows" border>
-        <el-table-column label="周期" width="150">
+        <el-table-column label="授权时长" width="150">
           <template #default="scope">{{ 周期文本(scope.row.period_seconds) }}</template>
         </el-table-column>
         <el-table-column prop="period_seconds" label="秒数" width="110" />
@@ -104,7 +104,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="默认" width="80">
+        <el-table-column label="默认方案" width="90">
           <template #default="scope">{{ scope.row.is_default ? '是' : '' }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="150">
@@ -114,17 +114,17 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!价格框.rows.length" description="尚未配置周期价格" />
+      <el-empty v-if="!价格框.rows.length" description="尚未配置点卡计费方案" />
     </el-dialog>
 
     <el-dialog
       v-model="价格编辑框.显示"
-      :title="价格编辑框.id ? '编辑周期价格' : '新增周期价格'"
+      :title="价格编辑框.id ? '编辑点卡计费方案' : '新增点卡计费方案'"
       width="420px"
       destroy-on-close
     >
       <el-form label-width="120px">
-        <el-form-item label="周期（秒）">
+        <el-form-item label="授权时长（秒）">
           <el-input-number
             v-model="价格编辑框.period_seconds"
             :min="1"
@@ -134,7 +134,7 @@
             :disabled="!!价格编辑框.id"
           />
         </el-form-item>
-        <el-form-item label="扣点价格">
+        <el-form-item label="扣点数">
           <el-input-number
             v-model="价格编辑框.cost"
             :min="1"
@@ -144,7 +144,7 @@
           />
         </el-form-item>
         <el-form-item label="启用"><el-switch v-model="价格编辑框.enabled" /></el-form-item>
-        <el-form-item label="设为默认"><el-switch v-model="价格编辑框.is_default" /></el-form-item>
+        <el-form-item label="设为默认方案"><el-switch v-model="价格编辑框.is_default" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="价格编辑框.显示 = false">取消</el-button>
@@ -152,8 +152,8 @@
       </template>
     </el-dialog>
 
-    <!-- 代理账号 -->
-    <el-dialog v-model="代理框.显示" title="新增代理账号" width="420px" destroy-on-close>
+    <!-- 渠道合伙人 -->
+    <el-dialog v-model="代理框.显示" title="新增渠道合伙人" width="420px" destroy-on-close>
       <el-form label-width="100px">
         <el-form-item label="账号"><el-input v-model="代理框.name" maxlength="32" /></el-form-item>
         <el-form-item label="密码">
@@ -166,7 +166,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="代理编辑框.显示" title="代理账号设置" width="620px" destroy-on-close>
+    <el-dialog v-model="代理编辑框.显示" title="渠道合伙人设置" width="620px" destroy-on-close>
       <p>账号：{{ 代理编辑框.name }}　当前余额：{{ 代理编辑框.balance }} 点</p>
       <el-form label-width="150px">
         <el-form-item v-for="item in 软件列表" :key="item.ID" :label="`${item.Software}（每点价格）`">
@@ -189,7 +189,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="代理充值框.显示" title="给代理账号充值" width="420px" destroy-on-close>
+    <el-dialog v-model="代理充值框.显示" title="给渠道合伙人充值" width="420px" destroy-on-close>
       <p>账号：{{ 代理充值框.name }}</p>
       <el-form label-width="90px">
         <el-form-item label="点数">
@@ -265,7 +265,7 @@ const 查询软件 = function () {
 const 查询代理 = function () {
   if (是代理账号.value) return Promise.resolve()
   return post('/查询代理账号', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询代理账号失败')
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询渠道合伙人失败')
     代理列表.value = res.data.data || []
   })
 }
@@ -299,7 +299,7 @@ const 保存软件 = function () {
     软件框.default_period_seconds < 1 ||
     软件框.default_period_seconds > 31536000
   ) {
-    ElMessage.warning('默认周期必须在1至31536000秒之间')
+    ElMessage.warning('默认授权时长必须在1至31536000秒之间')
     return
   }
   if (
@@ -307,11 +307,11 @@ const 保存软件 = function () {
     软件框.heartbeat_interval_seconds < 1 ||
     软件框.heartbeat_interval_seconds > 86400
   ) {
-    ElMessage.warning('心跳周期必须在1至86400秒之间')
+    ElMessage.warning('心跳间隔必须在1至86400秒之间')
     return
   }
   if (软件框.default_period_seconds < 软件框.heartbeat_interval_seconds * 2) {
-    ElMessage.warning('默认计费周期不能短于心跳周期的2倍')
+    ElMessage.warning('默认授权时长不能短于心跳间隔的2倍')
     return
   }
   软件框.加载中 = true
@@ -362,7 +362,7 @@ const 打开价格 = function (row) {
 const 查询价格 = function () {
   return post('/point_period_price/list', { software: 价格框.software })
     .then((res) => {
-      if (!res.data?.state) throw new Error(res.data?.msg || '查询周期价格失败')
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询点卡计费方案失败')
       价格框.rows = res.data.data || []
     })
     .catch(显示错误)
@@ -391,7 +391,7 @@ const 编辑价格 = function (row) {
 }
 const 保存价格 = function () {
   if (价格编辑框.enabled && 价格编辑框.period_seconds < 价格框.heartbeatSeconds * 2) {
-    ElMessage.warning('启用计费周期不能短于心跳周期的2倍')
+    ElMessage.warning('启用授权时长不能短于心跳间隔的2倍')
     return
   }
   post('/point_period_price/save', {
@@ -410,7 +410,7 @@ const 保存价格 = function () {
     .catch(显示错误)
 }
 const 删除价格 = function (row) {
-  ElMessageBox.confirm('删除后使用该周期的登录会被拒绝，确定删除？', '确认删除', { type: 'warning' })
+  ElMessageBox.confirm('删除后使用该授权时长的登录会被拒绝，确定删除？', '确认删除', { type: 'warning' })
     .then(() => post('/point_period_price/delete', { id: row.id }))
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
@@ -424,7 +424,7 @@ const 删除价格 = function (row) {
 const 创建代理 = function () {
   const passwordBytes = new TextEncoder().encode(代理框.password || '').length
   if (!/^[A-Za-z0-9_]{3,32}$/.test(代理框.name)) {
-    ElMessage.warning('代理账号只能使用3至32位字母、数字或下划线')
+    ElMessage.warning('渠道合伙人账号只能使用3至32位字母、数字或下划线')
     return
   }
   if (passwordBytes < 6 || passwordBytes > 72) {
@@ -483,7 +483,7 @@ const 保存代理 = function () {
     data: { id: 代理编辑框.id, password: 代理编辑框.password, prices: JSON.stringify(prices) }
   })
     .then((res) => {
-      if (!res.data?.state) throw new Error(res.data?.msg || '保存代理账号失败')
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存渠道合伙人失败')
       ElMessage.success('保存成功')
       代理编辑框.显示 = false
       查询代理()
@@ -508,7 +508,7 @@ const 代理充值 = function () {
     .catch(显示错误)
 }
 const 删除代理 = function (row) {
-  ElMessageBox.confirm(`确定删除代理账号“${row.name}”？已生成的点卡和流水会保留。`, '确认删除', {
+  ElMessageBox.confirm(`确定删除渠道合伙人“${row.name}”？已生成的点卡和流水会保留。`, '确认删除', {
     type: 'warning'
   })
     .then(() => post('/删除代理账号', { id: row.id }))

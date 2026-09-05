@@ -3,7 +3,7 @@
     <div class="页面标题行">
       <div>
         <h2>点卡管理</h2>
-        <p class="说明">一张卡可在多台设备使用；同一设备在授权周期内重复登录不会重复扣点。</p>
+        <p class="说明">一张卡可在多台设备使用；同一设备在授权时长内重复登录不会重复扣点。</p>
       </div>
       <el-button type="primary" @click="打开生成;">生成点卡</el-button>
     </div>
@@ -134,7 +134,7 @@
         </el-form-item>
         <el-form-item label="生成数量" required>
           <el-input-number v-model="生成框.num" :min="1" :max="1000" :precision="0" controls-position="right" />
-          <span v-if="是代理账号" class="费用提示">预计消耗代理余额 {{ 预计代理费用 }} 点</span>
+          <span v-if="是代理账号" class="费用提示">预计消耗合伙人余额 {{ 预计代理费用 }} 点</span>
         </el-form-item>
         <el-form-item label="生成方式">
           <el-radio-group v-model="生成框.random">
@@ -355,7 +355,7 @@ const 选择变化 = (rows) => {
 
 const 打开生成 = function () {
   if (!可发卡软件列表.value.length) {
-    ElMessage.warning(是代理账号.value ? '管理员尚未给此代理账号分配可发卡软件' : '请先创建软件')
+    ElMessage.warning(是代理账号.value ? '管理员尚未为该渠道合伙人配置可发卡软件' : '请先创建软件')
     return
   }
   Object.assign(生成框, {

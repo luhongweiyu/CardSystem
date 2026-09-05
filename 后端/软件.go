@@ -13,8 +13,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 软件请求只包含软件自身设置。计费价格由 point_period_price 单独管理，
-// 因而修改软件默认周期不会意外覆盖已有的其他周期价格。
+// 软件请求只包含软件自身设置。点卡计费方案由 point_period_price 单独管理，
+// 因而修改软件默认授权时长不会意外覆盖已有的其他计费方案。
 type 软件请求 struct {
 	ID                       int    `json:"id"`
 	Software                 string `json:"software"`
@@ -79,19 +79,19 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 		request.HeartbeatIntervalSeconds = 默认心跳周期秒
 	}
 	if request.DefaultPeriodSeconds <= 0 || request.DefaultPeriodSeconds > 最大计费周期秒 {
-		return request, fmt.Errorf("默认登录周期必须在1至%d秒之间", 最大计费周期秒)
+		return request, fmt.Errorf("默认授权时长必须在1至%d秒之间", 最大计费周期秒)
 	}
 	if request.HeartbeatIntervalSeconds <= 0 || request.HeartbeatIntervalSeconds > 最大心跳周期秒 {
-		return request, fmt.Errorf("心跳周期必须在1至%d秒之间", 最大心跳周期秒)
+		return request, fmt.Errorf("心跳间隔必须在1至%d秒之间", 最大心跳周期秒)
 	}
 	if request.DefaultPeriodSeconds < request.HeartbeatIntervalSeconds*2 {
-		return request, fmt.Errorf("默认计费周期不能短于心跳周期的2倍")
+		return request, fmt.Errorf("默认授权时长不能短于心跳间隔的2倍")
 	}
 	return request, nil
 }
 
-// 校验软件最短计费周期保证一次续费足以覆盖“两次心跳”的在线推测窗口。
-// 否则短周期在后台结算时可能续完仍然过期，导致少扣或连续重试。
+// 校验软件最短授权时长，保证一次续费足以覆盖“两次心跳”的在线推测窗口。
+// 否则过短的授权时长在后台结算时可能续完仍然过期，导致少扣或连续重试。
 func 校验软件最短计费周期(tx *gorm.DB, admin string, softwareID int, heartbeatSeconds int64) error {
 	var shortest struct {
 		PeriodSeconds int64 `gorm:"column:period_seconds"`
@@ -99,10 +99,10 @@ func 校验软件最短计费周期(tx *gorm.DB, admin string, softwareID int, h
 	query := tx.Table("point_period_price").Select("MIN(period_seconds) AS period_seconds").
 		Where("admin = ? AND software = ? AND enabled = ?", admin, softwareID, true).Scan(&shortest)
 	if query.Error != nil {
-		return fmt.Errorf("检查计费周期失败")
+		return fmt.Errorf("检查授权时长失败")
 	}
 	if shortest.PeriodSeconds > 0 && shortest.PeriodSeconds < heartbeatSeconds*2 {
-		return fmt.Errorf("心跳周期过长，必须不超过最短启用计费周期的一半")
+		return fmt.Errorf("心跳间隔过长，必须不超过最短启用授权时长的一半")
 	}
 	return nil
 }
@@ -136,10 +136,10 @@ func user_add_soft(ctx *gin.Context) {
 		if err := tx.Table("software").Create(&created).Error; err != nil {
 			return fmt.Errorf("创建软件失败")
 		}
-		// 新软件自动提供一个可用的默认周期价格，管理员可在“周期价格”中修改。
+		// 新软件自动提供一个可用的默认点卡计费方案，管理员可在“点卡计费方案”中修改。
 		defaultPrice := 点卡周期价格{Admin: admin, Software: created.ID, PeriodSeconds: request.DefaultPeriodSeconds, Cost: 1, IsDefault: true, Enabled: true}
 		if err := tx.Table("point_period_price").Create(&defaultPrice).Error; err != nil {
-			return fmt.Errorf("初始化默认周期价格失败")
+			return fmt.Errorf("初始化默认点卡计费方案失败")
 		}
 		return nil
 	})
@@ -185,7 +185,7 @@ func user_del_soft(ctx *gin.Context) {
 			return fmt.Errorf("删除关联设备会话失败")
 		}
 		if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡周期价格{}).Error; err != nil {
-			return fmt.Errorf("删除周期价格失败")
+			return fmt.Errorf("删除点卡计费方案失败")
 		}
 		// 流水是审计历史，即使软件被删除也保留，不影响其他软件查询。
 		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Delete(&软件{}); result.Error != nil || result.RowsAffected != 1 {
@@ -211,7 +211,7 @@ func user_modify_bulletin(ctx *gin.Context) {
 		return
 	}
 	admin := 管理员_用户名(ctx)
-	// 软件默认周期是唯一可信来源。修改默认周期时必须已经存在对应的启用价格，
+	// 软件默认授权时长是唯一可信来源。修改默认授权时长时必须已经存在对应的启用方案，
 	// 并在同一事务内同步 is_default 展示标记，避免出现两套互相矛盾的默认值。
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var current 软件
@@ -246,10 +246,10 @@ func user_modify_bulletin(ctx *gin.Context) {
 		if defaultChanged {
 			var priceCount int64
 			if err := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, request.ID, request.DefaultPeriodSeconds, true).Count(&priceCount).Error; err != nil {
-				return fmt.Errorf("检查默认周期价格失败")
+				return fmt.Errorf("检查默认授权时长方案失败")
 			}
 			if priceCount != 1 {
-				return fmt.Errorf("请先添加并启用%d秒的周期价格", request.DefaultPeriodSeconds)
+				return fmt.Errorf("请先添加并启用%d秒的点卡计费方案", request.DefaultPeriodSeconds)
 			}
 		}
 		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds}
@@ -258,10 +258,10 @@ func user_modify_bulletin(ctx *gin.Context) {
 		}
 		if defaultChanged {
 			if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.ID).Update("is_default", false).Error; err != nil {
-				return fmt.Errorf("同步默认周期失败")
+				return fmt.Errorf("同步默认授权时长失败")
 			}
 			if result := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ?", admin, request.ID, request.DefaultPeriodSeconds).Update("is_default", true); result.Error != nil || result.RowsAffected != 1 {
-				return fmt.Errorf("同步默认周期失败")
+				return fmt.Errorf("同步默认授权时长失败")
 			}
 		}
 		return nil

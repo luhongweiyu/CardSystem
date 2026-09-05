@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 点卡周期价格请求是管理员配置软件计费周期时使用的输入模型。
+// 点卡计费方案请求是管理员配置软件授权时长时使用的输入模型。
 type 点卡周期价格请求 struct {
 	Software      int   `json:"software"`
 	PeriodSeconds int64 `json:"period_seconds"`
@@ -33,8 +33,8 @@ func 管理员名称和软件(ctx *gin.Context, softwareID int) (string, error) 
 	return account.Name, nil
 }
 
-// 管理员_保存点卡周期价格新增或更新一个软件周期。
-// 设置为默认周期时，会在同一事务内清除该软件其他周期的默认标记。
+// 管理员_保存点卡周期价格新增或更新一个软件授权时长方案。
+// 设置为默认方案时，会在同一事务内清除该软件其他方案的默认标记。
 func 管理员_保存点卡周期价格(ctx *gin.Context) {
 	var request 点卡周期价格请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
@@ -47,7 +47,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		return
 	}
 	if request.PeriodSeconds <= 0 || request.PeriodSeconds > 最大计费周期秒 {
-		失败提示管理端(ctx, fmt.Sprintf("周期必须在1至%d秒之间", 最大计费周期秒))
+		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在1至%d秒之间", 最大计费周期秒))
 		return
 	}
 	if request.Cost <= 0 || request.Cost > 最大单次点数 {
@@ -69,38 +69,38 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 			return fmt.Errorf("软件不存在")
 		}
 		if isDefault && !enabled {
-			return fmt.Errorf("默认周期必须保持启用")
+			return fmt.Errorf("默认方案必须保持启用")
 		}
 		if enabled && request.PeriodSeconds < settings.HeartbeatIntervalSeconds*2 {
-			return fmt.Errorf("启用计费周期不能短于心跳周期的2倍")
+			return fmt.Errorf("启用授权时长不能短于心跳间隔的2倍")
 		}
-		// 软件可能尚未配置任何周期价格。此时即使客户端没有显式勾选“默认”，
-		// 也把本次保存的启用周期作为默认，避免软件进入“有价格但默认周期
+		// 软件可能尚未配置任何点卡计费方案。此时即使客户端没有显式勾选“默认”，
+		// 也把本次保存的启用方案作为默认，避免软件进入“有方案但默认时长
 		// 永远无法扣费”的不可用状态。
 		var currentDefaultCount int64
 		if err := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, request.Software, settings.DefaultPeriodSeconds, true).Count(&currentDefaultCount).Error; err != nil {
-			return fmt.Errorf("检查默认周期失败")
+			return fmt.Errorf("检查默认授权时长失败")
 		}
 		if !isDefault && request.PeriodSeconds != settings.DefaultPeriodSeconds && currentDefaultCount == 0 {
 			if !enabled {
-				return fmt.Errorf("请先保存并启用一个默认周期")
+				return fmt.Errorf("请先保存并启用一个默认授权时长方案")
 			}
 			isDefault = true
 		}
-		// 当前软件默认周期不能被直接停用或取消默认。需要切换默认时，
-		// 把另一个启用周期设为默认即可，事务会同时更新软件设置。
+		// 当前软件默认授权时长不能被直接停用或取消默认。需要切换默认时，
+		// 把另一个启用方案设为默认即可，事务会同时更新软件设置。
 		if request.PeriodSeconds == settings.DefaultPeriodSeconds && !isDefault {
 			if !enabled {
-				return fmt.Errorf("默认周期不能停用，请先设置另一个默认周期")
+				return fmt.Errorf("默认方案不能停用，请先设置另一个默认方案")
 			}
 			isDefault = true
 		}
 		if isDefault {
 			if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.Software).Updates(map[string]interface{}{"is_default": false}).Error; err != nil {
-				return fmt.Errorf("更新默认周期失败")
+				return fmt.Errorf("更新默认方案失败")
 			}
 			if err := tx.Table("software").Where("name = ? AND id = ?", admin, request.Software).Update("default_period_seconds", request.PeriodSeconds).Error; err != nil {
-				return fmt.Errorf("更新软件默认周期失败")
+				return fmt.Errorf("更新软件默认授权时长失败")
 			}
 		}
 		query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ?", admin, request.Software, request.PeriodSeconds).First(&saved)
@@ -109,10 +109,10 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 			return tx.Table("point_period_price").Create(&saved).Error
 		}
 		if query.Error != nil {
-			return fmt.Errorf("读取周期价格失败")
+			return fmt.Errorf("读取点卡计费方案失败")
 		}
 		if err := tx.Table("point_period_price").Where("id = ?", saved.ID).Updates(map[string]interface{}{"cost": request.Cost, "is_default": isDefault, "enabled": enabled}).Error; err != nil {
-			return fmt.Errorf("保存周期价格失败")
+			return fmt.Errorf("保存点卡计费方案失败")
 		}
 		saved.Cost, saved.IsDefault, saved.Enabled = request.Cost, isDefault, enabled
 		return nil
@@ -124,7 +124,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "data": saved})
 }
 
-// 管理员_查询点卡周期价格只返回当前管理员自己的配置。
+// 管理员_查询点卡周期价格只返回当前管理员自己的点卡计费方案配置。
 func 管理员_查询点卡周期价格(ctx *gin.Context) {
 	account, ok := 管理员_取账号信息(ctx)
 	if !ok {
@@ -138,14 +138,14 @@ func 管理员_查询点卡周期价格(ctx *gin.Context) {
 	}
 	var rows []点卡周期价格
 	if err := query.Order("software ASC, period_seconds ASC").Find(&rows).Error; err != nil {
-		失败提示管理端(ctx, "查询周期价格失败")
+		失败提示管理端(ctx, "查询点卡计费方案失败")
 		return
 	}
 	成功提示管理端(ctx, gin.H{"data": rows})
 }
 
-// 点卡公开周期价格只返回客户端选择周期所需的字段。管理员名称、数据库
-// 主键和停用记录不会暴露；客户端可先调用此接口再决定本次登录提交哪个周期。
+// 点卡公开计费方案只返回客户端选择授权时长所需的字段。管理员名称、数据库
+// 主键和停用记录不会暴露；客户端可先调用此接口再决定本次登录提交哪个授权时长。
 type 点卡公开周期价格 struct {
 	PeriodSeconds int64 `json:"period_seconds"`
 	Cost          int64 `json:"cost"`
@@ -197,7 +197,7 @@ func 卡端_查询周期价格(ctx *gin.Context) {
 	}
 	var prices []点卡周期价格
 	if err := db_point_period_price.Where("admin = ? AND software = ? AND enabled = ?", cardContext.Name, softwareID, true).Order("period_seconds ASC").Find(&prices).Error; err != nil {
-		失败提示(ctx, "查询周期价格失败")
+		失败提示(ctx, "查询点卡计费方案失败")
 		return
 	}
 	result := make([]点卡公开周期价格, 0, len(prices))
@@ -216,14 +216,14 @@ func 管理员_删除点卡周期价格(ctx *gin.Context) {
 	}
 	id, _ := strconv.ParseUint(input(ctx, "id"), 10, 64)
 	if id == 0 {
-		失败提示管理端(ctx, "周期价格编号不正确")
+		失败提示管理端(ctx, "点卡计费方案编号不正确")
 		return
 	}
 	// 先读取所属软件编号，用于在事务中按“软件行 -> 价格行”的顺序加锁；
-	// 该顺序与保存周期价格保持一致，避免并发切换默认周期时互相等待。
+	// 该顺序与保存点卡计费方案保持一致，避免并发切换默认方案时互相等待。
 	var hint 点卡周期价格
 	if err := db_point_period_price.Select("id", "software").Where("id = ? AND admin = ?", id, account.Name).First(&hint).Error; err != nil {
-		失败提示管理端(ctx, "周期价格不存在")
+		失败提示管理端(ctx, "点卡计费方案不存在")
 		return
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -236,13 +236,13 @@ func 管理员_删除点卡周期价格(ctx *gin.Context) {
 		}
 		var price 点卡周期价格
 		if result := tx.Table("point_period_price").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ? AND software = ?", id, account.Name, hint.Software).First(&price); result.Error != nil {
-			return fmt.Errorf("周期价格不存在")
+			return fmt.Errorf("点卡计费方案不存在")
 		}
 		if settings.DefaultPeriodSeconds == price.PeriodSeconds {
-			return fmt.Errorf("默认周期不能删除，请先设置另一个默认周期")
+			return fmt.Errorf("默认方案不能删除，请先设置另一个默认方案")
 		}
 		if result := tx.Table("point_period_price").Where("id = ? AND admin = ?", id, account.Name).Delete(&点卡周期价格{}); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("删除周期价格失败")
+			return fmt.Errorf("删除点卡计费方案失败")
 		}
 		return nil
 	})

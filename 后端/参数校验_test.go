@@ -79,7 +79,7 @@ func Test规范化点卡扣费参数(t *testing.T) {
 
 	invalid := 点卡扣费参数{Admin: "tester", Card: "abc12345", Software: 1, PeriodSeconds: -1}
 	if err := 规范化点卡扣费参数(&invalid); err == nil {
-		t.Fatal("负数计费周期应当被拒绝")
+		t.Fatal("负数授权时长应当被拒绝")
 	}
 }
 

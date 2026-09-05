@@ -15,11 +15,11 @@ var (
 	// 这两类错误是正常业务结果。客户端仍会收到完整提示，后台批量清理则
 	// 不为每个会话每分钟重复写错误日志，避免余额用尽时日志快速膨胀。
 	错误_点卡余额不足  = errors.New("点卡余额不足")
-	错误_周期价格不可用 = errors.New("计费周期不可用")
+	错误_周期价格不可用 = errors.New("点卡计费方案不可用")
 )
 
-// 点卡扣费参数是服务层的内部参数。客户端只提交周期，费用始终由服务端
-// 查询周期价格表得到，避免客户端篡改价格。
+// 点卡扣费参数是服务层的内部参数。客户端只提交授权时长，费用始终由服务端
+// 查询点卡计费方案表得到，避免客户端篡改价格。
 type 点卡扣费参数 struct {
 	Admin         string
 	Card          string
@@ -31,7 +31,7 @@ type 点卡扣费参数 struct {
 }
 
 // 规范化点卡扣费参数集中处理所有外部输入，确保登录、心跳和后台任务
-// 使用完全一致的卡密、设备和周期校验规则。
+// 使用完全一致的卡密、设备和授权时长校验规则。
 func 规范化点卡扣费参数(params *点卡扣费参数) error {
 	params.Admin = strings.TrimSpace(params.Admin)
 	params.Card = strings.ToLower(strings.TrimSpace(params.Card))
@@ -45,7 +45,7 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 		return fmt.Errorf("软件参数错误")
 	}
 	if params.PeriodSeconds < 0 || params.PeriodSeconds > 最大计费周期秒 {
-		return fmt.Errorf("计费周期必须在1至%d秒之间，0表示使用默认周期", 最大计费周期秒)
+		return fmt.Errorf("授权时长必须在1至%d秒之间，0表示使用默认授权时长", 最大计费周期秒)
 	}
 	if params.DeviceID != "" {
 		deviceID, valid := 规范化设备标识(params.DeviceID)
@@ -79,20 +79,20 @@ func 读取软件设置(tx *gorm.DB, admin string, softwareID int) (software, er
 		return item, fmt.Errorf("读取软件设置失败")
 	}
 	if item.DefaultPeriodSeconds <= 0 || item.DefaultPeriodSeconds > 最大计费周期秒 {
-		return item, fmt.Errorf("软件默认计费周期配置不正确")
+		return item, fmt.Errorf("软件默认授权时长配置不正确")
 	}
 	if item.HeartbeatIntervalSeconds <= 0 || item.HeartbeatIntervalSeconds > 最大心跳周期秒 {
-		return item, fmt.Errorf("软件心跳周期配置不正确")
+		return item, fmt.Errorf("软件心跳间隔配置不正确")
 	}
 	if item.DefaultPeriodSeconds < item.HeartbeatIntervalSeconds*2 {
-		return item, fmt.Errorf("软件计费配置不正确：默认周期不能短于心跳周期的2倍")
+		return item, fmt.Errorf("软件计费配置不正确：默认授权时长不能短于心跳间隔的2倍")
 	}
 	return item, nil
 }
 
-// 查询可用周期价格。requested=0 时使用软件表中的默认周期；is_default
+// 查询可用点卡计费方案。requested=0 时使用软件表中的默认授权时长；is_default
 // 只是便于管理端展示的同步标记，不作为第二套默认值来源。
-// 明确提交了周期但该周期未启用时直接报错，不静默换成另一个价格。
+// 明确提交了授权时长但该方案未启用时直接报错，不静默换成另一个方案。
 func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int64) (点卡周期价格, software, error) {
 	settings, err := 读取软件设置(tx, admin, softwareID)
 	if err != nil {
@@ -103,21 +103,21 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 		period = settings.DefaultPeriodSeconds
 	}
 	if period <= 0 || period > 最大计费周期秒 {
-		return 点卡周期价格{}, settings, fmt.Errorf("计费周期不正确")
+		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不正确")
 	}
 	if period < settings.HeartbeatIntervalSeconds*2 {
-		return 点卡周期价格{}, settings, fmt.Errorf("计费周期不能短于心跳周期的2倍")
+		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不能短于心跳间隔的2倍")
 	}
 	var price 点卡周期价格
 	query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, softwareID, period, true).First(&price)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return 点卡周期价格{}, settings, fmt.Errorf("%w：该计费周期未配置或已停用", 错误_周期价格不可用)
+		return 点卡周期价格{}, settings, fmt.Errorf("%w：该授权时长未配置或已停用", 错误_周期价格不可用)
 	}
 	if query.Error != nil {
-		return 点卡周期价格{}, settings, fmt.Errorf("读取周期价格失败")
+		return 点卡周期价格{}, settings, fmt.Errorf("读取点卡计费方案失败")
 	}
 	if price.Cost <= 0 || price.Cost > 最大单次点数 {
-		return 点卡周期价格{}, settings, fmt.Errorf("周期价格配置不正确")
+		return 点卡周期价格{}, settings, fmt.Errorf("点卡计费方案配置不正确")
 	}
 	return price, settings, nil
 }
@@ -147,7 +147,7 @@ func 生成扣点备注(params 点卡扣费参数, period int64, price int64) st
 	} else {
 		parts = append(parts, "登录扣点")
 	}
-	parts = append(parts, fmt.Sprintf("周期=%d秒", period), fmt.Sprintf("扣点=%d", price))
+	parts = append(parts, fmt.Sprintf("授权时长=%d秒", period), fmt.Sprintf("扣点=%d", price))
 	if params.DeviceID != "" {
 		parts = append(parts, "设备ID="+params.DeviceID)
 	}

@@ -37,8 +37,8 @@ type 卡密表样式 struct {
 	AgentID        int    `gorm:"column:agent_id;not null;default:0;index" json:"agent_id"`
 }
 
-// software 保存客户端默认计费周期和心跳判定所需的周期。
-// 周期价格仍按软件单独保存在点卡周期价格表中。
+// software 保存客户端默认授权时长和心跳判定所需的间隔。
+// 点卡计费方案仍按软件单独保存在 point_period_price 表中。
 type software struct {
 	ID                       int       `gorm:"column:id;primaryKey;autoIncrement" json:"ID"`
 	Name                     string    `gorm:"column:name;size:32;not null;uniqueIndex:uk_software_owner,priority:1" json:"Name"`
@@ -107,7 +107,7 @@ func 连接数据库() error {
 	}
 	db_point_period_price = db.Table("point_period_price").Session(&gorm.Session{})
 	if err := db_point_period_price.AutoMigrate(&点卡周期价格{}); err != nil {
-		return fmt.Errorf("初始化或更新点卡周期价格表结构失败: %w", err)
+		return fmt.Errorf("初始化或更新点卡计费方案表结构失败: %w", err)
 	}
 	db_point_ledger = db.Table("point_ledger").Session(&gorm.Session{})
 	if err := db_point_ledger.AutoMigrate(&点数流水{}); err != nil {

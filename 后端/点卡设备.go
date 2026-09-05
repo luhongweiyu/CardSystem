@@ -65,7 +65,7 @@ func 查询点卡设备会话按设备(tx *gorm.DB, admin string, card string, s
 	return session, true, nil
 }
 
-// 会话是否仍可能在线：只有在“最后心跳 + 两个心跳周期”尚未过去，且
+// 会话是否仍可能在线：只有在“最后心跳 + 两个心跳间隔”尚未过去，且
 // 这个推断窗口确实跨过旧到期时间时，才认为设备可能只是暂时漏报心跳。
 //
 // 同时检查 now 是为了避免服务停机很久后，把多年以前的会话误判为仍在线，
@@ -143,8 +143,8 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	return 点卡设备会话{}, false, fmt.Errorf("创建设备会话失败")
 }
 
-// 登录周期选择规则：显式 period_seconds 必须存在且启用；不显式指定时，
-// 已有会话沿用其下一次续费周期，新会话使用软件默认周期。
+// 登录授权时长选择规则：显式 period_seconds 必须存在且启用；不显式指定时，
+// 已有会话沿用其下一次续费时长，新会话使用软件默认授权时长。
 func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int64, existing *点卡设备会话) (点卡周期价格, software, int64, error) {
 	settings, err := 读取软件设置(tx, admin, softwareID)
 	if err != nil {
@@ -155,8 +155,8 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 		if priceErr == nil {
 			return price, settings, price.PeriodSeconds, nil
 		}
-		// 周期被停用时，活跃会话仍可继续使用；真正续费时仍返回原周期，
-		// 由调用方再次查询可扣费价格并明确报错，不静默切换到软件默认周期。
+		// 授权时长对应的方案被停用时，活跃会话仍可继续使用；真正续费时仍返回原时长，
+		// 由调用方再次查询可扣费方案并明确报错，不静默切换到软件默认授权时长。
 		return 点卡周期价格{PeriodSeconds: existing.RenewalPeriodSeconds}, settings, existing.RenewalPeriodSeconds, nil
 	}
 	price, settings, err := 查询周期价格(tx, admin, softwareID, requested)
@@ -214,8 +214,8 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 		}
 
 		if found && session.AuthorizedUntil.After(now) {
-			// 当前周期尚未结束：不扣点。若客户端明确提出新周期，
-			// 只更新下一次续费周期，当前授权截止时间不变。
+			// 当前授权时长尚未结束：不扣点。若客户端明确提出新时长，
+			// 只更新下一次续费时长，当前授权截止时间不变。
 			if periodSeconds == 0 {
 				period = session.RenewalPeriodSeconds
 				if period <= 0 || period > 最大计费周期秒 {
@@ -233,7 +233,7 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 		if found {
 			start = 计算续费起点(session, settings.HeartbeatIntervalSeconds, now)
 		}
-		// 过期会话必须使用可扣费的实际价格；活跃会话才允许使用停用周期的
+		// 过期会话必须使用可扣费的实际方案；活跃会话才允许使用停用时长对应的
 		// 临时占位价格。这样不会在过期时绕过管理员的停用设置。
 		if price.Cost <= 0 {
 			price, _, err = 查询周期价格(tx, admin, softwareID, period)
@@ -244,7 +244,7 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 		charge, err := 扣除点数事务(tx, tableName, &cardRow, params, price, period, now)
 		if err != nil {
 			// 事务回滚后已有会话保持原样。管理员补点或客户端改用新的
-			// 有效周期后可以继续重试，不会破坏已签发的 needle。
+			// 提交新的有效授权时长后可以继续重试，不会破坏已签发的 needle。
 			return err
 		}
 		until := start.Add(time.Duration(period) * time.Second)
@@ -260,7 +260,7 @@ func 点卡登录并扣费(admin string, card string, softwareID int, deviceID s
 			session.DeviceAlias = params.DeviceAlias
 		}
 		if result := tx.Table("point_device_session").Where("id = ?", session.ID).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("保存授权周期失败")
+			return fmt.Errorf("保存授权时长失败")
 		}
 		charge.AuthorizedUntil = until
 		cardRow.Point_balance = charge.Balance
@@ -338,7 +338,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if !session.AuthorizedUntil.After(now) {
 			price, _, priceErr := 查询周期价格(tx, admin, known.Software, period)
 			if priceErr != nil {
-				// 保留会话，让客户端可以通过下一次登录明确提交新的有效周期；
+				// 保留会话，让客户端可以通过下一次登录明确提交新的有效授权时长；
 				// 这里不能在返回错误的同一事务里删除，否则删除会随事务回滚。
 				return priceErr
 			}
@@ -442,7 +442,7 @@ func 清理点卡设备会话() {
 	}
 	for _, session := range sessions {
 		if err := 结算过期点卡会话(session.ID, now); err != nil {
-			// 余额不足或周期被管理员停用是可恢复的业务状态，会话按规则
+			// 余额不足或授权时长对应的方案被管理员停用是可恢复的业务状态，会话按规则
 			// 暂时保留即可；仅数据库等非预期故障写入运行日志。
 			if errors.Is(err, 错误_点卡余额不足) || errors.Is(err, 错误_周期价格不可用) {
 				continue
@@ -507,7 +507,7 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		}
 		price, _, err := 查询周期价格(tx, session.Admin, session.Software, period)
 		if err != nil {
-			// 周期被停用或价格暂时未配置时保留会话，管理员修复配置后
+			// 授权时长对应的方案被停用或暂时未配置时保留会话，管理员修复配置后
 			// 客户端可以继续心跳重试，不需要重新生成 needle。
 			return err
 		}

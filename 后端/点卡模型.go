@@ -14,9 +14,9 @@ const (
 	最大单次点数  = int64(1000000000)
 )
 
-// 点卡周期价格定义一个软件允许客户端请求的计费周期及其点数价格。
-// 同一管理员、软件、周期只能有一条记录；is_default 仅是与软件默认周期同步的
-// 管理端展示标记，无周期参数的登录始终读取 software.default_period_seconds。
+// 点卡计费方案定义一个软件允许客户端请求的授权时长及其点数价格。
+// 同一管理员、软件、授权时长只能有一条记录；is_default 仅是与软件默认授权时长同步的
+// 管理端展示标记，无时长参数的登录始终读取 software.default_period_seconds。
 type 点卡周期价格 struct {
 	ID            uint      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	Admin         string    `gorm:"column:admin;size:32;not null;uniqueIndex:uk_period_price,priority:1" json:"admin"`
@@ -45,7 +45,7 @@ type 点数流水 struct {
 	CreatedAt     time.Time `gorm:"column:created_at;not null" json:"created_at"`
 }
 
-// 点卡设备会话保存一张卡在一台设备上的当前授权周期。
+// 点卡设备会话保存一张卡在一台设备上的当前授权时长。
 // 一张卡可同时拥有多台设备；设备别名不参与唯一性判断，也不要求唯一。
 type 点卡设备会话 struct {
 	ID                   uint64    `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
@@ -65,7 +65,7 @@ type 点卡设备会话 struct {
 }
 
 // 点卡扣费结果供登录和心跳接口返回。Charged=false 表示本次请求在当前
-// 授权周期内，没有发生余额变化。
+// 授权时长内，没有发生余额变化。
 type 点卡扣费结果 struct {
 	Charged         bool      `json:"charged"`
 	Cost            int64     `json:"cost"`
