@@ -125,17 +125,17 @@ func visitor_查询卡密详情(ctx *gin.Context) {
 		失败提示访客(ctx, err.Error())
 		return
 	}
-	var sessions int64
-	if err := db_point_device_session.Where("admin = ? AND card = ? AND authorized_until > ?", admin, card, time.Now()).Count(&sessions).Error; err != nil {
-		失败提示访客(ctx, "查询授权设备失败")
+	设备统计, err := 查询卡密设备统计(admin, card, row.Software, time.Now())
+	if err != nil {
+		失败提示访客(ctx, err.Error())
 		return
 	}
 	status := "正常"
 	if row.Card_state == 卡密状态_冻结 {
 		status = "冻结"
 	}
-	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n有效授权设备:%d\n状态:%s", row.Card, row.Software, row.Point_balance, sessions, status)
-	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": sessions})
+	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n授权设备:%d\n在线设备:%d\n状态:%s", row.Card, row.Software, row.Point_balance, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
+	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "devices": 设备统计.Devices})
 }
 
 func visitor_查询点数流水(ctx *gin.Context) {

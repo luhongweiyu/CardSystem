@@ -5,10 +5,13 @@ import (
 	"crypto/md5"
 	cryptorand "crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -122,19 +125,41 @@ func card_id获取用户设置(ctx *gin.Context) {
 	ctx.Next()
 }
 
-func 加入时间戳(ctx *gin.Context, data gin.H) gin.H {
-	value, _ := ctx.Get("card")
-	cardContext, _ := value.(卡密请求上下文)
-	timestamp, err := strconv.ParseInt(input(ctx, "timestamp"), 10, 64)
-	if err != nil {
-		timestamp = time.Now().Unix()
+// 计算卡密接口签名直接对“安全密码 + 实际请求或响应字节”计算 MD5。
+// JSON 模式使用原始正文；查询参数模式使用去除 sign 后的原始查询字符串。
+func 计算卡密接口签名(apiPassword string, rawContent []byte) string {
+	hash := md5.New()
+	_, _ = hash.Write([]byte(apiPassword))
+	_, _ = hash.Write(rawContent)
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+// 写入卡密响应先把顶层 sign 置空并序列化，再对这份原始 JSON 计算签名。
+// 客户端收到响应后，只需在原始响应文本中把顶层 sign 还原为空即可校验，
+// 不依赖响应头，也不能先解析后重新序列化，以免字段顺序或转义方式变化。
+func 写入卡密响应(ctx *gin.Context, data gin.H) {
+	data["timestamp"] = time.Now().Unix()
+	if nonce := input(ctx, "nonce"); nonce != "" {
+		data["nonce"] = nonce
 	}
-	timestamp += 10
-	code, _ := data["code"].(int)
-	hash := md5.Sum([]byte(strconv.FormatInt(timestamp, 10) + cardContext.Api_password + strconv.Itoa(code)))
-	data["sign"] = fmt.Sprintf("%x", hash)
-	data["timestamp"] = timestamp
-	return data
+	data["sign"] = ""
+	unsignedJSON, err := json.Marshal(data)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"state": false, "code": 0, "msg": "响应编码失败", "sign": ""})
+		return
+	}
+	if value, exists := ctx.Get("card"); exists {
+		// 响应签名只取决于是否设置接口口令；安全开关仅决定请求是否必须验签。
+		if cardContext, ok := value.(卡密请求上下文); ok && cardContext.Api_password != "" {
+			data["sign"] = 计算卡密接口签名(cardContext.Api_password, unsignedJSON)
+		}
+	}
+	signedJSON, err := json.Marshal(data)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"state": false, "code": 0, "msg": "响应编码失败", "sign": ""})
+		return
+	}
+	ctx.Data(http.StatusOK, "application/json; charset=utf-8", signedJSON)
 }
 
 func 失败提示(ctx *gin.Context, message interface{}) {
@@ -143,7 +168,7 @@ func 失败提示(ctx *gin.Context, message interface{}) {
 		data = gin.H{"msg": message}
 	}
 	data["state"], data["code"] = false, 0
-	ctx.JSON(http.StatusOK, 加入时间戳(ctx, data))
+	写入卡密响应(ctx, data)
 }
 
 func 成功提示(ctx *gin.Context, data interface{}) {
@@ -152,27 +177,95 @@ func 成功提示(ctx *gin.Context, data interface{}) {
 		result = gin.H{"data": data}
 	}
 	result["state"], result["code"] = true, 1
-	ctx.JSON(http.StatusOK, 加入时间戳(ctx, result))
+	写入卡密响应(ctx, result)
 }
 
-// 卡密md5验证保留原有可选的接口口令校验机制；系统不要求 HTTPS。该校验可阻止
-// 不知道安全密码的请求，但不提供传输加密，HTTP 部署方仍需自行评估链路风险。
+var 查询签名参数规则 = regexp.MustCompile(`(^|&)sign=[^&]*`)
+
+// 提取查询签名内容直接删除 sign=xxx 片段，保留其他查询字符串的顺序、编码和
+// 分隔符原样不变。sign 固定从查询参数取得，重复 sign 直接视为无效请求。
+func 提取查询签名内容(rawQuery string) (string, string, error) {
+	matches := 查询签名参数规则.FindAllStringIndex(rawQuery, -1)
+	if len(matches) != 1 {
+		return "", "", fmt.Errorf("sign参数错误")
+	}
+	match := matches[0]
+	matched := rawQuery[match[0]:match[1]]
+	if strings.HasPrefix(matched, "&") {
+		matched = matched[1:]
+	}
+	rawSign := matched[len("sign="):]
+	sign, err := url.QueryUnescape(rawSign)
+	if err != nil || sign == "" {
+		return "", "", fmt.Errorf("sign参数错误")
+	}
+	removeEnd := match[1]
+	if match[0] == 0 && removeEnd < len(rawQuery) && rawQuery[removeEnd] == '&' {
+		removeEnd++
+	}
+	return rawQuery[:match[0]] + rawQuery[removeEnd:], sign, nil
+}
+
+// 获取卡密请求签名内容按实际参数来源选择验签内容。POST 只要带有 JSON 正文，
+// 就签原始 JSON；没有 JSON 正文的 POST 与 GET 完全兼容，签原始查询字符串。
+func 获取卡密请求签名内容(ctx *gin.Context) ([]byte, string, error) {
+	if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodPost {
+		return nil, "", fmt.Errorf("接口安全模式只接受GET或POST请求")
+	}
+	isJSON := strings.Contains(strings.ToLower(ctx.GetHeader("Content-Type")), "application/json")
+	if ctx.Request.Method == http.MethodPost && isJSON {
+		rawValue, exists := ctx.Get(gin.BodyBytesKey)
+		rawJSON, valid := rawValue.([]byte)
+		if exists && valid && len(rawJSON) > 0 {
+			if !json.Valid(rawJSON) {
+				return nil, "", fmt.Errorf("请求JSON格式错误")
+			}
+			_, sign, err := 提取查询签名内容(ctx.Request.URL.RawQuery)
+			if err != nil {
+				return nil, "", err
+			}
+			return rawJSON, sign, nil
+		}
+	}
+	unsignedQuery, sign, err := 提取查询签名内容(ctx.Request.URL.RawQuery)
+	if err != nil {
+		return nil, "", err
+	}
+	return []byte(unsignedQuery), sign, nil
+}
+
+// 卡密md5验证在安全模式下校验实际传输字节。JSON POST 签正文；GET 和无 JSON
+// 正文的 POST 签去除 sign 后的原始查询字符串。服务端不保存 nonce，因此同一
+// 原始请求在时间窗口内仍可被重复发送。
 func 卡密md5验证(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok || !cardContext.Api_safe {
 		return
 	}
-	timestampText, sign := input(ctx, "timestamp"), input(ctx, "sign")
+	rawContent, sign, contentErr := 获取卡密请求签名内容(ctx)
+	if contentErr != nil {
+		失败提示(ctx, contentErr.Error())
+		ctx.Abort()
+		return
+	}
+	timestampText := input(ctx, "timestamp")
 	timestamp, err := strconv.ParseInt(timestampText, 10, 64)
-	if err != nil || timestamp < time.Now().Unix()-600 || timestamp > time.Now().Unix()+600 {
+	if err != nil || timestamp < time.Now().Unix()-300 || timestamp > time.Now().Unix()+300 {
 		失败提示(ctx, "时间不正确")
 		拒绝日志(ctx)
 		ctx.Abort()
 		return
 	}
-	hash := md5.Sum([]byte(timestampText + cardContext.Api_password))
-	if subtle.ConstantTimeCompare([]byte(fmt.Sprintf("%x", hash)), []byte(sign)) != 1 {
+	nonce := input(ctx, "nonce")
+	if nonce == "" || len([]byte(nonce)) > 64 || strings.IndexFunc(nonce, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		失败提示(ctx, "nonce格式不正确")
+		拒绝日志(ctx)
+		ctx.Abort()
+		return
+	}
+	expected := 计算卡密接口签名(cardContext.Api_password, rawContent)
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(sign)) != 1 {
 		失败提示(ctx, "sign错误")
 		拒绝日志(ctx)
 		ctx.Abort()
@@ -202,7 +295,56 @@ func 读取卡密记录(admin string, card string) (卡密表样式, bool, error
 	return cardRow, true, nil
 }
 
-func 卡密_查询心跳(ctx *gin.Context) {
+type 卡密设备详情 struct {
+	DeviceID        string    `json:"device_id"`
+	DeviceAlias     string    `json:"device_alias"`
+	Needle          string    `json:"needle"`
+	AuthorizedUntil time.Time `json:"authorized_until"`
+	Authorized      bool      `json:"authorized"`
+	Online          bool      `json:"online"`
+}
+
+type 卡密设备统计 struct {
+	AuthorizedCount int64    `json:"authorized_device_count"`
+	OnlineCount     int64    `json:"online_device_count"`
+	Devices         []卡密设备详情 `json:"devices"`
+}
+
+// 查询卡密设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
+// 在线状态严格按计费规则使用最后心跳推断窗口，needle 按业务要求随设备明细返回。
+func 查询卡密设备统计(admin string, card string, softwareID int, now time.Time) (卡密设备统计, error) {
+	var result 卡密设备统计
+	settings, err := 读取软件设置(db, admin, softwareID)
+	if err != nil {
+		return result, err
+	}
+	var rows []点卡设备会话
+	query := db_point_device_session.Select("device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
+		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
+		Order("authorized_until DESC, device_id ASC").Find(&rows)
+	if query.Error != nil {
+		return result, fmt.Errorf("查询设备会话失败")
+	}
+	在线截止 := now.Add(-time.Duration(settings.HeartbeatIntervalSeconds*2) * time.Second)
+	result.Devices = make([]卡密设备详情, 0, len(rows))
+	for _, row := range rows {
+		authorized := row.AuthorizedUntil.After(now)
+		online := row.LastHeartbeatAt.After(在线截止)
+		if authorized {
+			result.AuthorizedCount++
+		}
+		if online {
+			result.OnlineCount++
+		}
+		result.Devices = append(result.Devices, 卡密设备详情{
+			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
+			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online,
+		})
+	}
+	return result, nil
+}
+
+func 卡密_查询详情(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {
@@ -218,9 +360,9 @@ func 卡密_查询心跳(ctx *gin.Context) {
 		失败提示(ctx, "卡密不存在")
 		return
 	}
-	var sessions int64
-	if err := db_point_device_session.Where("admin = ? AND card = ? AND authorized_until > ?", cardContext.Name, cardRow.Card, time.Now()).Count(&sessions).Error; err != nil {
-		失败提示(ctx, "查询授权设备失败")
+	设备统计, err := 查询卡密设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now())
+	if err != nil {
+		失败提示(ctx, err.Error())
 		return
 	}
 	lastUse := ""
@@ -231,8 +373,8 @@ func 卡密_查询心跳(ctx *gin.Context) {
 	if cardRow.Card_state == 卡密状态_冻结 {
 		status = "冻结"
 	}
-	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n最近扣点:%s\n有效授权设备:%d\n状态:%s", cardRow.Card, cardRow.Software, cardRow.Point_balance, lastUse, sessions, status)
-	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": sessions})
+	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n最近扣点:%s\n授权设备:%d\n在线设备:%d\n状态:%s", cardRow.Card, cardRow.Software, cardRow.Point_balance, lastUse, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
+	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "devices": 设备统计.Devices})
 }
 
 func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
@@ -323,6 +465,15 @@ func card_logout(ctx *gin.Context) {
 	成功提示(ctx, gin.H{"msg": "退出成功"})
 }
 
+// 校验卡密配置内容统一管理生成、编辑和卡端写配置的长度边界。
+// 按 Unicode 字符计数，避免一个中文字符被 UTF-8 字节数重复计算。
+func 校验卡密配置内容(content string) error {
+	if len([]rune(content)) > 最大卡密配置字符数 {
+		return fmt.Errorf("卡密配置不能超过%d个字符", 最大卡密配置字符数)
+	}
+	return nil
+}
+
 func modify_card_configContent(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
@@ -338,8 +489,8 @@ func modify_card_configContent(ctx *gin.Context) {
 	operation := input(ctx, "type")
 	if operation == "write" {
 		content := input(ctx, "value")
-		if len([]byte(content)) > 1024*1024 {
-			失败提示(ctx, "配置内容不能超过1MB")
+		if err := 校验卡密配置内容(content); err != nil {
+			失败提示(ctx, err.Error())
 			return
 		}
 		// 写入与原内容相同时，部分 MySQL 配置会返回 RowsAffected=0；后面的
@@ -416,13 +567,8 @@ func 准备点卡生成(tx *gorm.DB, admin string, softwareID int, points int64,
 	if notes, notesValid = 规范化可显示文本(notes, 500); !notesValid {
 		return "", nil, fmt.Errorf("卡密备注不能包含控制字符且不能超过500个字符")
 	}
-	if len([]byte(config)) > 1024*1024 {
-		return "", nil, fmt.Errorf("卡密配置不能超过1MB")
-	}
-	// 配置会随每张卡独立保存。限制一批任务实际写入的配置总量，避免用一个
-	// 接近 1MB 的模板一次生成 1000 张卡，形成超大事务并占满数据库连接。
-	if int64(len([]byte(config)))*int64(count) > 16*1024*1024 {
-		return "", nil, fmt.Errorf("本批卡密配置总量不能超过16MB，请减少数量或配置内容")
+	if err := 校验卡密配置内容(config); err != nil {
+		return "", nil, err
 	}
 	var specified []string
 	if !random {
@@ -768,8 +914,10 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 		}
 		*notes = normalized
 	}
-	if config != nil && len([]byte(*config)) > 1024*1024 {
-		return fmt.Errorf("卡密配置不能超过1MB")
+	if config != nil {
+		if err := 校验卡密配置内容(*config); err != nil {
+			return err
+		}
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {

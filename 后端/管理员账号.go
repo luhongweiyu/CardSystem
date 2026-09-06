@@ -2,13 +2,60 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
+
+const 管理员注册配置刷新间隔 = 10 * time.Minute
+
+// 管理员注册配置采用请求触发的惰性缓存。没有注册请求时不会定时读取文件；
+// 有请求时，只有距离上次检查已满十分钟才重新加载独立配置实例，避免并发修改
+// 全局 Viper 导致其他正在读取端口、数据库或限流配置的协程发生数据竞争。
+var 管理员注册配置缓存 = struct {
+	sync.Mutex
+	上次检查 time.Time
+	启用   bool
+}{}
+
+func 读取管理员注册开关(configPath string) (bool, error) {
+	reader := viper.New()
+	reader.SetConfigFile(configPath)
+	if err := reader.ReadInConfig(); err != nil {
+		return false, fmt.Errorf("读取注册配置失败: %w", err)
+	}
+	return reader.GetBool("管理员注册.启用"), nil
+}
+
+func 管理员注册已启用(now time.Time) (bool, error) {
+	管理员注册配置缓存.Lock()
+	defer 管理员注册配置缓存.Unlock()
+	if !管理员注册配置缓存.上次检查.IsZero() {
+		elapsed := now.Sub(管理员注册配置缓存.上次检查)
+		if elapsed >= 0 && elapsed < 管理员注册配置刷新间隔 {
+			return 管理员注册配置缓存.启用, nil
+		}
+	}
+	configPath := viper.ConfigFileUsed()
+	if configPath == "" {
+		configPath = "./config.yaml"
+	}
+	管理员注册配置缓存.上次检查 = now
+	enabled, err := 读取管理员注册开关(configPath)
+	if err != nil {
+		管理员注册配置缓存.启用 = false
+		return false, err
+	}
+	管理员注册配置缓存.启用 = enabled
+	return enabled, nil
+}
 
 type user struct {
 	// 管理员名称会参与登录、动态卡密表名和访客链接定位，必须全局唯一。
@@ -38,6 +85,15 @@ func user_login(ctx *gin.Context) {
 
 // 注册
 func user_register(ctx *gin.Context) {
+	enabled, configErr := 管理员注册已启用(time.Now())
+	if configErr != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "读取管理员注册配置失败"})
+		return
+	}
+	if !enabled {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "管理员注册暂未开放"})
+		return
+	}
 	var request struct {
 		Name     string `json:"name"`
 		Password string `json:"password"`

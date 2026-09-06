@@ -38,20 +38,24 @@ func 参数转字符串(value interface{}) string {
 	}
 }
 
-// input 按表单、查询参数、JSON body 的顺序读取同名参数，兼容客户端的
+// input 对 JSON 请求优先读取正文，其他请求按表单、查询参数读取，兼容客户端的
 // POST JSON 和旧版 GET 调用。ShouldBindBodyWith 会缓存 body，后续中间件仍可读取。
 func input(ctx *gin.Context, key string) string {
+	// JSON 接口优先使用请求正文。尤其在卡密安全模式下，签名覆盖的是原始 JSON；
+	// 如果查询参数可以覆盖正文，攻击者就能保留合法签名却替换实际执行业务的参数。
+	if strings.Contains(strings.ToLower(ctx.GetHeader("Content-Type")), "application/json") {
+		var body map[string]interface{}
+		if err := ctx.ShouldBindBodyWith(&body, binding.JSON); err == nil {
+			if value, ok := body[key]; ok && value != nil {
+				return 参数转字符串(value)
+			}
+		}
+	}
 	if value, ok := ctx.GetPostForm(key); ok {
 		return value
 	}
 	if value, ok := ctx.GetQuery(key); ok {
 		return value
-	}
-	var body map[string]interface{}
-	if err := ctx.ShouldBindBodyWith(&body, binding.JSON); err == nil {
-		if value, ok := body[key]; ok && value != nil {
-			return 参数转字符串(value)
-		}
 	}
 	return ""
 }
@@ -272,7 +276,7 @@ func 启动网络() error {
 	card.Match([]string{"POST", "GET"}, "/card_logout", card_logout)
 	card.Match([]string{"POST", "GET"}, "/config", modify_card_configContent)
 	cardRead := router.Group("/card", card_id获取用户设置)
-	cardRead.Match([]string{"POST", "GET"}, "/query", 卡密_查询心跳)
+	cardRead.Match([]string{"POST", "GET"}, "/query", 卡密_查询详情)
 	cardRead.Match([]string{"POST", "GET"}, "/bulletin", card_get_bulletin)
 	cardRead.Match([]string{"POST", "GET"}, "/period_prices", 卡端_查询周期价格)
 	cardRead.Match([]string{"POST", "GET"}, "/point_ledger/query", 卡端_查询点数流水)

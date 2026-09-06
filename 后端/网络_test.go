@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,18 @@ func Test参数转字符串保留JSON整数格式(t *testing.T) {
 	}
 	if actual := 参数转字符串(float64(1.25)); actual != "1.25" {
 		t.Fatalf("小数参数转换错误: %q", actual)
+	}
+}
+
+// JSON 参数必须覆盖同名查询参数，否则签名虽然验证的是正文，业务实际使用的
+// 却可能是 URL 中未签名的值，等同于允许绕过请求内容签名。
+func TestInput对JSON请求优先读取正文(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/test?card=query-card", bytes.NewBufferString(`{"card":"body-card"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	if actual := input(ctx, "card"); actual != "body-card" {
+		t.Fatalf("JSON正文参数应优先于查询参数，得到 %q", actual)
 	}
 }
 

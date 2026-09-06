@@ -2,7 +2,9 @@
 
 所有接口同时支持 JSON POST；标注“兼容 GET”的接口也接受查询参数。成功响应通常包含 `state: true, code: 1`，失败响应包含 `state: false, code: 0, msg`。
 
-卡端接口通过 `center_id`（访客链接中的管理员 ID）或管理员生成的 `name` 定位管理员，再提交 `card`。启用管理员的 API 安全模式后，登录、心跳、退出和配置接口还需要 `timestamp`、`sign`；签名为 `MD5(timestamp + api_password)`，时间偏差允许约 10 分钟。它只提供可选的接口口令校验，不提供传输加密，也不能阻止链路上的窃听或重放。
+卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。开启 API 安全模式后，请求需带 `timestamp`、`nonce` 和 URL 参数 `sign`。POST JSON 签原始 JSON；GET 或无 JSON 的 POST 签去掉 `sign` 后的查询字符串。
+
+响应会返回顶层 `sign` 和相同的 `nonce`。有接口口令时，客户端按原始响应内容校验 `sign`；接口安全模式不提供传输加密。
 
 ## 1. 查询可用点卡计费方案
 
@@ -76,10 +78,10 @@
 
 ## 5. 查询卡密和流水
 
-- `GET/POST /card/query`：查询当前卡密余额、状态、有效授权设备数（字段 `authorized_device_count`）。
+- `GET/POST /card/query`：查询当前卡密余额、状态、授权设备数 `authorized_device_count`、在线设备数 `online_device_count` 和设备列表 `devices`。查询只读，不扣点、不续费。
 - `GET/POST /card/point_ledger/query`：只查询当前卡密自己的流水，支持 `page`、`page_size`；可选 `software` 仅校验当前卡密归属，不会截断同名卡密的历史流水。
 - `GET/POST /card/bulletin`：读取卡密所属软件公告。
-- `GET/POST /card/config`：读取或写入卡密配置（写入受可选签名保护）。
+- `GET/POST /card/config`：读取或写入卡密配置，配置最多 200 个字符（写入受可选签名保护）。
 
 流水字段如下：
 

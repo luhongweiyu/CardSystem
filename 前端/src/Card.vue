@@ -2,7 +2,7 @@
   <main class="查询页" v-loading="加载中">
     <el-card class="查询卡片" shadow="never">
       <h2>点卡查询</h2>
-      <p class="说明">输入卡密可查看当前点数和有效授权设备数量。</p>
+      <p class="说明">输入卡密可查看当前点数、授权设备和在线设备数量。</p>
       <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情">
         <template #prepend>卡密</template>
       </el-input>
@@ -19,11 +19,36 @@
         <strong>{{ 详情.point_balance }} 点</strong>
         <span>授权设备</span>
         <strong>{{ 详情.authorized_device_count }}</strong>
+        <span>在线设备</span>
+        <strong>{{ 详情.online_device_count }}</strong>
         <span>状态</span>
         <el-tag :type="详情.card_state === 4 ? 'danger' : 'success'">
           {{ 详情.card_state === 4 ? '冻结' : '正常' }}
         </el-tag>
       </div>
+      <el-divider content-position="left">设备授权</el-divider>
+      <el-table :data="详情.devices" border stripe empty-text="暂无设备会话">
+        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
+        <el-table-column label="授权到期" width="180">
+          <template #default="scope">{{ 格式化时间(scope.row.authorized_until) }}</template>
+        </el-table-column>
+        <el-table-column label="授权状态" width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.authorized ? 'success' : 'info'">
+              {{ scope.row.authorized ? '未到期' : '已到期' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="在线状态" width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.online ? 'success' : 'info'">
+              {{ scope.row.online ? '在线' : '离线' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+      </el-table>
       <el-button type="primary" plain @click="打开流水">查看点数流水</el-button>
     </el-card>
 
@@ -70,6 +95,7 @@ const 详情 = ref(null)
 const 流水框 = reactive({ 显示: false, 加载中: false, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
+const 格式化时间 = (value) => (value ? new Date(value).toLocaleString('zh-CN') : '-')
 
 const 查询详情 = function () {
   详情.value = null
@@ -93,7 +119,9 @@ const 查询详情 = function () {
         software: Number(res.data.software || 0),
         point_balance: Number(res.data.point_balance || 0),
         card_state: Number(res.data.card_state || 0),
-        authorized_device_count: Number(res.data.authorized_device_count || 0)
+        authorized_device_count: Number(res.data.authorized_device_count || 0),
+        online_device_count: Number(res.data.online_device_count || 0),
+        devices: Array.isArray(res.data.devices) ? res.data.devices : []
       }
     })
     .catch(错误)

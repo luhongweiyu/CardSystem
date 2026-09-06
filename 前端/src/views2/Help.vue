@@ -23,7 +23,8 @@
       </el-descriptions>
       <p class="提示">
         device_id 可省略，省略时按空字符串处理；使用非空值时应由客户端生成并持久化。device_alias
-        只是登录时设置的展示名称，不参与设备唯一性判断。系统支持 HTTP，接口安全模式可额外校验签名，但签名不提供传输加密。
+        只是登录时设置的展示名称，不参与设备唯一性判断。开启接口安全模式后，POST JSON 签原始 JSON；GET 或无 JSON 的 POST 签去除 sign 后的原始查询字符串，
+        两种请求都通过地址传 sign，并提交 timestamp、nonce。响应 JSON 会返回相同 nonce 和顶层 sign。签名不提供传输加密。
       </p>
     </el-card>
   </section>

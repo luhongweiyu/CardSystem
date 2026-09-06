@@ -124,12 +124,13 @@ func 保存点卡设备会话(tx *gorm.DB, session *点卡设备会话, alias st
 	return nil
 }
 
-func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64, now time.Time) (点卡设备会话, bool, error) {
+func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64) (点卡设备会话, bool, error) {
 	session, found, err := 查询点卡设备会话按设备(tx, admin, card, deviceID, true)
 	if err != nil || found {
 		return session, found, err
 	}
 	for attempt := 0; attempt < 3; attempt++ {
+		now := time.Now()
 		session = 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
 			DeviceAlias: alias, Needle: GetRandomString(32, "a"), RenewalPeriodSeconds: renewalPeriod,
 			AuthorizedUntil: now, LastHeartbeatAt: now}
@@ -182,7 +183,6 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
-	now := time.Now()
 	var result 点卡登录结果
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var cardRow 卡密表样式
@@ -204,10 +204,13 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if err := 规范化点卡扣费参数(&params); err != nil {
 			return err
 		}
-		session, found, err := 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0, now)
+		session, found, err := 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0)
 		if err != nil {
 			return err
 		}
+		// 卡密行和设备会话行都已锁定后再取时间，避免排队等待锁的旧请求
+		// 用较早时间覆盖已经完成的新心跳，导致在线推断窗口意外缩短。
+		now := time.Now()
 		price, settings, period, err := 选择登录周期(tx, admin, softwareID, periodSeconds, func() *点卡设备会话 {
 			if found {
 				return &session
@@ -304,7 +307,6 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if err != nil {
 		return result, err
 	}
-	now := time.Now()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var cardRow 卡密表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
@@ -327,6 +329,8 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if !found || session.DeviceID != deviceID || session.Needle != needle || session.Software != cardRow.Software {
 			return fmt.Errorf("登录会话不存在或已失效")
 		}
+		// 会话行已经锁定，此时生成的时间不会被更早进入但仍在等待锁的请求倒写。
+		now := time.Now()
 		settings, err := 读取软件设置(tx, admin, cardRow.Software)
 		if err != nil {
 			return err

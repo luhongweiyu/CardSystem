@@ -149,7 +149,7 @@
           <el-input v-model="生成框.notes" maxlength="500" show-word-limit />
         </el-form-item>
         <el-form-item label="配置">
-          <el-input v-model="生成框.config_content" type="textarea" :rows="3" placeholder="留空表示无配置" />
+          <el-input v-model="生成框.config_content" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="留空表示无配置" />
         </el-form-item>
         <el-form-item v-if="生成框结果" label="生成结果">
           <el-input v-model="生成框结果" type="textarea" :rows="5" readonly />
@@ -179,7 +179,7 @@
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="编辑框.notes" maxlength="500" /></el-form-item>
         <el-form-item label="配置">
-          <el-input v-model="编辑框.config_content" type="textarea" :rows="3" />
+          <el-input v-model="编辑框.config_content" type="textarea" :rows="3" maxlength="200" show-word-limit />
         </el-form-item>
         <template v-if="!是代理账号">
           <el-divider content-position="left">调整余额</el-divider>
