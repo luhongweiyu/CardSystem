@@ -728,6 +728,50 @@ func 读取分页参数(ctx *gin.Context) (int, int) {
 	return page, pageSize
 }
 
+// 卡密列表排序只允许固定白名单字段。排序由数据库完成，避免前端只对当前页
+// 排序造成分页结果错误；card_order 只作为其他字段相等时的第二排序键。
+type 卡密列表排序参数 struct {
+	字段   string
+	方向   string
+	卡密方向 string
+}
+
+func 读取卡密列表排序(ctx *gin.Context) 卡密列表排序参数 {
+	field := strings.TrimSpace(input(ctx, "sort_by"))
+	order := strings.ToLower(strings.TrimSpace(input(ctx, "sort_order")))
+	cardOrder := strings.ToLower(strings.TrimSpace(input(ctx, "card_order")))
+	allowed := map[string]bool{
+		"card": true, "software": true, "point_balance": true, "card_state": true,
+		"authorized_device_count": true, "create_time": true, "use_time": true,
+	}
+	if !allowed[field] {
+		field = "create_time"
+		order = "desc"
+	}
+	if order != "asc" && order != "desc" {
+		order = "desc"
+	}
+	if cardOrder != "asc" && cardOrder != "desc" {
+		cardOrder = "asc"
+	}
+	return 卡密列表排序参数{字段: field, 方向: order, 卡密方向: cardOrder}
+}
+
+// 应用卡密列表排序生成固定 SQL 片段。字段和方向均来自白名单，不能直接
+// 使用客户端传入的原始字符串；卡密本身是唯一键，作为第二排序键时可保证
+// 相同余额、状态或时间的记录翻页顺序稳定。
+func 应用卡密列表排序(query *gorm.DB, tableName string, sorting 卡密列表排序参数, admin string, now time.Time) *gorm.DB {
+	if sorting.字段 == "card" {
+		return query.Order("`card` " + sorting.方向)
+	}
+	if sorting.字段 == "authorized_device_count" {
+		query = query.Table(tableName + " AS c")
+		expression := "(SELECT COUNT(*) FROM point_device_session AS ps WHERE ps.admin = ? AND ps.card = c.card AND ps.authorized_until > ?) " + sorting.方向 + ", c.card " + sorting.卡密方向
+		return query.Clauses(clause.OrderBy{Expression: clause.Expr{SQL: expression, Vars: []interface{}{admin, now}}})
+	}
+	return query.Order("`" + sorting.字段 + "` " + sorting.方向 + ", `card` " + sorting.卡密方向)
+}
+
 // 查询卡密列表是管理员和代理账号共用的查询实现；agentID 非零时限制到该代理
 // 创建的卡密。卡密类型和时长筛选已删除，所有记录都是纯点卡卡密。
 func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
@@ -744,6 +788,8 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		失败提示管理端(ctx, "卡密或备注筛选条件过长")
 		return
 	}
+	sorting := 读取卡密列表排序(ctx)
+	now := time.Now()
 	query := db.Table(tableName)
 	if softwareID > 0 {
 		query = query.Where("software = ?", softwareID)
@@ -761,13 +807,16 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		query = query.Where("notes LIKE ?", "%"+转义Like文本(notesKeyword)+"%")
 	}
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	// Count 会临时修改 SELECT 子句；使用独立会话避免后续 Find 继承
+	// count(*)，尤其是授权设备数相关的表达式排序。
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		失败提示管理端(ctx, "查询卡密数量失败")
 		return
 	}
 	page, pageSize := 读取分页参数(ctx)
 	var rows []卡密表样式
-	if err := query.Order("create_time DESC, card ASC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&rows).Error; err != nil {
+	query = 应用卡密列表排序(query, tableName, sorting, admin, now)
+	if err := query.Limit(pageSize).Offset((page - 1) * pageSize).Find(&rows).Error; err != nil {
 		失败提示管理端(ctx, "查询卡密失败")
 		return
 	}
@@ -782,7 +831,7 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		for _, row := range rows {
 			cards = append(cards, row.Card)
 		}
-		if err := db_point_device_session.Where("admin = ? AND card IN ? AND authorized_until > ?", admin, cards, time.Now()).Select("card, COUNT(*) AS count").Group("card").Scan(&grouped).Error; err != nil {
+		if err := db_point_device_session.Where("admin = ? AND card IN ? AND authorized_until > ?", admin, cards, now).Select("card, COUNT(*) AS count").Group("card").Scan(&grouped).Error; err != nil {
 			失败提示管理端(ctx, "查询授权设备数量失败")
 			return
 		}

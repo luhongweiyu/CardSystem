@@ -69,27 +69,81 @@
       </div>
     </el-card>
 
-    <el-table :data="卡密列表" border stripe row-key="card" @selection-change="选择变化">
+    <el-table
+      ref="卡密表格"
+      :data="卡密列表"
+      border
+      stripe
+      row-key="card"
+      @selection-change="选择变化"
+      @sort-change="卡密排序变化"
+    >
       <el-table-column type="selection" width="44" />
-      <el-table-column prop="card" label="卡密" min-width="190" show-overflow-tooltip />
-      <el-table-column label="软件" width="150" show-overflow-tooltip>
+      <el-table-column
+        prop="card"
+        label="卡密"
+        min-width="190"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="software"
+        label="软件"
+        width="150"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+        show-overflow-tooltip
+      >
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
-      <el-table-column label="余额" width="100" align="right">
+      <el-table-column
+        prop="point_balance"
+        label="余额"
+        width="100"
+        align="right"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+      >
         <template #default="scope">{{ scope.row.point_balance }} 点</template>
       </el-table-column>
-      <el-table-column label="状态" width="80">
+      <el-table-column
+        prop="card_state"
+        label="状态"
+        width="80"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+      >
         <template #default="scope">
           <el-tag :type="scope.row.card_state === 4 ? 'danger' : 'success'">
             {{ scope.row.card_state === 4 ? '冻结' : '正常' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="authorized_device_count" label="授权设备" width="90" align="right" />
-      <el-table-column label="生成时间" width="170">
+      <el-table-column
+        prop="authorized_device_count"
+        label="授权设备"
+        width="90"
+        align="right"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+      />
+      <el-table-column
+        prop="create_time"
+        label="生成时间"
+        width="170"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+      >
         <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
       </el-table-column>
-      <el-table-column label="最近扣点" width="170">
+      <el-table-column
+        prop="use_time"
+        label="最近扣点"
+        width="170"
+        sortable="custom"
+        :sort-orders="['ascending', 'descending']"
+      >
         <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
@@ -252,11 +306,15 @@ const post = stores.post
 const 是代理账号 = computed(() => stores.是代理账号)
 const 账号信息 = stores.账号信息
 const 加载中 = ref(false)
+const 卡密表格 = ref(null)
 const 软件列表 = ref([])
 const 卡密列表 = ref([])
 const 已选卡密 = ref([])
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 筛选 = reactive({ software: '', card_state: '', card: '', notes: '' })
+// 卡密是特殊排序键：单独点击卡密时只按卡密；点击其他字段时，卡密作为
+// 第二排序键。card_order 独立保存，保证用户切换主排序后卡密方向不丢失。
+const 排序 = reactive({ sort_by: '', sort_order: '', card_order: 'asc' })
 const 生成框 = reactive({
   显示: false,
   加载中: false,
@@ -332,7 +390,12 @@ const 查询软件 = function () {
 const 查询卡密 = function (resetPage = false) {
   if (resetPage) 分页.page = 1
   加载中.value = true
-  return post('/user_query_card', { ...筛选, page: 分页.page, page_size: 分页.page_size })
+  return post('/user_query_card', {
+    ...筛选,
+    ...排序,
+    page: 分页.page,
+    page_size: 分页.page_size
+  })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询卡密失败')
       卡密列表.value = res.data.data || []
@@ -345,8 +408,19 @@ const 查询卡密 = function (resetPage = false) {
     })
 }
 
+const 卡密排序变化 = function ({ prop, order }) {
+  if (!prop || !order) return
+  const direction = order === 'ascending' ? 'asc' : 'desc'
+  排序.sort_by = prop
+  排序.sort_order = direction
+  if (prop === 'card') 排序.card_order = direction
+  查询卡密(true)
+}
+
 const 重置筛选 = function () {
   Object.assign(筛选, { software: '', card_state: '', card: '', notes: '' })
+  Object.assign(排序, { sort_by: '', sort_order: '', card_order: 'asc' })
+  卡密表格.value?.clearSort()
   查询卡密(true)
 }
 const 选择变化 = (rows) => {
