@@ -67,31 +67,19 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 	return nil
 }
 
-// 读取软件设置只返回计费和心跳相关配置。不存在的软件不会被隐式创建，
-// 数据库中的非法值也会直接报错，避免扣费时悄悄换用另一套默认值。
+// 读取软件设置只返回计费和心跳相关配置。配置允许短期只读缓存，但不存在
+// 的软件和数据库中的非法值仍直接报错，不会悄悄换用另一套默认值。
 func 读取软件设置(tx *gorm.DB, admin string, softwareID int) (software, error) {
-	var item software
-	query := tx.Table("software").Where("name = ? AND id = ?", admin, softwareID).First(&item)
-	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return item, fmt.Errorf("软件不存在")
-	}
-	if query.Error != nil {
-		return item, fmt.Errorf("读取软件设置失败")
-	}
-	if item.DefaultPeriodSeconds <= 0 || item.DefaultPeriodSeconds > 最大计费周期秒 {
-		return item, fmt.Errorf("软件默认授权时长配置不正确")
-	}
-	if item.HeartbeatIntervalSeconds <= 0 || item.HeartbeatIntervalSeconds > 最大心跳周期秒 {
-		return item, fmt.Errorf("软件心跳间隔配置不正确")
-	}
-	return item, nil
+	config, err := 读取软件计费配置(tx, admin, softwareID)
+	return config.设置, err
 }
 
 // 查询可用点卡计费方案。requested=0 时使用软件表中的默认授权时长；is_default
 // 只是便于管理端展示的同步标记，不作为第二套默认值来源。
 // 明确提交了授权时长但该方案未启用时直接报错，不静默换成另一个方案。
 func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int64) (点卡周期价格, software, error) {
-	settings, err := 读取软件设置(tx, admin, softwareID)
+	config, err := 读取软件计费配置(tx, admin, softwareID)
+	settings := config.设置
 	if err != nil {
 		return 点卡周期价格{}, settings, err
 	}
@@ -102,13 +90,9 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 	if period <= 0 || period > 最大计费周期秒 {
 		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不正确")
 	}
-	var price 点卡周期价格
-	query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, softwareID, period, true).First(&price)
-	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
+	price, exists := config.价格[period]
+	if !exists || !price.Enabled {
 		return 点卡周期价格{}, settings, fmt.Errorf("%w：该授权时长未配置或已停用", 错误_周期价格不可用)
-	}
-	if query.Error != nil {
-		return 点卡周期价格{}, settings, fmt.Errorf("读取点卡计费方案失败")
 	}
 	if price.Cost <= 0 || price.Cost > 最大单次点数 {
 		return 点卡周期价格{}, settings, fmt.Errorf("点卡计费方案配置不正确")

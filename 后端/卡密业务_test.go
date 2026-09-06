@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 func Test计算卡密接口签名使用原始JSON(t *testing.T) {
@@ -166,5 +168,43 @@ func Test卡密配置字符限制(t *testing.T) {
 	}
 	if err := 校验卡密配置内容(strings.Repeat("中", 201)); err == nil {
 		t.Fatal("201个中文字符必须拒绝")
+	}
+}
+
+func Test卡密列表排序规则(t *testing.T) {
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       "root:password@tcp(127.0.0.1:3306)/gocard?charset=utf8mb4&parseTime=True&loc=Local",
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+	if err != nil {
+		t.Fatalf("初始化排序测试数据库失败: %v", err)
+	}
+	makeSQL := func(sorting 卡密列表排序参数) string {
+		var rows []卡密表样式
+		query := 应用卡密列表排序(db.Table("card_demo"), "card_demo", sorting, "admin", time.Now())
+		executed := query.Limit(20).Find(&rows)
+		return strings.ToLower(executed.Statement.SQL.String())
+	}
+	// 模拟列表先 Count、再追加排序的真实调用顺序，确认授权设备数排序
+	// 不会因 Count 改写 GORM 查询状态而丢失 ORDER BY。
+	var total int64
+	base := db.Table("card_demo")
+	base.Session(&gorm.Session{}).Count(&total)
+	var countedRows []卡密表样式
+	counted := 应用卡密列表排序(base, "card_demo", 卡密列表排序参数{字段: "authorized_device_count", 方向: "asc", 卡密方向: "desc"}, "admin", time.Now())
+	countedExecuted := counted.Limit(20).Find(&countedRows)
+	if sql := strings.ToLower(countedExecuted.Statement.SQL.String()); !strings.Contains(sql, "select count(*) from point_device_session") {
+		t.Fatalf("Count后追加授权设备排序失败: %s", sql)
+	}
+	if sql := makeSQL(卡密列表排序参数{字段: "card", 方向: "desc", 卡密方向: "asc"}); !strings.Contains(sql, "order by `card` desc") || strings.Contains(sql, "card asc") {
+		t.Fatalf("单独卡密排序不应追加第二个卡密排序: %s", sql)
+	}
+	if sql := makeSQL(卡密列表排序参数{字段: "point_balance", 方向: "desc", 卡密方向: "desc"}); !strings.Contains(sql, "point_balance` desc, `card` desc") {
+		t.Fatalf("其他字段排序应把卡密作为第二排序: %s", sql)
+	}
+	if sql := makeSQL(卡密列表排序参数{字段: "authorized_device_count", 方向: "asc", 卡密方向: "desc"}); !strings.Contains(sql, "select count(*) from point_device_session") || !strings.Contains(sql, ") asc, c.card desc") {
+		// GORM 会把相关子查询作为排序表达式保留；只检查关键片段，避免
+		// 不同版本对反引号和空格的格式化差异影响测试。
+		t.Fatalf("授权设备排序 SQL 不正确: %s", sql)
 	}
 }

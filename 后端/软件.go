@@ -127,6 +127,7 @@ func user_add_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	清除软件计费配置缓存(admin, created.ID)
 	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodSeconds: created.DefaultPeriodSeconds, HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, CreatedAt: created.CreatedAt}})
 }
 
@@ -177,6 +178,7 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	清除软件计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount})
 }
 
@@ -247,6 +249,7 @@ func user_modify_bulletin(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	清除软件计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})
 }
 

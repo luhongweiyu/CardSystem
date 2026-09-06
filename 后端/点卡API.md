@@ -112,7 +112,3 @@
 代理价格是扁平 JSON：键为软件 ID，值为每生成 1 点卡点数需要消耗的代理余额，例如 `{"1": 0.25}`。未出现在映射中的软件不授权代理发卡；价格必须大于 0 且最多两位小数，一批点卡的总费用最终按整数点向上取整。
 
 管理端和代理端的 `/user_query_card` 支持服务端排序：`sort_by` 可用 `card`、`software`、`point_balance`、`card_state`、`authorized_device_count`、`create_time`、`use_time`，`sort_order` 和 `card_order` 使用 `asc` 或 `desc`。单独选择 `card` 时只按卡密排序；选择其他字段时该字段为第一排序、卡密为第二排序。备注不参与排序，分页和总数始终由数据库计算。
-
-## 7. 不再提供的概念
-
-纯点卡接口不再使用 `end_time`、时长卡、充值卡、暂停/恢复、`point_rule`、`point_consume`、`request_key` 或 `window_expires_at`。当前余额只有卡密表的 `point_balance` 一个来源；设备授权截止时间只属于设备会话表，不属于流水表。

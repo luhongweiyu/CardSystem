@@ -29,6 +29,4 @@ API，也可以用 `VITE_API_BASE_URL` 指定独立 API 地址。
 - **访客页**（`/visitor/index.html?center_id=...`）：按管理员公开链接和完整卡密精确查询余额、状态及流水，不允许枚举
   卡密。
 
-客户端点卡流程是“登录 → 按心跳间隔发送心跳 → 退出”。登录无需提交 `software`，可选提交 `device_id`、`device_alias`
-和 `period_seconds`；心跳提交登录返回的 `needle`，并保持 `device_id` 与登录时一致，不提交 `device_alias`。退出的
-`device_id` 可省略或传空值，也可同时提交 `needle` 做附加校验。多个客户端都省略 `device_id` 时会共用同一条空设备会话。
+客户端登录、心跳和退出的完整参数约定见 [点卡API.md](../后端/点卡API.md)。

@@ -155,6 +155,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	清除软件计费配置缓存(admin, request.Software)
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "data": saved})
 }
 
@@ -284,6 +285,7 @@ func 管理员_删除点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	清除软件计费配置缓存(account.Name, hint.Software)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功"})
 }
 
