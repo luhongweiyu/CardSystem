@@ -84,9 +84,6 @@ func 读取软件设置(tx *gorm.DB, admin string, softwareID int) (software, er
 	if item.HeartbeatIntervalSeconds <= 0 || item.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return item, fmt.Errorf("软件心跳间隔配置不正确")
 	}
-	if item.DefaultPeriodSeconds < item.HeartbeatIntervalSeconds*2 {
-		return item, fmt.Errorf("软件计费配置不正确：默认授权时长不能短于心跳间隔的2倍")
-	}
 	return item, nil
 }
 
@@ -104,9 +101,6 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 	}
 	if period <= 0 || period > 最大计费周期秒 {
 		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不正确")
-	}
-	if period < settings.HeartbeatIntervalSeconds*2 {
-		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不能短于心跳间隔的2倍")
 	}
 	var price 点卡周期价格
 	query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, softwareID, period, true).First(&price)
@@ -149,10 +143,10 @@ func 生成扣点备注(params 点卡扣费参数, period int64, price int64) st
 	}
 	parts = append(parts, fmt.Sprintf("授权时长=%d秒", period), fmt.Sprintf("扣点=%d", price))
 	if params.DeviceID != "" {
-		parts = append(parts, "设备ID="+params.DeviceID)
+		parts = append(parts, "ID="+params.DeviceID)
 	}
 	if params.DeviceAlias != "" {
-		parts = append(parts, "设备别名="+params.DeviceAlias)
+		parts = append(parts, "设备="+params.DeviceAlias)
 	}
 	return strings.Join(parts, "；")
 }

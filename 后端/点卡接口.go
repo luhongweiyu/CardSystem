@@ -108,9 +108,6 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		if isDefault && !enabled {
 			return fmt.Errorf("默认方案必须保持启用")
 		}
-		if enabled && request.PeriodSeconds < settings.HeartbeatIntervalSeconds*2 {
-			return fmt.Errorf("启用授权时长不能短于心跳间隔的2倍")
-		}
 		// 软件可能尚未配置任何点卡计费方案。此时即使客户端没有显式勾选“默认”，
 		// 也把本次保存的启用方案作为默认，避免软件进入“有方案但默认时长
 		// 永远无法扣费”的不可用状态。

@@ -84,27 +84,7 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	if request.HeartbeatIntervalSeconds <= 0 || request.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return request, fmt.Errorf("心跳间隔必须在1至%d秒之间", 最大心跳周期秒)
 	}
-	if request.DefaultPeriodSeconds < request.HeartbeatIntervalSeconds*2 {
-		return request, fmt.Errorf("默认授权时长不能短于心跳间隔的2倍")
-	}
 	return request, nil
-}
-
-// 校验软件最短授权时长，保证一次续费足以覆盖“两次心跳”的在线推测窗口。
-// 否则过短的授权时长在后台结算时可能续完仍然过期，导致少扣或连续重试。
-func 校验软件最短计费周期(tx *gorm.DB, admin string, softwareID int, heartbeatSeconds int64) error {
-	var shortest struct {
-		PeriodSeconds int64 `gorm:"column:period_seconds"`
-	}
-	query := tx.Table("point_period_price").Select("MIN(period_seconds) AS period_seconds").
-		Where("admin = ? AND software = ? AND enabled = ?", admin, softwareID, true).Scan(&shortest)
-	if query.Error != nil {
-		return fmt.Errorf("检查授权时长失败")
-	}
-	if shortest.PeriodSeconds > 0 && shortest.PeriodSeconds < heartbeatSeconds*2 {
-		return fmt.Errorf("心跳间隔过长，必须不超过最短启用授权时长的一半")
-	}
-	return nil
 }
 
 func user_add_soft(ctx *gin.Context) {
@@ -231,9 +211,6 @@ func user_modify_bulletin(ctx *gin.Context) {
 		request, parseErr = 解析软件设置(request, true)
 		if parseErr != nil {
 			return parseErr
-		}
-		if err := 校验软件最短计费周期(tx, admin, request.ID, request.HeartbeatIntervalSeconds); err != nil {
-			return err
 		}
 		var duplicate int64
 		if err := tx.Table("software").Where("name = ? AND software = ? AND id <> ?", admin, request.Software, request.ID).Count(&duplicate).Error; err != nil {

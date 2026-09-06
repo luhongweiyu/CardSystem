@@ -86,7 +86,7 @@ func 管理员_创建代理账号(ctx *gin.Context) {
 	}
 	request.Name = strings.TrimSpace(request.Name)
 	if !验证管理员名称(request.Name) {
-		失败提示管理端(ctx, "代理账号只能使用3至32位字母、数字或下划线")
+		失败提示管理端(ctx, "渠道合伙人账号只能使用3至32位字母、数字或下划线")
 		return
 	}
 	if err := 校验新密码(request.Password); err != nil {
@@ -100,11 +100,11 @@ func 管理员_创建代理账号(ctx *gin.Context) {
 	}
 	var count int64
 	if err := db_代理账号.Where("name = ?", request.Name).Count(&count).Error; err != nil {
-		失败提示管理端(ctx, "检查代理账号失败")
+		失败提示管理端(ctx, "检查渠道合伙人失败")
 		return
 	}
 	if count > 0 {
-		失败提示管理端(ctx, "代理账号名称已存在")
+		失败提示管理端(ctx, "渠道合伙人账号名称已存在")
 		return
 	}
 	hash, err := 生成密码哈希(request.Password)
@@ -114,7 +114,7 @@ func 管理员_创建代理账号(ctx *gin.Context) {
 	}
 	account := 代理账号记录{Name: request.Name, Password: request.Password, PasswordHash: hash, Admin: parent.Name, Prices: "{}"}
 	if err := db_代理账号.Create(&account).Error; err != nil {
-		失败提示管理端(ctx, "创建代理账号失败")
+		失败提示管理端(ctx, "创建渠道合伙人失败")
 		return
 	}
 	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 代理账号列表项转换(account)})
@@ -185,7 +185,7 @@ func 代理账号日志(accountID int, content string) {
 // 大批量发卡时 float64 丢失整数精度。最终不足 1 点的部分统一向上取整。
 func 计算代理发卡费用(unitPrice float64, pointsPerCard int64, cardCount int) (int64, error) {
 	if !代理每点价格有效(unitPrice) || pointsPerCard <= 0 || cardCount <= 0 {
-		return 0, fmt.Errorf("代理发卡计费参数不正确")
+		return 0, fmt.Errorf("渠道发卡计费参数不正确")
 	}
 	count := int64(cardCount)
 	if pointsPerCard > math.MaxInt64/count {
@@ -270,7 +270,7 @@ func 代理账号_查询点数流水(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"data": 点数流水展示列表(rows, false), "num": total, "page": page, "page_size": pageSize, "balance": cardRow.Point_balance})
 }
 
-type 代理生成点卡请求 struct {
+type 代理生成卡密请求 struct {
 	Software      int    `json:"software"`
 	Points        int64  `json:"points"`
 	Num           int    `json:"num"`
@@ -280,66 +280,66 @@ type 代理生成点卡请求 struct {
 	ConfigContent string `json:"config_content"`
 }
 
-// 代理账号生成点卡结果把生成结果和扣款后的代理余额一起返回，便于页面
-// 立即刷新显示。点卡写入和代理余额扣减在同一数据库事务中完成，进程即使
-// 在请求中途崩溃，也不会出现“余额已扣但点卡未生成”的半成功状态。
-type 代理账号生成点卡结果 struct {
+// 代理生成卡密结果把生成结果和扣款后的渠道余额一起返回，便于页面立即刷新显示。
+// 卡密写入和渠道余额扣减在同一数据库事务中完成，进程即使在请求中途崩溃，
+// 也不会出现“余额已扣但卡密未生成”的半成功状态。
+type 代理生成卡密结果 struct {
 	Cards   []string
 	Charge  int64
 	Balance int64
 }
 
-// 代理账号生成点卡是代理端唯一的生成入口。代理价格从事务内锁定后的
+// 代理生成卡密是代理端唯一的生成入口。代理价格从事务内锁定后的
 // 最新账号记录读取，避免管理员刚修改价格时继续使用登录时的旧快照。
-func 代理账号生成点卡(account 代理账号记录, request 代理生成点卡请求) (代理账号生成点卡结果, error) {
+func 代理生成卡密(account 代理账号记录, request 代理生成卡密请求) (代理生成卡密结果, error) {
 	if account.ID <= 0 || !验证管理员名称(account.Admin) {
-		return 代理账号生成点卡结果{}, fmt.Errorf("代理账号状态错误")
+		return 代理生成卡密结果{}, fmt.Errorf("渠道合伙人状态错误")
 	}
-	var result 代理账号生成点卡结果
+	var result 代理生成卡密结果
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var current 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&current)
 		if query.Error != nil {
-			return fmt.Errorf("读取代理账号失败")
+			return fmt.Errorf("读取渠道合伙人失败")
 		}
 		prices := 解析代理价格(current.Prices)
 		unitPrice, exists := prices[request.Software]
 		if !exists {
-			return fmt.Errorf("该软件尚未配置代理点数价格")
+			return fmt.Errorf("该软件尚未配置渠道点数价格")
 		}
 		charge, err := 计算代理发卡费用(unitPrice, request.Points, request.Num)
 		if err != nil {
 			return err
 		}
-		tableName, cards, err := 准备点卡生成(tx, current.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+		tableName, cards, err := 准备生成卡密(tx, current.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
 		if err != nil {
 			return err
 		}
 		if current.Balance < charge {
-			return fmt.Errorf("代理余额不足，需要%d点，当前%d点", charge, current.Balance)
+			return fmt.Errorf("渠道余额不足，需要%d点，当前%d点", charge, current.Balance)
 		}
-		if err := 写入点卡记录(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, time.Now()); err != nil {
-			return fmt.Errorf("生成点卡失败: %w", err)
+		if err := 创建卡密并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, time.Now()); err != nil {
+			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		balance := current.Balance
 		if charge > 0 {
 			balance -= charge
 			if update := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, charge).UpdateColumn("balance", gorm.Expr("balance - ?", charge)); update.Error != nil || update.RowsAffected != 1 {
-				return fmt.Errorf("扣除代理余额失败")
+				return fmt.Errorf("扣除渠道余额失败")
 			}
 		}
-		result = 代理账号生成点卡结果{Cards: cards, Charge: charge, Balance: balance}
+		result = 代理生成卡密结果{Cards: cards, Charge: charge, Balance: balance}
 		return nil
 	})
 	if err != nil {
-		return 代理账号生成点卡结果{}, err
+		return 代理生成卡密结果{}, err
 	}
-	代理账号日志(account.ID, fmt.Sprintf("生成点卡;扣除代理点数:%d;软件:%d;点数:%d;数量:%d", result.Charge, request.Software, request.Points, len(result.Cards)))
+	代理账号日志(account.ID, fmt.Sprintf("生成卡密;扣除渠道余额:%d;软件:%d;点数:%d;数量:%d", result.Charge, request.Software, request.Points, len(result.Cards)))
 	return result, nil
 }
 
 func 代理账号_添加卡密(ctx *gin.Context) {
-	var request 代理生成点卡请求
+	var request 代理生成卡密请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
 		失败提示管理端(ctx, "数据错误")
 		return
@@ -349,12 +349,12 @@ func 代理账号_添加卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, "软件、点数或生成数量不正确")
 		return
 	}
-	generated, err := 代理账号生成点卡(account, request)
+	generated, err := 代理生成卡密(account, request)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张点卡", len(generated.Cards)), "data": strings.Join(generated.Cards, "\n"), "charge": generated.Charge, "balance": generated.Balance})
+	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张卡密", len(generated.Cards)), "data": strings.Join(generated.Cards, "\n"), "charge": generated.Charge, "balance": generated.Balance})
 }
 
 func 代理账号_删除卡密(ctx *gin.Context) {
@@ -472,7 +472,7 @@ func 设置代理账号(ctx *gin.Context) {
 		var account 代理账号记录
 		if err := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND admin = ?", request.Data.ID, parent.Name).First(&account).Error; err != nil {
-			return fmt.Errorf("代理账号不存在")
+			return fmt.Errorf("渠道合伙人不存在")
 		}
 		agentName = account.Name
 		if len(configuredPrices) > 0 {
@@ -482,7 +482,7 @@ func 设置代理账号(ctx *gin.Context) {
 			}
 			var softwareCount int64
 			if err := tx.Table("software").Where("name = ? AND id IN ?", parent.Name, softwareIDs).Count(&softwareCount).Error; err != nil {
-				return fmt.Errorf("校验代理软件价格失败")
+				return fmt.Errorf("校验渠道合伙人软件价格失败")
 			}
 			if softwareCount != int64(len(softwareIDs)) {
 				return fmt.Errorf("价格配置中包含不存在或不属于当前管理员的软件")
@@ -530,7 +530,7 @@ func 代理账号充值(ctx *gin.Context) {
 		var account 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", request.ID, parent.Name).First(&account)
 		if query.Error != nil {
-			return fmt.Errorf("代理账号不存在")
+			return fmt.Errorf("渠道合伙人不存在")
 		}
 		if account.Balance > math.MaxInt64-request.Amount {
 			return fmt.Errorf("充值后余额超出允许范围")
@@ -545,7 +545,7 @@ func 代理账号充值(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	代理账号日志(request.ID, fmt.Sprintf("管理员充值代理点数:%d;备注:%s", request.Amount, request.Note))
+	代理账号日志(request.ID, fmt.Sprintf("管理员充值渠道余额:%d;备注:%s", request.Amount, request.Note))
 	成功提示管理端(ctx, gin.H{"msg": "充值成功", "balance": balance})
 }
 
@@ -557,7 +557,7 @@ func 查询代理账号(ctx *gin.Context) {
 	}
 	var accounts []代理账号记录
 	if err := db_代理账号.Where("admin = ?", parent.Name).Order("id ASC").Find(&accounts).Error; err != nil {
-		失败提示管理端(ctx, "查询代理账号失败")
+		失败提示管理端(ctx, "查询渠道合伙人失败")
 		return
 	}
 	result := make([]代理账号列表项, 0, len(accounts))
@@ -574,7 +574,7 @@ func 删除代理账号(ctx *gin.Context) {
 		ID int `json:"id"`
 	}
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.ID <= 0 {
-		失败提示管理端(ctx, "代理账号编号不正确")
+		失败提示管理端(ctx, "渠道合伙人编号不正确")
 		return
 	}
 	parent, ok := 管理员_取账号信息(ctx)
@@ -588,15 +588,15 @@ func 删除代理账号(ctx *gin.Context) {
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND admin = ?", request.ID, parent.Name).First(&account)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("代理账号不存在")
+			return fmt.Errorf("渠道合伙人不存在")
 		}
 		if query.Error != nil {
-			return fmt.Errorf("读取代理账号失败")
+			return fmt.Errorf("读取渠道合伙人失败")
 		}
 		agentName = account.Name
 		result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.ID, parent.Name).Delete(&代理账号记录{})
 		if result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("删除代理账号失败")
+			return fmt.Errorf("删除渠道合伙人失败")
 		}
 		return nil
 	})
@@ -605,6 +605,6 @@ func 删除代理账号(ctx *gin.Context) {
 		return
 	}
 	全局_登录会话.删除账号会话(agentName, true)
-	日志("log/"+parent.Name+time.Now().Format("200601"), fmt.Sprintf("删除代理账号;ID:%d;账号:%s", request.ID, agentName))
+	日志("log/"+parent.Name+time.Now().Format("200601"), fmt.Sprintf("删除渠道合伙人;ID:%d;账号:%s", request.ID, agentName))
 	成功提示管理端(ctx, gin.H{"msg": "删除成功"})
 }

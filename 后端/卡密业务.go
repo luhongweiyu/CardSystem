@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 日志锁保护文本运行日志；本文件其余内容按“卡端基础接口、点卡生成、
+// 日志锁保护文本运行日志；本文件其余内容按“卡端基础接口、卡密生成、
 // 管理端查询与维护”的顺序排列，集中保存卡密主体相关业务。
 var 日志锁 sync.Mutex
 
@@ -405,19 +405,10 @@ func card_login(ctx *gin.Context) {
 		失败提示(ctx, err.Error())
 		return
 	}
-	charge := result.Charge
 	成功提示(ctx, gin.H{
 		"needle":                     result.Session.Needle,
-		"software":                   result.Session.Software,
-		"device_id":                  result.Session.DeviceID,
-		"device_alias":               result.Session.DeviceAlias,
-		"renewal_period_seconds":     result.Session.RenewalPeriodSeconds,
 		"authorized_until":           result.Session.AuthorizedUntil,
 		"heartbeat_interval_seconds": result.HeartbeatSeconds,
-		"point_balance":              result.Card.Point_balance,
-		"charged":                    charge.Charged,
-		"cost":                       charge.Cost,
-		"ledger_id":                  charge.LedgerID,
 	})
 }
 
@@ -440,14 +431,8 @@ func card_ping(ctx *gin.Context) {
 	}
 	成功提示(ctx, gin.H{
 		"needle":                     result.Session.Needle,
-		"device_id":                  result.Session.DeviceID,
 		"authorized_until":           result.Session.AuthorizedUntil,
-		"renewal_period_seconds":     result.Session.RenewalPeriodSeconds,
 		"heartbeat_interval_seconds": result.HeartbeatSeconds,
-		"charged":                    result.Charge.Charged,
-		"cost":                       result.Charge.Cost,
-		"point_balance":              result.Charge.Balance,
-		"ledger_id":                  result.Charge.LedgerID,
 	})
 }
 
@@ -537,14 +522,15 @@ func 解析卡密列表(raw string) ([]string, error) {
 	return result, nil
 }
 
-func 生成随机点卡卡密(softwareID int) string {
+// 生成随机卡密只负责生成候选值，真正写入数据库前仍会在事务内检查重复。
+func 生成随机卡密(softwareID int) string {
 	return strconv.FormatInt(int64(softwareID), 36) + GetRandomString(16, "a")
 }
 
-// 校验并准备点卡生成参数。所有调用方都在同一个事务连接上执行，
+// 校验并准备生成卡密的参数。所有调用方都在同一个事务连接上执行，
 // 这样软件存在性、卡密重复检查和后续写入使用的是同一套数据库视图。
 // 删除后重新使用原卡密是允许的；只要旧记录已经删除，本次即可重新创建。
-func 准备点卡生成(tx *gorm.DB, admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
+func 准备生成卡密(tx *gorm.DB, admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) || softwareID <= 0 {
 		return "", nil, fmt.Errorf("管理员或软件参数错误")
@@ -590,7 +576,7 @@ func 准备点卡生成(tx *gorm.DB, admin string, softwareID int, points int64,
 		if random {
 			seen := make(map[string]struct{}, count)
 			for len(cards) < count {
-				card := strings.ToLower(生成随机点卡卡密(softwareID))
+				card := strings.ToLower(生成随机卡密(softwareID))
 				if _, exists := seen[card]; exists {
 					continue
 				}
@@ -614,9 +600,9 @@ func 准备点卡生成(tx *gorm.DB, admin string, softwareID int, points int64,
 	return "", nil, fmt.Errorf("随机卡密生成失败，请重试")
 }
 
-// 写入点卡记录只负责持久化已经校验过的卡密。调用方应把它放在自己的
-// 事务中；卡密行和同名旧会话一起处理，保证删除后重用时不会继承旧设备授权。
-func 写入点卡记录(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
+// 创建卡密并记录初始流水只负责持久化已经校验过的卡密。调用方应把它放在自己的
+// 事务中；卡密表、初始流水和同名旧会话一起处理，保证删除后重用时不会继承旧设备授权。
+func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
 	// 准备阶段已经完成校验；这里再次去除首尾空格，确保管理员入口和
 	// 代理入口无论调用路径如何，落库内容保持一致。
 	var valid bool
@@ -625,9 +611,9 @@ func 写入点卡记录(tx *gorm.DB, tableName string, admin string, agentID int
 	}
 	rows := make([]卡密表样式, 0, len(cards))
 	ledgers := make([]点数流水, 0, len(cards))
-	remark := "生成点卡初始点数"
+	remark := "生成卡密初始点数"
 	if agentID > 0 {
-		remark += fmt.Sprintf("；代理账号ID=%d", agentID)
+		remark += fmt.Sprintf("；渠道合伙人ID=%d", agentID)
 	}
 	for _, card := range cards {
 		rows = append(rows, 卡密表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID})
@@ -657,19 +643,19 @@ func 写入点卡记录(tx *gorm.DB, tableName string, admin string, agentID int
 	return nil
 }
 
-// 生成点卡记录采用全量事务：任意卡密重复或数据库错误都会全部回滚，
-// 避免管理员得到数量不确定的半成功结果。代理账号生成点卡时会复用同一
-// 套准备/写入函数，并把代理余额扣减放进同一事务。
-func 生成点卡记录(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
+// 生成并保存卡密采用全量事务：任意卡密重复或数据库错误都会全部回滚，
+// 避免管理员得到数量不确定的半成功结果。代理生成卡密时会复用同一
+// 套准备/创建函数，并把渠道余额扣减放进同一事务。
+func 生成并保存卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
 	var cards []string
 	err := db.Transaction(func(tx *gorm.DB) error {
-		tableName, prepared, err := 准备点卡生成(tx, admin, softwareID, points, count, customCards, random, notes, config)
+		tableName, prepared, err := 准备生成卡密(tx, admin, softwareID, points, count, customCards, random, notes, config)
 		if err != nil {
 			return err
 		}
 		cards = prepared
-		if err := 写入点卡记录(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
-			return fmt.Errorf("生成点卡失败: %w", err)
+		if err := 创建卡密并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
+			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		return nil
 	})
@@ -679,7 +665,7 @@ func 生成点卡记录(admin string, agentID int, softwareID int, points int64,
 	return cards, nil
 }
 
-type 点卡生成请求 struct {
+type 卡密生成请求 struct {
 	Software      int    `json:"software"`
 	Points        int64  `json:"points"`
 	Num           int    `json:"num"`
@@ -689,8 +675,8 @@ type 点卡生成请求 struct {
 	ConfigContent string `json:"config_content"`
 }
 
-func 管理员_add_new_card(ctx *gin.Context) {
-	var request 点卡生成请求
+func 管理员_添加卡密(ctx *gin.Context) {
+	var request 卡密生成请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
 		失败提示管理端(ctx, "数据错误")
 		return
@@ -700,13 +686,13 @@ func 管理员_add_new_card(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	cards, err := 生成点卡记录(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+	cards, err := 生成并保存卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	日志("log/"+account.Name+time.Now().Format("200601"), fmt.Sprintf("新增点卡;软件:%d;数量:%d;点数:%d", request.Software, len(cards), request.Points))
-	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张点卡", len(cards)), "data": strings.Join(cards, "\n")})
+	日志("log/"+account.Name+time.Now().Format("200601"), fmt.Sprintf("新增卡密;软件:%d;数量:%d;点数:%d", request.Software, len(cards), request.Points))
+	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张卡密", len(cards)), "data": strings.Join(cards, "\n")})
 }
 
 type 卡密列表项 struct {
@@ -743,7 +729,7 @@ func 读取分页参数(ctx *gin.Context) (int, int) {
 }
 
 // 查询卡密列表是管理员和代理账号共用的查询实现；agentID 非零时限制到该代理
-// 创建的卡密。点卡类型和时长筛选已删除，所有记录天然都是点卡。
+// 创建的卡密。卡密类型和时长筛选已删除，所有记录都是纯点卡卡密。
 func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
@@ -872,7 +858,7 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 	return 成功, 失败, nil
 }
 
-func 管理员_delete_card(ctx *gin.Context) {
+func 管理员_删除卡密(ctx *gin.Context) {
 	var request struct {
 		Cards []string `json:"cards"`
 	}
@@ -890,7 +876,7 @@ func 管理员_delete_card(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	deleteLog := fmt.Sprintf("删除点卡;成功:%v;失败:%v", success, failed)
+	deleteLog := fmt.Sprintf("删除卡密;成功:%v;失败:%v", success, failed)
 	日志("log/"+account.Name+time.Now().Format("200601"), 清理拒绝日志字段(deleteLog, 4000))
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }

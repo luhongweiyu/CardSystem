@@ -5,7 +5,7 @@
         <h2>点卡管理</h2>
         <p class="说明">一张卡可在多台设备使用；同一设备在授权时长内重复登录不会重复扣点。</p>
       </div>
-      <el-button type="primary" @click="打开生成">生成点卡</el-button>
+      <el-button type="primary" @click="打开生成">生成卡密</el-button>
     </div>
 
     <el-card shadow="never" class="筛选卡片">
@@ -114,8 +114,8 @@
       @current-change="查询卡密(false)"
     />
 
-    <!-- 生成点卡 -->
-    <el-dialog v-model="生成框.显示" title="生成点卡" width="560px" destroy-on-close>
+    <!-- 生成卡密 -->
+    <el-dialog v-model="生成框.显示" title="生成卡密" width="560px" destroy-on-close>
       <el-form label-width="100px" v-loading="生成框.加载中">
         <el-form-item label="所属软件" required>
           <el-select v-model="生成框.software" placeholder="请选择软件" style="width: 280px">
@@ -158,7 +158,7 @@
       </el-form>
       <template #footer>
         <el-button @click="生成框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="生成点卡">生成</el-button>
+        <el-button type="primary" @click="生成卡密">生成</el-button>
       </template>
     </el-dialog>
 
@@ -370,7 +370,7 @@ const 打开生成 = function () {
   })
   生成框结果.value = ''
 }
-const 生成点卡 = function () {
+const 生成卡密 = function () {
   if (!生成框.software || 生成框.points <= 0 || 生成框.num <= 0) {
     ElMessage.warning('请选择软件并填写有效的点数和数量')
     return
@@ -393,7 +393,7 @@ const 生成点卡 = function () {
       if (!res.data?.state) throw new Error(res.data?.msg || '生成失败')
       生成框结果.value = res.data.data || ''
       if (是代理账号.value && res.data.balance !== undefined) {
-        // 代理生成点卡的扣款与卡密写入在同一事务完成，直接采用服务端
+        // 代理生成卡密的扣款与卡密写入在同一事务完成，直接采用服务端
         // 返回的最终余额，避免顶部余额一直停留在登录时的旧值。
         账号信息.balance = Number(res.data.balance || 0)
       }

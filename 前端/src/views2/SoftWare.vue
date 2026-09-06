@@ -74,7 +74,6 @@
             controls-position="right"
           />
         </el-form-item>
-        <el-alert type="info" :closable="false" show-icon title="所有启用授权时长都必须不少于心跳间隔的 2 倍。" />
         <el-form-item label="公告">
           <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
         </el-form-item>
@@ -310,10 +309,6 @@ const 保存软件 = function () {
     ElMessage.warning('心跳间隔必须在1至86400秒之间')
     return
   }
-  if (软件框.default_period_seconds < 软件框.heartbeat_interval_seconds * 2) {
-    ElMessage.warning('默认授权时长不能短于心跳间隔的2倍')
-    return
-  }
   软件框.加载中 = true
   const url = 软件框.id ? '/user_modify_bulletin' : '/user_add_soft'
   post(url, {
@@ -390,10 +385,6 @@ const 编辑价格 = function (row) {
   })
 }
 const 保存价格 = function () {
-  if (价格编辑框.enabled && 价格编辑框.period_seconds < 价格框.heartbeatSeconds * 2) {
-    ElMessage.warning('启用授权时长不能短于心跳间隔的2倍')
-    return
-  }
   post('/point_period_price/save', {
     software: 价格编辑框.software,
     period_seconds: 价格编辑框.period_seconds,
