@@ -48,6 +48,7 @@ func 初始化() error {
 	if err := viper.ReadInConfig(); err != nil {
 		return fmt.Errorf("读取配置文件失败: %w", err)
 	}
+	初始化心跳缓存同步间隔()
 	if !viper.GetBool("dev") {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -67,7 +68,6 @@ func main() {
 	}
 	启动整点任务()
 	启动点卡会话清理()
-	启动点卡心跳缓存同步()
 	启动点数流水清理()
 	fmt.Println("启动网络服务:")
 	if err := 启动网络(); err != nil {

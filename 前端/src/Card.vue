@@ -49,6 +49,15 @@
         </el-table-column>
         <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
       </el-table>
+      <el-pagination
+        v-if="设备分页.total > 0"
+        v-model:current-page="设备分页.page"
+        v-model:page-size="设备分页.page_size"
+        class="分页"
+        layout="total, prev, pager, next"
+        :total="设备分页.total"
+        @current-change="查询详情(设备分页.page)"
+      />
       <el-button type="primary" plain @click="打开流水">查看点数流水</el-button>
     </el-card>
 
@@ -93,11 +102,12 @@ const 卡密 = ref('')
 const 加载中 = ref(false)
 const 详情 = ref(null)
 const 流水框 = reactive({ 显示: false, 加载中: false, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
+const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 格式化时间 = (value) => (value ? new Date(value).toLocaleString('zh-CN') : '-')
 
-const 查询详情 = function () {
+const 查询详情 = function (page = 1) {
   详情.value = null
   if (!centerID) {
     ElMessage.error('查询链接缺少 center_id，请联系管理员获取完整链接')
@@ -109,9 +119,10 @@ const 查询详情 = function () {
     return
   }
   卡密.value = card
+  设备分页.page = page
   加载中.value = true
   apiClient
-    .post('/card/query', { center_id: centerID, card })
+    .post('/card/query', { center_id: centerID, card, page: 设备分页.page, page_size: 设备分页.page_size })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
       详情.value = {
@@ -123,6 +134,9 @@ const 查询详情 = function () {
         online_device_count: Number(res.data.online_device_count || 0),
         devices: Array.isArray(res.data.devices) ? res.data.devices : []
       }
+      设备分页.total = Number(res.data.device_total || 0)
+      设备分页.page = Number(res.data.device_page || page)
+      设备分页.page_size = Number(res.data.device_page_size || 设备分页.page_size)
     })
     .catch(错误)
     .finally(() => {

@@ -10,11 +10,9 @@ import (
 )
 
 const (
-	默认心跳缓存同步间隔分钟 = 30
-	最小心跳缓存同步间隔分钟 = 10
+	默认心跳缓存同步间隔分钟 = 15
+	最小心跳缓存同步间隔分钟 = 15
 	最大心跳缓存同步间隔分钟 = 60
-	心跳缓存检查间隔     = time.Minute
-	心跳缓存单批同步上限   = 200
 )
 
 // 点卡心跳缓存键严格沿用设备会话的唯一组合。needle 只负责校验当前会话，
@@ -40,6 +38,10 @@ var 全局点卡心跳缓存 = struct {
 	sync.RWMutex
 	数据 map[点卡心跳缓存键]*点卡心跳缓存条目
 }{数据: make(map[点卡心跳缓存键]*点卡心跳缓存条目)}
+
+// 心跳同步间隔在服务启动时读取一次，运行期间直接使用该值，避免高频心跳
+// 反复访问配置；修改配置后重启服务生效。
+var 心跳缓存同步间隔值 = time.Duration(默认心跳缓存同步间隔分钟) * time.Minute
 
 func 生成点卡心跳缓存键(admin string, card string, deviceID string) 点卡心跳缓存键 {
 	return 点卡心跳缓存键{
@@ -99,6 +101,16 @@ func 尝试记录缓存心跳(admin string, card string, deviceID string, needle
 	if now.After(entry.会话.LastHeartbeatAt) {
 		entry.会话.LastHeartbeatAt = now
 		entry.脏 = true
+	}
+	// 普通心跳不再由后台任务扫描。达到同步间隔时，由当前这次心跳
+	// 负责把最新时间写入数据库；条目锁保证同一设备不会并发重复写入。
+	if entry.脏 && now.Sub(entry.上次同步时间) >= 心跳缓存同步间隔值 {
+		if err := 同步点卡心跳缓存条目(entry); err != nil {
+			return 点卡心跳结果{}, true, err
+		}
+		if entry.已失效 {
+			return 点卡心跳结果{}, false, nil
+		}
 	}
 	session := entry.会话
 	return 点卡心跳结果{
@@ -179,9 +191,10 @@ func 心跳缓存条目快照() map[点卡心跳缓存键]*点卡心跳缓存条
 	return entries
 }
 
-// 同步并删除卡密心跳缓存用于冻结、删除和同名卡密重新生成。即使一张卡有多台
-// 设备，也逐设备短暂加锁和同步，不使用覆盖整张卡的大事务。
-func 同步并删除卡密心跳缓存(admin string, cards []string) error {
+// 同步并删除卡密心跳缓存_按卡返回错误只扫描一次缓存，并分别记录每张卡首次
+// 遇到的同步错误。批量删除可据此跳过同步失败的卡密，同时继续处理其他卡密。
+func 同步并删除卡密心跳缓存_按卡返回错误(admin string, cards []string) map[string]error {
+	admin = strings.TrimSpace(admin)
 	cardSet := make(map[string]struct{}, len(cards))
 	for _, card := range cards {
 		card = strings.ToLower(strings.TrimSpace(card))
@@ -192,19 +205,30 @@ func 同步并删除卡密心跳缓存(admin string, cards []string) error {
 	if len(cardSet) == 0 {
 		return nil
 	}
-	var firstErr error
+	errorsByCard := make(map[string]error)
 	for key := range 心跳缓存条目快照() {
-		if key.管理员 != strings.TrimSpace(admin) {
+		if key.管理员 != admin {
 			continue
 		}
 		if _, exists := cardSet[key.卡密]; !exists {
 			continue
 		}
-		if err := 同步并删除点卡心跳缓存(key.管理员, key.卡密, key.设备ID, ""); err != nil && firstErr == nil {
-			firstErr = err
+		if err := 同步并删除点卡心跳缓存(key.管理员, key.卡密, key.设备ID, ""); err != nil {
+			if _, exists := errorsByCard[key.卡密]; !exists {
+				errorsByCard[key.卡密] = err
+			}
 		}
 	}
-	return firstErr
+	return errorsByCard
+}
+
+// 同步并删除卡密心跳缓存用于冻结、删除和同名卡密重新生成。即使一张卡有多台
+// 设备，也逐设备短暂加锁和同步，不使用覆盖整张卡的大事务。
+func 同步并删除卡密心跳缓存(admin string, cards []string) error {
+	for _, err := range 同步并删除卡密心跳缓存_按卡返回错误(admin, cards) {
+		return err
+	}
+	return nil
 }
 
 // 同步并删除软件心跳缓存用于软件修改或删除。软件编号只从已经加载的会话快照
@@ -253,37 +277,6 @@ func 合并点卡心跳缓存(session *点卡设备会话) {
 	}
 }
 
-// 批量同步心跳缓存每次只处理达到同步期限的少量脏条目。缓存总锁只用于复制
-// 指针，数据库写入期间已经释放，因此不会形成周期性的全局心跳停顿。
-func 批量同步心跳缓存(syncInterval time.Duration) error {
-	if db_point_device_session == nil {
-		return nil
-	}
-	now := time.Now()
-	processed := 0
-	var firstErr error
-	for key, entry := range 心跳缓存条目快照() {
-		if processed >= 心跳缓存单批同步上限 {
-			break
-		}
-		entry.Lock()
-		if entry.已失效 || !entry.脏 || now.Sub(entry.上次同步时间) < syncInterval {
-			entry.Unlock()
-			continue
-		}
-		processed++
-		if err := 同步点卡心跳缓存条目(entry); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		invalid := entry.已失效
-		entry.Unlock()
-		if invalid {
-			从点卡心跳缓存删除(key, entry)
-		}
-	}
-	return firstErr
-}
-
 func 读取心跳缓存同步间隔() time.Duration {
 	minutes := viper.GetInt("心跳缓存.同步间隔分钟")
 	if minutes == 0 {
@@ -296,17 +289,7 @@ func 读取心跳缓存同步间隔() time.Duration {
 	return time.Duration(minutes) * time.Minute
 }
 
-// 启动点卡心跳缓存同步每分钟只检查一次内存状态；单条缓存达到配置的
-// 10 至 60 分钟同步期限后才会写数据库，因此检查频率不等于数据库写入频率。
-func 启动点卡心跳缓存同步() {
-	syncInterval := 读取心跳缓存同步间隔()
-	go func() {
-		ticker := time.NewTicker(心跳缓存检查间隔)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := 批量同步心跳缓存(syncInterval); err != nil {
-				日志("log/启动记录.txt", "同步点卡心跳缓存失败:"+err.Error())
-			}
-		}
-	}()
+// 初始化心跳缓存同步间隔必须在读取配置文件后调用一次；后续心跳只读取内存值。
+func 初始化心跳缓存同步间隔() {
+	心跳缓存同步间隔值 = 读取心跳缓存同步间隔()
 }

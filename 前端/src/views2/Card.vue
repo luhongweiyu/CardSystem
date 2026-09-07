@@ -121,14 +121,6 @@
         </template>
       </el-table-column>
       <el-table-column
-        prop="authorized_device_count"
-        label="授权设备"
-        width="90"
-        align="right"
-        sortable="custom"
-        :sort-orders="['ascending', 'descending']"
-      />
-      <el-table-column
         prop="create_time"
         label="生成时间"
         width="170"
@@ -187,7 +179,7 @@
           <span class="单位">点</span>
         </el-form-item>
         <el-form-item label="生成数量" required>
-          <el-input-number v-model="生成框.num" :min="1" :max="1000" :precision="0" controls-position="right" />
+          <el-input-number v-model="生成框.num" :min="1" :max="500" :precision="0" controls-position="right" />
           <span v-if="是代理账号" class="费用提示">预计消耗合伙人余额 {{ 预计代理费用 }} 点</span>
         </el-form-item>
         <el-form-item label="生成方式">

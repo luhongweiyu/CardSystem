@@ -17,7 +17,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const 代理账号表名 = "agent_account"
+const (
+	代理账号表名      = "agent_account"
+	最大代理价格配置字节数 = 4096
+	最大代理价格软件数量  = 100
+)
 
 // 代理账号记录只保存代理身份、可用余额和软件价格映射。代理余额是在生成
 // 卡密时消耗的独立额度，不等同于代理生成出来的卡密余额。
@@ -148,12 +152,19 @@ func 解析代理价格(raw string) map[int]float64 {
 
 // 校验代理价格配置验证管理员为代理账号设置的“每点成本” JSON。
 func 校验代理价格配置(raw string) error {
-	if strings.TrimSpace(raw) == "" {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return fmt.Errorf("价格配置不能为空")
+	}
+	if len([]byte(raw)) > 最大代理价格配置字节数 {
+		return fmt.Errorf("价格配置不能超过%d字节", 最大代理价格配置字节数)
 	}
 	var values map[string]*float64
 	if err := json.Unmarshal([]byte(raw), &values); err != nil || values == nil {
 		return fmt.Errorf("价格配置必须是软件ID到每点价格的JSON对象")
+	}
+	if len(values) > 最大代理价格软件数量 {
+		return fmt.Errorf("价格配置最多只能包含%d个软件", 最大代理价格软件数量)
 	}
 	for key, price := range values {
 		id, err := strconv.Atoi(key)
@@ -295,8 +306,12 @@ func 代理生成卡密(account 代理账号记录, request 代理生成卡密�
 	if account.ID <= 0 || !验证管理员名称(account.Admin) {
 		return 代理生成卡密结果{}, fmt.Errorf("渠道合伙人状态错误")
 	}
+	tableName, cards, err := 准备生成卡密(account.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+	if err != nil {
+		return 代理生成卡密结果{}, err
+	}
 	var result 代理生成卡密结果
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		var current 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&current)
 		if query.Error != nil {
@@ -311,33 +326,26 @@ func 代理生成卡密(account 代理账号记录, request 代理生成卡密�
 		if err != nil {
 			return err
 		}
-		tableName, cards, err := 准备生成卡密(tx, current.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
-		if err != nil {
+		if err := 锁定生成卡密软件(tx, current.Admin, request.Software); err != nil {
 			return err
 		}
 		if current.Balance < charge {
 			return fmt.Errorf("渠道余额不足，需要%d点，当前%d点", charge, current.Balance)
 		}
-		if err := 创建卡密并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, time.Now()); err != nil {
-			return fmt.Errorf("生成卡密失败: %w", err)
-		}
-		balance := current.Balance
 		if charge > 0 {
-			balance -= charge
 			if update := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, charge).UpdateColumn("balance", gorm.Expr("balance - ?", charge)); update.Error != nil || update.RowsAffected != 1 {
 				return fmt.Errorf("扣除渠道余额失败")
 			}
 		}
+		if err := 创建卡密并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, time.Now()); err != nil {
+			return fmt.Errorf("生成卡密失败: %w", err)
+		}
+		balance := current.Balance - charge
 		result = 代理生成卡密结果{Cards: cards, Charge: charge, Balance: balance}
 		return nil
 	})
 	if err != nil {
 		return 代理生成卡密结果{}, err
-	}
-	if err := 同步并删除卡密心跳缓存(account.Admin, result.Cards); err != nil {
-		// 发卡和渠道扣款已经在同一事务中提交，缓存同步失败不能改写业务结果；
-		// 对应缓存已经强制失效，下一次心跳会重新读取数据库。
-		日志("log/启动记录.txt", "渠道重建卡密后同步心跳缓存失败:"+err.Error())
 	}
 	代理账号日志(account.ID, fmt.Sprintf("生成卡密;扣除渠道余额:%d;软件:%d;点数:%d;数量:%d", result.Charge, request.Software, request.Points, len(result.Cards)))
 	return result, nil
@@ -350,7 +358,7 @@ func 代理账号_添加卡密(ctx *gin.Context) {
 		return
 	}
 	account := 代理账号_取账号信息(ctx)
-	if request.Software <= 0 || request.Points <= 0 || request.Points > 最大单次点数 || request.Num <= 0 || request.Num > 1000 {
+	if request.Software <= 0 || request.Points <= 0 || request.Points > 最大单次点数 || request.Num <= 0 || request.Num > 最大单次生成卡密数量 {
 		失败提示管理端(ctx, "软件、点数或生成数量不正确")
 		return
 	}

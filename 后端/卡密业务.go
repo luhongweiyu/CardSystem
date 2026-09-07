@@ -307,25 +307,83 @@ type 卡密设备详情 struct {
 type 卡密设备统计 struct {
 	AuthorizedCount int64    `json:"authorized_device_count"`
 	OnlineCount     int64    `json:"online_device_count"`
+	DeviceTotal     int64    `json:"device_total"`
+	DevicePage      int      `json:"device_page"`
+	DevicePageSize  int      `json:"device_page_size"`
 	Devices         []卡密设备详情 `json:"devices"`
+}
+
+// 读取卡密设备分页参数只允许较小的明细页，避免单个卡密异常累积大量设备时
+// 直接返回超大响应；设备总数仍由服务端单独统计。
+func 读取卡密设备分页参数(ctx *gin.Context) (int, int) {
+	page, _ := strconv.Atoi(input(ctx, "page"))
+	if page == 0 {
+		page, _ = strconv.Atoi(input(ctx, "当前页"))
+	}
+	pageSize, _ := strconv.Atoi(input(ctx, "page_size"))
+	if pageSize == 0 {
+		pageSize, _ = strconv.Atoi(input(ctx, "每页"))
+	}
+	if page < 1 {
+		page = 1
+	} else if page > 1000000 {
+		page = 1000000
+	}
+	if pageSize < 1 {
+		pageSize = 默认设备详情每页数量
+	}
+	if pageSize > 最大设备详情每页数量 {
+		pageSize = 最大设备详情每页数量
+	}
+	return page, pageSize
 }
 
 // 查询卡密设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
 // 在线状态严格按计费规则使用最后心跳推断窗口，needle 按业务要求随设备明细返回。
-func 查询卡密设备统计(admin string, card string, softwareID int, now time.Time) (卡密设备统计, error) {
+// 设备明细按页查询，避免异常设备数量导致响应过大。
+func 查询卡密设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int) (卡密设备统计, error) {
 	var result 卡密设备统计
 	settings, err := 读取软件设置(db, admin, softwareID)
 	if err != nil {
 		return result, err
 	}
+	baseQuery := db_point_device_session.Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID)
+	if err := baseQuery.Count(&result.DeviceTotal).Error; err != nil {
+		return result, fmt.Errorf("统计设备会话数量失败")
+	}
+	result.DevicePage = page
+	result.DevicePageSize = pageSize
+	countRows, err := baseQuery.Select("admin", "card", "software", "device_id", "needle", "authorized_until", "last_heartbeat_at").Rows()
+	if err != nil {
+		return result, fmt.Errorf("统计设备会话状态失败")
+	}
+	defer countRows.Close()
+	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
+	for countRows.Next() {
+		var row 点卡设备会话
+		if err := baseQuery.ScanRows(countRows, &row); err != nil {
+			return result, fmt.Errorf("统计设备会话状态失败")
+		}
+		// 计数也合并尚未到同步期限的心跳缓存，避免分页后授权设备和在线设备
+		// 只统计当前明细页而不是整张卡密的真实数量。
+		合并点卡心跳缓存(&row)
+		if row.AuthorizedUntil.After(now) {
+			result.AuthorizedCount++
+		}
+		if row.LastHeartbeatAt.After(在线截止) {
+			result.OnlineCount++
+		}
+	}
+	if err := countRows.Err(); err != nil {
+		return result, fmt.Errorf("统计设备会话状态失败")
+	}
 	var rows []点卡设备会话
-	query := db_point_device_session.Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
-		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
-		Order("authorized_until DESC, device_id ASC").Find(&rows)
+	query := baseQuery.Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
+		Order("authorized_until DESC, device_id ASC").
+		Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows)
 	if query.Error != nil {
 		return result, fmt.Errorf("查询设备会话失败")
 	}
-	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
 	result.Devices = make([]卡密设备详情, 0, len(rows))
 	for _, row := range rows {
 		// 普通心跳可能尚未达到数据库同步期限；详情查询只合并内存快照，
@@ -333,12 +391,6 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
 		online := row.LastHeartbeatAt.After(在线截止)
-		if authorized {
-			result.AuthorizedCount++
-		}
-		if online {
-			result.OnlineCount++
-		}
 		result.Devices = append(result.Devices, 卡密设备详情{
 			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
 			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online,
@@ -363,7 +415,8 @@ func 卡密_查询详情(ctx *gin.Context) {
 		失败提示(ctx, "卡密不存在")
 		return
 	}
-	设备统计, err := 查询卡密设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now())
+	设备页, 设备每页 := 读取卡密设备分页参数(ctx)
+	设备统计, err := 查询卡密设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -377,7 +430,7 @@ func 卡密_查询详情(ctx *gin.Context) {
 		status = "冻结"
 	}
 	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n最近扣点:%s\n授权设备:%d\n在线设备:%d\n状态:%s", cardRow.Card, cardRow.Software, cardRow.Point_balance, lastUse, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
-	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "devices": 设备统计.Devices})
+	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices})
 }
 
 func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
@@ -526,35 +579,24 @@ func 解析卡密列表(raw string) ([]string, error) {
 	return result, nil
 }
 
-// 生成随机卡密只负责生成候选值，真正写入数据库前仍会在事务内检查重复。
+// 生成随机卡密只负责生成候选值；批量生成时由调用方在事务外统一预检查，
+// 最终写入仍由数据库主键唯一约束兜底。
 func 生成随机卡密(softwareID int) string {
 	return strconv.FormatInt(int64(softwareID), 36) + GetRandomString(16, "a")
 }
 
-// 校验并准备生成卡密的参数。所有调用方都在同一个事务连接上执行，
-// 这样软件存在性、卡密重复检查和后续写入使用的是同一套数据库视图。
-// 删除后重新使用原卡密是允许的；只要旧记录已经删除，本次即可重新创建。
-func 准备生成卡密(tx *gorm.DB, admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
+// 校验并准备生成卡密的参数。卡密文本解析、随机值生成和重复预检查都在事务外
+// 完成，避免无效请求或大批量计算持有数据库锁。最终写入仍依赖卡密主键唯一约束，
+// 防止预检查完成后被并发请求抢先创建。
+func 准备生成卡密(admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) || softwareID <= 0 {
 		return "", nil, fmt.Errorf("管理员或软件参数错误")
 	}
-	// 锁定所属软件，和删除软件、修改计费配置使用相同的同步点。
-	// 这样并发删除软件时，不会在软件已经删除后又写入一批孤立卡密。
-	var softwareRow 软件
-	softwareQuery := tx.Table("software").Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id").Where("name = ? AND id = ?", admin, softwareID).First(&softwareRow)
-	if errors.Is(softwareQuery.Error, gorm.ErrRecordNotFound) {
-		return "", nil, fmt.Errorf("软件不存在")
+	if points <= 0 || points > 最大单次点数 || count <= 0 || count > 最大单次生成卡密数量 {
+		return "", nil, fmt.Errorf("点数必须在1至%d之间，数量必须在1至%d之间", 最大单次点数, 最大单次生成卡密数量)
 	}
-	if softwareQuery.Error != nil {
-		return "", nil, fmt.Errorf("检查软件失败")
-	}
-	if points <= 0 || points > 最大单次点数 || count <= 0 || count > 1000 {
-		return "", nil, fmt.Errorf("点数必须在1至%d之间，数量必须在1至1000之间", 最大单次点数)
-	}
-	var notesValid bool
-	if notes, notesValid = 规范化可显示文本(notes, 500); !notesValid {
+	if _, valid := 规范化可显示文本(notes, 500); !valid {
 		return "", nil, fmt.Errorf("卡密备注不能包含控制字符且不能超过500个字符")
 	}
 	if err := 校验卡密配置内容(config); err != nil {
@@ -571,41 +613,59 @@ func 准备生成卡密(tx *gorm.DB, admin string, softwareID int, points int64,
 			return "", nil, fmt.Errorf("指定卡密数量与生成数量不一致")
 		}
 	}
+	var softwareRow 软件
+	softwareQuery := db.Table("software").Select("id").Where("name = ? AND id = ?", admin, softwareID).First(&softwareRow)
+	if errors.Is(softwareQuery.Error, gorm.ErrRecordNotFound) {
+		return "", nil, fmt.Errorf("软件不存在")
+	}
+	if softwareQuery.Error != nil {
+		return "", nil, fmt.Errorf("检查软件失败")
+	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
 		return "", nil, err
 	}
-	for attempt := 0; attempt < 5; attempt++ {
-		cards := make([]string, 0, count)
-		if random {
-			seen := make(map[string]struct{}, count)
-			for len(cards) < count {
-				card := strings.ToLower(生成随机卡密(softwareID))
-				if _, exists := seen[card]; exists {
-					continue
-				}
-				seen[card] = struct{}{}
-				cards = append(cards, card)
+	cards := make([]string, 0, count)
+	if random {
+		seen := make(map[string]struct{}, count)
+		for len(cards) < count {
+			card := strings.ToLower(生成随机卡密(softwareID))
+			if _, exists := seen[card]; exists {
+				continue
 			}
-		} else {
-			cards = append(cards, specified...)
+			seen[card] = struct{}{}
+			cards = append(cards, card)
 		}
-		var existing int64
-		if err := tx.Table(tableName).Where("card IN ?", cards).Count(&existing).Error; err != nil {
-			return "", nil, fmt.Errorf("检查卡密是否重复失败")
-		}
-		if existing == 0 {
-			return tableName, cards, nil
-		}
-		if !random {
-			return "", nil, fmt.Errorf("卡密已存在，不能重复生成")
-		}
+	} else {
+		cards = append(cards, specified...)
 	}
-	return "", nil, fmt.Errorf("随机卡密生成失败，请重试")
+	var existing int64
+	if err := db.Table(tableName).Where("card IN ?", cards).Count(&existing).Error; err != nil {
+		return "", nil, fmt.Errorf("检查卡密是否重复失败")
+	}
+	if existing > 0 {
+		return "", nil, fmt.Errorf("卡密已存在，不能重复生成")
+	}
+	return tableName, cards, nil
+}
+
+// 锁定生成卡密软件只在最终写入事务中短暂锁定软件行，和删除软件保持一致的
+// 加锁顺序，避免软件删除与卡密写入并发时产生孤立卡密。
+func 锁定生成卡密软件(tx *gorm.DB, admin string, softwareID int) error {
+	var softwareRow 软件
+	query := tx.Table("software").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").Where("name = ? AND id = ?", strings.TrimSpace(admin), softwareID).First(&softwareRow)
+	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("软件不存在")
+	}
+	if query.Error != nil {
+		return fmt.Errorf("检查软件失败")
+	}
+	return nil
 }
 
 // 创建卡密并记录初始流水只负责持久化已经校验过的卡密。调用方应把它放在自己的
-// 事务中；卡密表、初始流水和同名旧会话一起处理，保证删除后重用时不会继承旧设备授权。
+// 事务中，保证卡密和对应的初始流水同时成功或失败。
 func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
 	// 准备阶段已经完成校验；这里再次去除首尾空格，确保管理员入口和
 	// 代理入口无论调用路径如何，落库内容保持一致。
@@ -621,8 +681,7 @@ func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin stri
 	}
 	for _, card := range cards {
 		rows = append(rows, 卡密表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID})
-		// 初始余额也作为一条补点流水保存。这样新卡的余额来源可审计，
-		// 同名卡删除后重新生成时，旧流水和新一代初始流水仍能明确区分。
+		// 初始余额也作为一条补点流水保存，便于审计同名卡重新生成后的新旧记录。
 		ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, EventType: 点数事件_补点, Change: points, BalanceBefore: 0, BalanceAfter: points, Remark: remark, CreatedAt: now})
 	}
 	// 按估算行大小控制每条 INSERT，既减少上千次数据库往返，也避免大配置
@@ -640,10 +699,6 @@ func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin stri
 	if err := tx.Table("point_ledger").CreateInBatches(&ledgers, 500).Error; err != nil {
 		return fmt.Errorf("写入初始点数流水失败")
 	}
-	// 同名卡删除后可以重新利用，重建时清理上一代遗留会话；流水由后台按保留期清理。
-	if err := tx.Table("point_device_session").Where("admin = ? AND card IN ?", admin, cards).Delete(&点卡设备会话{}).Error; err != nil {
-		return fmt.Errorf("清理旧设备会话失败")
-	}
 	return nil
 }
 
@@ -651,13 +706,14 @@ func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin stri
 // 避免管理员得到数量不确定的半成功结果。代理生成卡密时会复用同一
 // 套准备/创建函数，并把渠道余额扣减放进同一事务。
 func 生成并保存卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
-	var cards []string
-	err := db.Transaction(func(tx *gorm.DB) error {
-		tableName, prepared, err := 准备生成卡密(tx, admin, softwareID, points, count, customCards, random, notes, config)
-		if err != nil {
+	tableName, cards, err := 准备生成卡密(admin, softwareID, points, count, customCards, random, notes, config)
+	if err != nil {
+		return nil, err
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := 锁定生成卡密软件(tx, admin, softwareID); err != nil {
 			return err
 		}
-		cards = prepared
 		if err := 创建卡密并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
@@ -665,13 +721,6 @@ func 生成并保存卡密(admin string, agentID int, softwareID int, points int
 	})
 	if err != nil {
 		return nil, err
-	}
-	// 同名卡重新生成前，旧会话已经在事务中删除；事务提交后清除可能残留的
-	// 内存心跳，防止旧 needle 继续命中新卡同名设备。
-	if err := 同步并删除卡密心跳缓存(strings.TrimSpace(admin), cards); err != nil {
-		// 卡密事务已经提交，不能把成功结果伪装成失败；缓存即使同步失败也已
-		// 强制失效，记录错误供运维排查即可。
-		日志("log/启动记录.txt", "重建卡密后同步心跳缓存失败:"+err.Error())
 	}
 	return cards, nil
 }
@@ -753,7 +802,7 @@ func 读取卡密列表排序(ctx *gin.Context) 卡密列表排序参数 {
 	cardOrder := strings.ToLower(strings.TrimSpace(input(ctx, "card_order")))
 	allowed := map[string]bool{
 		"card": true, "software": true, "point_balance": true, "card_state": true,
-		"authorized_device_count": true, "create_time": true, "use_time": true,
+		"create_time": true, "use_time": true,
 	}
 	if !allowed[field] {
 		field = "create_time"
@@ -774,11 +823,6 @@ func 读取卡密列表排序(ctx *gin.Context) 卡密列表排序参数 {
 func 应用卡密列表排序(query *gorm.DB, tableName string, sorting 卡密列表排序参数, admin string, now time.Time) *gorm.DB {
 	if sorting.字段 == "card" {
 		return query.Order("`card` " + sorting.方向)
-	}
-	if sorting.字段 == "authorized_device_count" {
-		query = query.Table(tableName + " AS c")
-		expression := "(SELECT COUNT(*) FROM point_device_session AS ps WHERE ps.admin = ? AND ps.card = c.card AND ps.authorized_until > ?) " + sorting.方向 + ", c.card " + sorting.卡密方向
-		return query.Clauses(clause.OrderBy{Expression: clause.Expr{SQL: expression, Vars: []interface{}{admin, now}}})
 	}
 	return query.Order("`" + sorting.字段 + "` " + sorting.方向 + ", `card` " + sorting.卡密方向)
 }
@@ -818,8 +862,7 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		query = query.Where("notes LIKE ?", "%"+转义Like文本(notesKeyword)+"%")
 	}
 	var total int64
-	// Count 会临时修改 SELECT 子句；使用独立会话避免后续 Find 继承
-	// count(*)，尤其是授权设备数相关的表达式排序。
+	// Count 会临时修改 SELECT 子句；使用独立会话避免后续 Find 继承 count(*)。
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		失败提示管理端(ctx, "查询卡密数量失败")
 		return
@@ -908,6 +951,11 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 	}
 	成功 := make([]string, 0, len(cards))
 	失败 := make([]string, 0)
+	type 待删除卡密 struct {
+		原始值 string
+		卡密  string
+	}
+	待删除 := make([]待删除卡密, 0, len(cards))
 	for _, raw := range cards {
 		card := strings.ToLower(strings.TrimSpace(raw))
 		if !卡密格式规则.MatchString(card) {
@@ -918,12 +966,24 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 			失败 = append(失败, raw)
 			continue
 		}
-		if err := 同步并删除卡密心跳缓存(admin, []string{card}); err != nil {
-			失败 = append(失败, raw)
+		待删除 = append(待删除, 待删除卡密{原始值: raw, 卡密: card})
+	}
+
+	// 删除前把整批卡密的心跳缓存同步并失效，只扫描一次缓存。单张卡同步失败
+	// 时仍保持原有的部分成功语义，仅跳过对应卡密，不影响其他卡密删除。
+	待删除卡密值 := make([]string, 0, len(待删除))
+	for _, item := range 待删除 {
+		待删除卡密值 = append(待删除卡密值, item.卡密)
+	}
+	同步错误 := 同步并删除卡密心跳缓存_按卡返回错误(admin, 待删除卡密值)
+	成功卡密值 := make([]string, 0, len(待删除))
+	for _, item := range 待删除 {
+		if _, exists := 同步错误[item.卡密]; exists {
+			失败 = append(失败, item.原始值)
 			continue
 		}
 		err := db.Transaction(func(tx *gorm.DB) error {
-			query := tx.Table(tableName).Where("card = ?", card)
+			query := tx.Table(tableName).Where("card = ?", item.卡密)
 			if agentID > 0 {
 				query = query.Where("agent_id = ?", agentID)
 			}
@@ -931,18 +991,19 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 			if result.Error != nil || result.RowsAffected != 1 {
 				return fmt.Errorf("卡密不存在或无权删除")
 			}
-			return tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, card).Delete(&点卡设备会话{}).Error
+			return tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, item.卡密).Delete(&点卡设备会话{}).Error
 		})
 		if err != nil {
-			失败 = append(失败, raw)
+			失败 = append(失败, item.原始值)
 			continue
 		}
-		if cacheErr := 同步并删除卡密心跳缓存(admin, []string{card}); cacheErr != nil {
-			// 删除事务已经提交，缓存即使同步失败也已强制失效，不能把成功删除
-			// 误报成失败；运行日志保留数据库故障信息。
-			日志("log/启动记录.txt", "删除卡密后同步心跳缓存失败:"+cacheErr.Error())
-		}
-		成功 = append(成功, raw)
+		成功 = append(成功, item.原始值)
+		成功卡密值 = append(成功卡密值, item.卡密)
+	}
+	// 删除事务期间可能出现新的并发心跳，提交后对实际删除成功的卡密再统一
+	// 扫描并失效一次；此时业务已经成功，缓存错误只写日志，不能改写结果。
+	if cacheErr := 同步并删除卡密心跳缓存(admin, 成功卡密值); cacheErr != nil {
+		日志("log/启动记录.txt", "批量删除卡密后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	return 成功, 失败, nil
 }

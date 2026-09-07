@@ -129,6 +129,15 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	if err != nil || found {
 		return session, found, err
 	}
+	// 卡密行已经在登录事务中锁定；在创建新设备前统计该卡现有会话，
+	// 使并发登录不能绕过设备上限。重复登录已有 device_id 不受此限制。
+	var deviceCount int64
+	if err := tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, card).Count(&deviceCount).Error; err != nil {
+		return 点卡设备会话{}, false, fmt.Errorf("统计卡密设备数量失败")
+	}
+	if deviceCount >= 最大卡密设备数 {
+		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
+	}
 	for attempt := 0; attempt < 3; attempt++ {
 		now := time.Now()
 		session = 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
@@ -463,10 +472,10 @@ func 清理点卡设备会话() {
 	defer 点卡会话清理锁.Unlock()
 
 	var sessions []点卡设备会话
-	now := time.Now()
+	查询时间 := time.Now()
 	query := func(afterID uint64) error {
 		sessions = sessions[:0]
-		return db.Table("point_device_session").Where("authorized_until <= ? AND id > ?", now, afterID).Order("id ASC").Limit(500).Find(&sessions).Error
+		return db.Table("point_device_session").Where("authorized_until <= ? AND id > ?", 查询时间, afterID).Order("id ASC").Limit(500).Find(&sessions).Error
 	}
 	if err := query(点卡会话清理游标); err != nil {
 		日志("log/启动记录.txt", "清理点卡设备会话查询失败:"+err.Error())
@@ -484,7 +493,9 @@ func 清理点卡设备会话() {
 		点卡会话清理游标 = sessions[len(sessions)-1].ID
 	}
 	for _, session := range sessions {
-		if err := 结算过期点卡会话(session.ID, now); err != nil {
+		// 批次查询使用统一时间只是为了确定候选范围；每个会话处理前重新取时间，
+		// 避免前面的慢事务让后面的会话使用过期判断时间。
+		if err := 结算过期点卡会话(session.ID, time.Now()); err != nil {
 			日志("log/启动记录.txt", fmt.Sprintf("结算过期设备会话%d失败:%s", session.ID, err.Error()))
 		}
 	}

@@ -164,40 +164,40 @@ func user_del_soft(ctx *gin.Context) {
 		return
 	}
 	var deletedCardCount int64
-	err = db.Transaction(func(tx *gorm.DB) error {
-		var current 软件
-		// 软件行是删除、生成卡密和修改计费设置之间的同步点。
-		// 先锁软件再处理卡密，避免删除过程中并发生成出孤立卡密。
-		if err := tx.Table("software").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND name = ?", request.ID, admin).First(&current).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("软件不存在")
-			}
-			return fmt.Errorf("读取软件失败")
+	var current 软件
+	if query := db.Table("software").Where("id = ? AND name = ?", request.ID, admin).First(&current); query.Error != nil {
+		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
+			失败提示管理端(ctx, "软件不存在")
+			return
 		}
-		if err := tx.Table(tableName).Where("software = ?", request.ID).Count(&deletedCardCount).Error; err != nil {
-			return fmt.Errorf("统计关联卡密失败")
-		}
-		if err := tx.Table(tableName).Where("software = ?", request.ID).Delete(&卡密表样式{}).Error; err != nil {
-			return fmt.Errorf("删除关联卡密失败")
-		}
-		if err := tx.Table("point_device_session").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡设备会话{}).Error; err != nil {
-			return fmt.Errorf("删除关联设备会话失败")
-		}
-		if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡周期价格{}).Error; err != nil {
-			return fmt.Errorf("删除点卡计费方案失败")
-		}
-		// 流水是审计记录，软件删除后仍保留至 30 天清理任务执行，不影响其他软件查询。
-		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Delete(&软件{}); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("删除软件失败")
-		}
-		return nil
-	})
-	if err != nil {
-		失败提示管理端(ctx, err.Error())
+		失败提示管理端(ctx, "读取软件失败")
 		return
 	}
-	if cacheErr := 同步并删除软件心跳缓存(admin, request.ID); cacheErr != nil {
-		日志("log/启动记录.txt", "删除软件后同步心跳缓存失败:"+cacheErr.Error())
+	if err := db.Table(tableName).Where("software = ?", request.ID).Count(&deletedCardCount).Error; err != nil {
+		失败提示管理端(ctx, "统计关联卡密失败")
+		return
+	}
+	// 删除软件使用多条独立语句，不把所有关联数据放进一个长事务。先删除软件
+	// 行可阻止新的发卡或配置修改，后续语句再清理已经存在的关联数据。
+	if result := db.Table("software").Where("id = ? AND name = ?", request.ID, admin).Delete(&软件{}); result.Error != nil || result.RowsAffected != 1 {
+		失败提示管理端(ctx, "删除软件失败")
+		return
+	}
+	if err := db.Table(tableName).Where("software = ?", request.ID).Delete(&卡密表样式{}).Error; err != nil {
+		失败提示管理端(ctx, "删除关联卡密失败")
+		return
+	}
+	if err := db.Table("point_device_session").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡设备会话{}).Error; err != nil {
+		失败提示管理端(ctx, "删除关联设备会话失败")
+		return
+	}
+	if err := db.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡周期价格{}).Error; err != nil {
+		失败提示管理端(ctx, "删除点卡计费方案失败")
+		return
+	}
+	// 流水是审计记录，软件删除后仍保留至 30 天清理任务执行，不影响其他软件查询。
+	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+		日志("log/启动记录.txt", "删除软件后同步心跳缓存失败:"+err.Error())
 	}
 	清除软件计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount})

@@ -41,6 +41,7 @@
 
 - `software` 无需提交，服务端始终使用卡密记录中绑定的软件编号。
 - `device_id` 可选；省略时统一按空字符串处理。使用非空设备 ID 时应由客户端生成并持久化，不能使用 IP。
+- 每张卡最多保留 1000 台设备会话；达到上限后新设备登录会失败，已有设备不受影响。
 - `device_alias` 仅登录时可选，最长 64 个字符，不参与唯一性，也不要求不重复。
 - `period_minutes` 可选，含义是授权时长分钟数。有效值为 0 或 5 至 4320 分钟；省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
 
@@ -63,7 +64,7 @@
 
 服务端使用管理员、卡密和 `device_id` 查找设备会话，再使用 `needle` 校验该会话。`device_id` 可选，但必须与登录时保持一致：登录时省略则心跳也省略，登录时提交则心跳必须提交相同值。心跳不接收或更新 `device_alias`。响应返回新的 `authorized_until`、`heartbeat_interval_seconds`、`needle` 和本次请求 `nonce`。
 
-授权尚未到期的会话首次从数据库加载后，普通心跳只更新内存中的 `last_heartbeat_at`，不会扣点；脏心跳按配置的 10 至 60 分钟间隔分批写入数据库。授权到期后，服务端按软件自动离线时间计算：
+授权尚未到期的会话首次从数据库加载后，普通心跳只更新内存中的 `last_heartbeat_at`，不会扣点；脏心跳达到配置的 15 至 60 分钟间隔后，由下一次心跳写入数据库。授权到期后，服务端按软件自动离线时间计算：
 
 `推断截止 = last_heartbeat_at + online_grace_minutes × 1分钟`
 
@@ -79,7 +80,7 @@
 
 ## 5. 查询卡密和流水
 
-- `GET/POST /card/query`：查询当前卡密余额、状态、授权设备数 `authorized_device_count`、在线设备数 `online_device_count` 和设备列表 `devices`。查询只读，不扣点、不续费。
+- `GET/POST /card/query`：查询当前卡密余额、状态、授权设备数 `authorized_device_count`、在线设备数 `online_device_count` 和分页设备列表 `devices`。可提交 `page`、`page_size`（默认 50，最大 100），响应返回 `device_total`、`device_page`、`device_page_size`。查询只读，不扣点、不续费。
 - `GET/POST /card/point_ledger/query`：只查询当前卡密自己的流水，支持 `page`、`page_size`；可选 `software` 仅校验当前卡密归属。流水只保留最近 30 天，删除卡密后重用同名卡密时，保留期内的新旧流水可能混合显示。
 - `GET/POST /card/bulletin`：读取卡密所属软件公告。
 - `GET/POST /card/config`：读取或写入卡密配置，配置最多 200 个字符（写入受可选签名保护）。
@@ -103,6 +104,7 @@
 - `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认授权时长、心跳间隔、自动离线时间设置。
 - `/point_period_price/list|save|delete`：点卡计费方案管理。
 - `/add_new_card`、`/user_query_card`、`/modify_card`、`/delete_card`、`/冻卡s`：点卡管理。
+- 管理员和代理单次最多生成 500 张卡密；卡密文本解析、随机生成和重复预检查在事务外完成，最终写入遇到重复或其他错误直接结束，不自动重试。
 - `/point_card/adjust`：管理员手工补点或扣回，金额为有符号整数。
 - `/point_ledger/query`：管理员分页查看流水。
 - `/创建代理账号`、`/设置代理账号`、`/查询代理账号`、`/删除代理账号`、`/代理账号充值`：代理账号管理；创建接口使用 `agent_name`、`agent_password`，避免与管理员认证字段混淆。
@@ -110,6 +112,6 @@
 代理账号使用 `/agent` 前缀，只能管理所属管理员分配的卡密。代理生成卡密时，卡密写入和渠道余额扣减在同一事务中完成；管理员调整代理价格不会改变已生成卡密的余额。
 代理端也可调用 `/agent/point_ledger/query` 查看自己生成的卡密流水；该接口不会返回其他代理的记录。
 
-代理价格是扁平 JSON：键为软件 ID，值为每生成 1 点卡点数需要消耗的代理余额，例如 `{"1": 0.25}`。未出现在映射中的软件不授权代理发卡；价格必须大于 0 且最多两位小数，一批点卡的总费用最终按整数点向上取整。
+代理价格是扁平 JSON：键为软件 ID，值为每生成 1 点卡点数需要消耗的代理余额，例如 `{"1": 0.25}`。未出现在映射中的软件不授权代理发卡；价格必须大于 0 且最多两位小数，配置最多 100 个软件且不超过 4096 字节，一批点卡的总费用最终按整数点向上取整。
 
-管理端和代理端的 `/user_query_card` 支持服务端排序：`sort_by` 可用 `card`、`software`、`point_balance`、`card_state`、`authorized_device_count`、`create_time`、`use_time`，`sort_order` 和 `card_order` 使用 `asc` 或 `desc`。单独选择 `card` 时只按卡密排序；选择其他字段时该字段为第一排序、卡密为第二排序。备注不参与排序，分页和总数始终由数据库计算。
+管理端和代理端的 `/user_query_card` 支持服务端排序：`sort_by` 可用 `card`、`software`、`point_balance`、`card_state`、`create_time`、`use_time`，`sort_order` 和 `card_order` 使用 `asc` 或 `desc`。单独选择 `card` 时只按卡密排序；选择其他字段时该字段为第一排序、卡密为第二排序。备注不参与排序，分页和总数始终由数据库计算。

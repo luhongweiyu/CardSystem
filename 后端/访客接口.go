@@ -125,7 +125,8 @@ func visitor_查询卡密详情(ctx *gin.Context) {
 		失败提示访客(ctx, err.Error())
 		return
 	}
-	设备统计, err := 查询卡密设备统计(admin, card, row.Software, time.Now())
+	设备页, 设备每页 := 读取卡密设备分页参数(ctx)
+	设备统计, err := 查询卡密设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
@@ -135,7 +136,7 @@ func visitor_查询卡密详情(ctx *gin.Context) {
 		status = "冻结"
 	}
 	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n授权设备:%d\n在线设备:%d\n状态:%s", row.Card, row.Software, row.Point_balance, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
-	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "devices": 设备统计.Devices})
+	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices})
 }
 
 func visitor_查询点数流水(ctx *gin.Context) {
