@@ -183,6 +183,11 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
+	// 登录会读取并修改完整设备会话。先持久化此前仅存在于内存中的普通心跳，
+	// 再删除快照，让本次事务始终以数据库中的最新状态开始判断。
+	if err := 同步并删除点卡心跳缓存(admin, card, deviceID, ""); err != nil {
+		return 点卡登录结果{}, err
+	}
 	var result 点卡登录结果
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var cardRow 卡密表样式
@@ -283,6 +288,11 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
+	// 初次失效与事务之间可能有并发心跳重新建立缓存；事务提交后再清理一次，
+	// 保证后续请求一定从本次登录提交的数据库状态重新加载。
+	if cacheErr := 同步并删除点卡心跳缓存(admin, card, deviceID, ""); cacheErr != nil {
+		日志("log/启动记录.txt", "登录后同步心跳缓存失败:"+cacheErr.Error())
+	}
 	return result, nil
 }
 
@@ -302,6 +312,15 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	deviceID, valid = 规范化可选设备标识(deviceID)
 	if !valid {
 		return result, fmt.Errorf("device_id格式不正确")
+	}
+	now := time.Now()
+	if cached, handled, cacheErr := 尝试记录缓存心跳(admin, card, deviceID, needle, now); handled {
+		return cached, cacheErr
+	}
+	// 缓存存在但授权已经到期时，必须先把到期前最后一次真实心跳写入数据库，
+	// 再由原有事务判断是连续在线续费还是离线后重新计费。
+	if err := 同步并删除点卡心跳缓存(admin, card, deviceID, needle); err != nil {
+		return result, err
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
@@ -369,6 +388,15 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if err != nil {
 		return 点卡心跳结果{}, err
 	}
+	// 续费已经改变授权状态，按统一规则保持缓存为空；普通未到期心跳则缓存
+	// 已经提交的数据库结果，后续心跳无需再次读取或更新数据库。
+	if !result.Charge.Charged {
+		写入点卡心跳缓存(result.Session, result.HeartbeatSeconds)
+	} else if cacheErr := 同步并删除点卡心跳缓存(admin, card, deviceID, needle); cacheErr != nil {
+		// 续费事务已经提交，缓存同步错误不能把成功扣点伪装成失败；缓存本身
+		// 已经强制失效，记录错误后继续返回新的授权结果。
+		日志("log/启动记录.txt", "心跳续费后同步缓存失败:"+cacheErr.Error())
+	}
 	return result, nil
 }
 
@@ -394,7 +422,10 @@ func 退出点卡设备会话(admin string, card string, deviceID string, needle
 		}
 		normalizedNeedle = normalized
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	if err := 同步并删除点卡心跳缓存(admin, card, normalizedDeviceID, normalizedNeedle); err != nil {
+		return err
+	}
+	err := db.Transaction(func(tx *gorm.DB) error {
 		session, found, err := 查询点卡设备会话按设备(tx, admin, card, normalizedDeviceID, true)
 		if err != nil {
 			return err
@@ -411,6 +442,15 @@ func 退出点卡设备会话(admin string, card string, deviceID string, needle
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// 防止同步与删除事务之间的并发心跳重新建立缓存。数据库会话已经删除，
+	// 因此这里只需确保残留快照失效，更新零行也视为正常。
+	if cacheErr := 同步并删除点卡心跳缓存(admin, card, normalizedDeviceID, normalizedNeedle); cacheErr != nil {
+		日志("log/启动记录.txt", "退出后同步心跳缓存失败:"+cacheErr.Error())
+	}
+	return nil
 }
 
 // 清理点卡设备会话由后台每分钟调用。只有仍可能在线的过期会话才自动
@@ -467,6 +507,9 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
+		return err
+	}
+	if err := 同步并删除点卡心跳缓存(hint.Admin, hint.Card, hint.DeviceID, hint.Needle); err != nil {
 		return err
 	}
 	tableName, err := 卡密数据表名(hint.Admin)
@@ -527,5 +570,12 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		}
 		return tx.Table("point_device_session").Where("id = ?", session.ID).Updates(map[string]interface{}{"authorized_until": until, "renewal_period_seconds": period}).Error
 	})
+	if err == nil {
+		// 清理事务期间可能有并发请求重新建立缓存，提交后再次失效即可保证
+		// 删除或续费后的数据库状态成为下一次心跳的唯一来源。
+		if cacheErr := 同步并删除点卡心跳缓存(hint.Admin, hint.Card, hint.DeviceID, hint.Needle); cacheErr != nil {
+			return cacheErr
+		}
+	}
 	return err
 }

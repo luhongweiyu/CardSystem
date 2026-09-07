@@ -63,7 +63,7 @@
 
 服务端使用管理员、卡密和 `device_id` 查找设备会话，再使用 `needle` 校验该会话。`device_id` 可选，但必须与登录时保持一致：登录时省略则心跳也省略，登录时提交则心跳必须提交相同值。心跳不接收或更新 `device_alias`。响应返回新的 `authorized_until`、`heartbeat_interval_seconds`、`needle` 和本次请求 `nonce`。
 
-授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件自动离线时间计算：
+授权尚未到期的会话首次从数据库加载后，普通心跳只更新内存中的 `last_heartbeat_at`，不会扣点；脏心跳按配置的 10 至 60 分钟间隔分批写入数据库。授权到期后，服务端按软件自动离线时间计算：
 
 `推断截止 = last_heartbeat_at + online_grace_minutes × 1分钟`
 

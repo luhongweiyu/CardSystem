@@ -159,6 +159,10 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
 	var deletedCardCount int64
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var current 软件
@@ -192,6 +196,9 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	if cacheErr := 同步并删除软件心跳缓存(admin, request.ID); cacheErr != nil {
+		日志("log/启动记录.txt", "删除软件后同步心跳缓存失败:"+cacheErr.Error())
+	}
 	清除软件计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount})
 }
@@ -207,6 +214,12 @@ func user_modify_bulletin(ctx *gin.Context) {
 		return
 	}
 	admin := 管理员_用户名(ctx)
+	// 心跳间隔和自动离线时间都属于软件设置。修改前统一同步并失效该软件的
+	// 会话缓存，下一次心跳会读取修改后的完整配置。
+	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
 	// 软件默认授权时长是唯一可信来源。修改默认授权时长时必须已经存在对应的启用方案，
 	// 并在同一事务内同步 is_default 展示标记，避免出现两套互相矛盾的默认值。
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -269,6 +282,9 @@ func user_modify_bulletin(ctx *gin.Context) {
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
+	}
+	if cacheErr := 同步并删除软件心跳缓存(admin, request.ID); cacheErr != nil {
+		日志("log/启动记录.txt", "修改软件后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	清除软件计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})

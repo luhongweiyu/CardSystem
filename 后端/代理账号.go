@@ -334,6 +334,11 @@ func 代理生成卡密(account 代理账号记录, request 代理生成卡密�
 	if err != nil {
 		return 代理生成卡密结果{}, err
 	}
+	if err := 同步并删除卡密心跳缓存(account.Admin, result.Cards); err != nil {
+		// 发卡和渠道扣款已经在同一事务中提交，缓存同步失败不能改写业务结果；
+		// 对应缓存已经强制失效，下一次心跳会重新读取数据库。
+		日志("log/启动记录.txt", "渠道重建卡密后同步心跳缓存失败:"+err.Error())
+	}
 	代理账号日志(account.ID, fmt.Sprintf("生成卡密;扣除渠道余额:%d;软件:%d;点数:%d;数量:%d", result.Charge, request.Software, request.Points, len(result.Cards)))
 	return result, nil
 }

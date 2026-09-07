@@ -319,7 +319,7 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 		return result, err
 	}
 	var rows []点卡设备会话
-	query := db_point_device_session.Select("device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
+	query := db_point_device_session.Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
 		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
 		Order("authorized_until DESC, device_id ASC").Find(&rows)
 	if query.Error != nil {
@@ -328,6 +328,9 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
 	result.Devices = make([]卡密设备详情, 0, len(rows))
 	for _, row := range rows {
+		// 普通心跳可能尚未达到数据库同步期限；详情查询只合并内存快照，
+		// 不强制落库也能返回当前真实在线状态。
+		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
 		online := row.LastHeartbeatAt.After(在线截止)
 		if authorized {
@@ -663,6 +666,13 @@ func 生成并保存卡密(admin string, agentID int, softwareID int, points int
 	if err != nil {
 		return nil, err
 	}
+	// 同名卡重新生成前，旧会话已经在事务中删除；事务提交后清除可能残留的
+	// 内存心跳，防止旧 needle 继续命中新卡同名设备。
+	if err := 同步并删除卡密心跳缓存(strings.TrimSpace(admin), cards); err != nil {
+		// 卡密事务已经提交，不能把成功结果伪装成失败；缓存即使同步失败也已
+		// 强制失效，记录错误供运维排查即可。
+		日志("log/启动记录.txt", "重建卡密后同步心跳缓存失败:"+err.Error())
+	}
 	return cards, nil
 }
 
@@ -872,6 +882,22 @@ func 查询操作日志(ctx *gin.Context) {
 	ctx.String(http.StatusOK, read(time.Now())+"\n"+read(time.Now().AddDate(0, -1, 0)))
 }
 
+// 校验代理卡密归属在失效心跳缓存前确认代理确实拥有该卡，避免无权操作请求
+// 仅凭已知卡密名称干扰其他渠道的设备心跳。管理员操作无需额外查询。
+func 校验代理卡密归属(tableName string, agentID int, card string) error {
+	if agentID <= 0 {
+		return nil
+	}
+	var count int64
+	if err := db.Table(tableName).Where("card = ? AND agent_id = ?", card, agentID).Count(&count).Error; err != nil {
+		return fmt.Errorf("检查卡密权限失败")
+	}
+	if count != 1 {
+		return fmt.Errorf("卡密不存在或无权操作")
+	}
+	return nil
+}
+
 func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []string, error) {
 	if len(cards) == 0 || len(cards) > 1000 {
 		return nil, cards, fmt.Errorf("单次操作卡密数量必须在1至1000之间")
@@ -885,6 +911,14 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 	for _, raw := range cards {
 		card := strings.ToLower(strings.TrimSpace(raw))
 		if !卡密格式规则.MatchString(card) {
+			失败 = append(失败, raw)
+			continue
+		}
+		if err := 校验代理卡密归属(tableName, agentID, card); err != nil {
+			失败 = append(失败, raw)
+			continue
+		}
+		if err := 同步并删除卡密心跳缓存(admin, []string{card}); err != nil {
 			失败 = append(失败, raw)
 			continue
 		}
@@ -902,6 +936,11 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 		if err != nil {
 			失败 = append(失败, raw)
 			continue
+		}
+		if cacheErr := 同步并删除卡密心跳缓存(admin, []string{card}); cacheErr != nil {
+			// 删除事务已经提交，缓存即使同步失败也已强制失效，不能把成功删除
+			// 误报成失败；运行日志保留数据库故障信息。
+			日志("log/启动记录.txt", "删除卡密后同步心跳缓存失败:"+cacheErr.Error())
 		}
 		成功 = append(成功, raw)
 	}
@@ -972,6 +1011,14 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 	if len(updates) == 0 {
 		return fmt.Errorf("没有需要修改的内容")
 	}
+	if err := 校验代理卡密归属(tableName, agentID, card); err != nil {
+		return err
+	}
+	// 卡密状态或属性发生变化时统一失效设备心跳快照。即使只修改备注，下一次
+	// 心跳重新加载数据库也能保证所有管理操作采用同一条缓存处理路径。
+	if err := 同步并删除卡密心跳缓存(admin, []string{card}); err != nil {
+		return err
+	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card)
 		if agentID > 0 {
@@ -996,6 +1043,10 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 	})
 	if err != nil {
 		return err
+	}
+	if cacheErr := 同步并删除卡密心跳缓存(admin, []string{card}); cacheErr != nil {
+		// 卡密修改已经提交，第二次失效只用于清除事务期间并发建立的快照。
+		日志("log/启动记录.txt", "修改卡密后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	return nil
 }
