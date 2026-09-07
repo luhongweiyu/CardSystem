@@ -7,13 +7,26 @@ const (
 	点数事件_扣点 = "debit"
 	点数事件_补点 = "credit"
 
-	默认登录周期秒   = int64(3600)
-	默认心跳周期秒   = int64(300)
-	最大计费周期秒   = int64(365 * 24 * 60 * 60)
-	最大心跳周期秒   = int64(24 * 60 * 60)
-	最大单次点数    = int64(1000000000)
-	最大卡密配置字符数 = 200
+	默认登录周期秒    = int64(3600)
+	默认心跳周期秒    = int64(300)
+	最小计费周期秒    = int64(5 * 60)
+	默认自动离线时间分钟 = int64(60)
+	最小自动离线时间分钟 = int64(5)
+	最大计费周期秒    = int64(3 * 24 * 60 * 60)
+	最大心跳周期秒    = int64(24 * 60 * 60)
+	最大自动离线时间分钟 = int64(3 * 24 * 60)
+	最大单次点数     = int64(1000000000)
+	最大卡密配置字符数  = 200
 )
+
+// 授权时长统一按整分钟保存和传输。allowZero=true 供登录等“省略时长”参数使用，
+// 其余场景必须落在 5 分钟至 3 天范围内，避免管理端显示分钟时产生精度丢失。
+func 授权时长秒有效(periodSeconds int64, allowZero bool) bool {
+	if periodSeconds == 0 {
+		return allowZero
+	}
+	return periodSeconds >= 最小计费周期秒 && periodSeconds <= 最大计费周期秒 && periodSeconds%60 == 0
+}
 
 // 点卡计费方案定义一个软件允许客户端请求的授权时长及其点数价格。
 // 同一管理员、软件、授权时长只能有一条记录；is_default 仅是与软件默认授权时长同步的
@@ -34,16 +47,17 @@ type 点卡周期价格 struct {
 // change 为有符号值，扣点为负、补点为正；balance_after 是变动完成后的余额。
 // 设备 ID 和别名快照统一写入 remark，避免流水表承担设备状态职责。
 type 点数流水 struct {
-	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement;index:idx_ledger_admin_id,priority:2;index:idx_ledger_card_id,priority:3;index:idx_ledger_software_id,priority:3" json:"id"`
-	Admin         string    `gorm:"column:admin;size:32;not null;index:idx_ledger_admin_id,priority:1;index:idx_ledger_card_id,priority:1;index:idx_ledger_software_id,priority:1" json:"admin"`
-	Card          string    `gorm:"column:card;size:63;not null;index:idx_ledger_card_id,priority:2" json:"card"`
-	Software      int       `gorm:"column:software;not null;index:idx_ledger_software_id,priority:2" json:"software"`
-	EventType     string    `gorm:"column:event_type;size:16;not null" json:"event_type"`
-	Change        int64     `gorm:"column:change;not null" json:"change"`
-	BalanceBefore int64     `gorm:"column:balance_before;not null" json:"balance_before"`
-	BalanceAfter  int64     `gorm:"column:balance_after;not null" json:"balance_after"`
-	Remark        string    `gorm:"column:remark;type:text" json:"remark"`
-	CreatedAt     time.Time `gorm:"column:created_at;not null" json:"created_at"`
+	ID            uint64 `gorm:"column:id;primaryKey;autoIncrement;index:idx_ledger_admin_id,priority:2;index:idx_ledger_card_id,priority:3;index:idx_ledger_software_id,priority:3" json:"id"`
+	Admin         string `gorm:"column:admin;size:32;not null;index:idx_ledger_admin_id,priority:1;index:idx_ledger_card_id,priority:1;index:idx_ledger_software_id,priority:1" json:"admin"`
+	Card          string `gorm:"column:card;size:63;not null;index:idx_ledger_card_id,priority:2" json:"card"`
+	Software      int    `gorm:"column:software;not null;index:idx_ledger_software_id,priority:2" json:"software"`
+	EventType     string `gorm:"column:event_type;size:16;not null" json:"event_type"`
+	Change        int64  `gorm:"column:change;not null" json:"change"`
+	BalanceBefore int64  `gorm:"column:balance_before;not null" json:"balance_before"`
+	BalanceAfter  int64  `gorm:"column:balance_after;not null" json:"balance_after"`
+	Remark        string `gorm:"column:remark;type:text" json:"remark"`
+	// 清理任务按创建时间删除过期流水，单独索引避免每天扫描整张审计表。
+	CreatedAt time.Time `gorm:"column:created_at;not null;index:idx_ledger_created_at" json:"created_at"`
 }
 
 // 点卡设备会话保存一张卡在一台设备上的当前授权时长。

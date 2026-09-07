@@ -21,6 +21,7 @@ type 软件请求 struct {
 	Bulletin                 string `json:"bulletin"`
 	DefaultPeriodSeconds     int64  `json:"default_period_seconds"`
 	HeartbeatIntervalSeconds int64  `json:"heartbeat_interval_seconds"`
+	OnlineGraceMinutes       *int64 `json:"online_grace_minutes"`
 }
 
 // 软件列表项是管理端和代理账号共用的轻量返回结构。
@@ -30,6 +31,7 @@ type 软件列表项 struct {
 	Bulletin                 string    `json:"Bulletin"`
 	DefaultPeriodSeconds     int64     `json:"default_period_seconds"`
 	HeartbeatIntervalSeconds int64     `json:"heartbeat_interval_seconds"`
+	OnlineGraceMinutes       int64     `json:"online_grace_minutes"`
 	CreatedAt                time.Time `json:"created_at"`
 }
 
@@ -45,7 +47,8 @@ func 读取软件列表(admin string) ([]软件列表项, error) {
 	result := make([]软件列表项, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, 软件列表项{ID: row.ID, Software: row.Software, Bulletin: row.Bulletin,
-			DefaultPeriodSeconds: row.DefaultPeriodSeconds, HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds, CreatedAt: row.CreatedAt})
+			DefaultPeriodSeconds: row.DefaultPeriodSeconds, HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
+			OnlineGraceMinutes: row.OnlineGraceMinutes, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
 }
@@ -78,11 +81,20 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	if request.HeartbeatIntervalSeconds == 0 {
 		request.HeartbeatIntervalSeconds = 默认心跳周期秒
 	}
-	if request.DefaultPeriodSeconds <= 0 || request.DefaultPeriodSeconds > 最大计费周期秒 {
-		return request, fmt.Errorf("默认授权时长必须在1至%d秒之间", 最大计费周期秒)
+	if request.OnlineGraceMinutes == nil {
+		默认值 := 默认自动离线时间分钟
+		request.OnlineGraceMinutes = &默认值
+	} else if *request.OnlineGraceMinutes == 0 {
+		*request.OnlineGraceMinutes = 默认自动离线时间分钟
+	}
+	if !授权时长秒有效(request.DefaultPeriodSeconds, false) {
+		return request, fmt.Errorf("默认授权时长必须在%d至%d秒之间且为整分钟", 最小计费周期秒, 最大计费周期秒)
 	}
 	if request.HeartbeatIntervalSeconds <= 0 || request.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return request, fmt.Errorf("心跳间隔必须在1至%d秒之间", 最大心跳周期秒)
+	}
+	if *request.OnlineGraceMinutes != 0 && (*request.OnlineGraceMinutes < 最小自动离线时间分钟 || *request.OnlineGraceMinutes > 最大自动离线时间分钟) {
+		return request, fmt.Errorf("自动离线时间必须为0或%d至%d分钟", 最小自动离线时间分钟, 最大自动离线时间分钟)
 	}
 	return request, nil
 }
@@ -112,7 +124,7 @@ func user_add_soft(ctx *gin.Context) {
 	err = db.Transaction(func(tx *gorm.DB) error {
 		created = 软件{Name: admin, Software: request.Software, Bulletin: request.Bulletin,
 			CreatedAt: time.Now(), DefaultPeriodSeconds: request.DefaultPeriodSeconds,
-			HeartbeatIntervalSeconds: request.HeartbeatIntervalSeconds}
+			HeartbeatIntervalSeconds: request.HeartbeatIntervalSeconds, OnlineGraceMinutes: *request.OnlineGraceMinutes}
 		if err := tx.Table("software").Create(&created).Error; err != nil {
 			return fmt.Errorf("创建软件失败")
 		}
@@ -128,7 +140,7 @@ func user_add_soft(ctx *gin.Context) {
 		return
 	}
 	清除软件计费配置缓存(admin, created.ID)
-	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodSeconds: created.DefaultPeriodSeconds, HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, CreatedAt: created.CreatedAt}})
+	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodSeconds: created.DefaultPeriodSeconds, HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, CreatedAt: created.CreatedAt}})
 }
 
 func user_del_soft(ctx *gin.Context) {
@@ -168,7 +180,7 @@ func user_del_soft(ctx *gin.Context) {
 		if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡周期价格{}).Error; err != nil {
 			return fmt.Errorf("删除点卡计费方案失败")
 		}
-		// 流水是审计历史，即使软件被删除也保留，不影响其他软件查询。
+		// 流水是审计记录，软件删除后仍保留至 30 天清理任务执行，不影响其他软件查询。
 		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Delete(&软件{}); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("删除软件失败")
 		}
@@ -209,6 +221,13 @@ func user_modify_bulletin(ctx *gin.Context) {
 		if request.HeartbeatIntervalSeconds == 0 {
 			request.HeartbeatIntervalSeconds = current.HeartbeatIntervalSeconds
 		}
+		if request.OnlineGraceMinutes == nil {
+			当前值 := current.OnlineGraceMinutes
+			if 当前值 == 0 {
+				当前值 = 默认自动离线时间分钟
+			}
+			request.OnlineGraceMinutes = &当前值
+		}
 		var parseErr error
 		request, parseErr = 解析软件设置(request, true)
 		if parseErr != nil {
@@ -231,7 +250,7 @@ func user_modify_bulletin(ctx *gin.Context) {
 				return fmt.Errorf("请先添加并启用%d秒的点卡计费方案", request.DefaultPeriodSeconds)
 			}
 		}
-		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds}
+		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds, "online_grace_minutes": *request.OnlineGraceMinutes}
 		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Updates(updates); result.Error != nil {
 			return fmt.Errorf("修改软件失败")
 		}

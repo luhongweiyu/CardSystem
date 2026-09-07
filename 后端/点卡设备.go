@@ -67,13 +67,13 @@ func 查询点卡设备会话按设备(tx *gorm.DB, admin string, card string, d
 	return session, true, nil
 }
 
-// 会话是否仍可能在线：只有在“最后心跳 + 两个心跳间隔”尚未过去，且
+// 会话是否仍可能在线：只有在“最后心跳 + 自动离线时间”尚未过去，且
 // 这个推断窗口确实跨过旧到期时间时，才认为设备可能只是暂时漏报心跳。
 //
 // 同时检查 now 是为了避免服务停机很久后，把多年以前的会话误判为仍在线，
 // 从而在设备重新启动时从旧到期点连续补扣一大段时间。后台清理、登录和心跳
 // 都必须使用同一个判断函数，保证三条路径的计费起点一致。
-func 会话仍可能在线(session 点卡设备会话, heartbeatSeconds int64, now time.Time) bool {
+func 会话仍可能在线(session 点卡设备会话, graceMinutes int64, now time.Time) bool {
 	if session.AuthorizedUntil.IsZero() || session.LastHeartbeatAt.IsZero() {
 		return false
 	}
@@ -82,21 +82,21 @@ func 会话仍可能在线(session 点卡设备会话, heartbeatSeconds int64, n
 	if session.AuthorizedUntil.After(now) {
 		return false
 	}
-	if heartbeatSeconds <= 0 {
-		heartbeatSeconds = 默认心跳周期秒
+	if graceMinutes <= 0 {
+		graceMinutes = 默认自动离线时间分钟
 	}
-	推断截止 := session.LastHeartbeatAt.Add(time.Duration(heartbeatSeconds*2) * time.Second)
+	推断截止 := session.LastHeartbeatAt.Add(time.Duration(graceMinutes) * time.Minute)
 	推断窗口跨过到期 := 推断截止.After(session.AuthorizedUntil) && !now.After(推断截止)
 	return 推断窗口跨过到期
 }
 
 // 计算续费起点同时供登录、心跳和后台清理使用。返回旧到期点表示连续在线，
 // 返回当前时间表示已停止后重新启动。
-func 计算续费起点(session 点卡设备会话, heartbeatSeconds int64, now time.Time) time.Time {
+func 计算续费起点(session 点卡设备会话, graceMinutes int64, now time.Time) time.Time {
 	if session.AuthorizedUntil.IsZero() || !session.AuthorizedUntil.Before(now) {
 		return now
 	}
-	if 会话仍可能在线(session, heartbeatSeconds, now) {
+	if 会话仍可能在线(session, graceMinutes, now) {
 		return session.AuthorizedUntil
 	}
 	return now
@@ -153,7 +153,7 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 	if err != nil {
 		return 点卡周期价格{}, settings, 0, err
 	}
-	if requested == 0 && existing != nil && existing.RenewalPeriodSeconds > 0 && existing.RenewalPeriodSeconds <= 最大计费周期秒 {
+	if requested == 0 && existing != nil && 授权时长秒有效(existing.RenewalPeriodSeconds, false) {
 		price, _, priceErr := 查询周期价格(tx, admin, softwareID, existing.RenewalPeriodSeconds)
 		if priceErr == nil {
 			return price, settings, price.PeriodSeconds, nil
@@ -176,8 +176,8 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
-	if periodSeconds < 0 || periodSeconds > 最大计费周期秒 {
-		return 点卡登录结果{}, fmt.Errorf("授权时长必须在1至%d秒之间，0表示使用默认授权时长", 最大计费周期秒)
+	if !授权时长秒有效(periodSeconds, true) {
+		return 点卡登录结果{}, fmt.Errorf("授权时长必须为0或%d至%d秒且为整分钟，0表示使用默认授权时长", 最小计费周期秒, 最大计费周期秒)
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {
@@ -231,7 +231,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			// 只更新下一次续费时长，当前授权截止时间不变。
 			if periodSeconds == 0 {
 				period = session.RenewalPeriodSeconds
-				if period <= 0 || period > 最大计费周期秒 {
+				if !授权时长秒有效(period, false) {
 					period = settings.DefaultPeriodSeconds
 				}
 			}
@@ -244,7 +244,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 
 		start := now
 		if found {
-			start = 计算续费起点(session, settings.HeartbeatIntervalSeconds, now)
+			start = 计算续费起点(session, settings.OnlineGraceMinutes, now)
 		}
 		// 过期会话必须使用可扣费的实际方案；活跃会话才允许使用停用时长对应的
 		// 临时占位价格。这样不会在过期时绕过管理员的停用设置。
@@ -336,7 +336,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 			return err
 		}
 		period := session.RenewalPeriodSeconds
-		if period <= 0 || period > 最大计费周期秒 {
+		if !授权时长秒有效(period, false) {
 			period = settings.DefaultPeriodSeconds
 		}
 		charge := 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: session.AuthorizedUntil}
@@ -353,7 +353,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 				// 和登录保持一致，余额不足时保留会话，补点后可继续重试。
 				return err
 			}
-			until := 计算续费起点(session, settings.HeartbeatIntervalSeconds, now).Add(time.Duration(period) * time.Second)
+			until := 计算续费起点(session, settings.OnlineGraceMinutes, now).Add(time.Duration(period) * time.Second)
 			if !until.After(now) {
 				until = now.Add(time.Duration(period) * time.Second)
 			}
@@ -502,11 +502,11 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 			// 心跳或登录在配置恢复后继续处理。
 			return err
 		}
-		if !会话仍可能在线(session, settings.HeartbeatIntervalSeconds, now) {
+		if !会话仍可能在线(session, settings.OnlineGraceMinutes, now) {
 			return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
 		}
 		period := session.RenewalPeriodSeconds
-		if period <= 0 || period > 最大计费周期秒 {
+		if !授权时长秒有效(period, false) {
 			period = settings.DefaultPeriodSeconds
 		}
 		price, _, err := 查询周期价格(tx, session.Admin, session.Software, period)

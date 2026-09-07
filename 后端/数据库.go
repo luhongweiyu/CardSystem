@@ -47,6 +47,9 @@ type software struct {
 	Bulletin                 string    `gorm:"column:bulletin;type:text" json:"Bulletin"`
 	DefaultPeriodSeconds     int64     `gorm:"column:default_period_seconds;not null;default:3600" json:"default_period_seconds"`
 	HeartbeatIntervalSeconds int64     `gorm:"column:heartbeat_interval_seconds;not null;default:300" json:"heartbeat_interval_seconds"`
+	// OnlineGraceMinutes 是授权到期后仍允许按最近心跳推断在线的时间窗口，单位为分钟。
+	// 为 0 的历史数据在读取时按默认 60 分钟处理；新软件创建时会直接写入默认值。
+	OnlineGraceMinutes int64 `gorm:"column:online_grace_minutes;not null;default:60" json:"online_grace_minutes"`
 }
 
 // 软件是 software 的中文别名，业务代码使用中文类型名，数据库表名保持稳定。

@@ -67,6 +67,7 @@ func main() {
 	}
 	启动整点任务()
 	启动点卡会话清理()
+	启动点数流水清理()
 	fmt.Println("启动网络服务:")
 	if err := 启动网络(); err != nil {
 		log.Fatal(err)

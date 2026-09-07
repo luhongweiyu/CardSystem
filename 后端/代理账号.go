@@ -260,7 +260,7 @@ func 代理账号_查询点数流水(ctx *gin.Context) {
 	page, _ := strconv.Atoi(input(ctx, "page"))
 	pageSize, _ := strconv.Atoi(input(ctx, "page_size"))
 	page, pageSize = 规范化流水分页(page, pageSize)
-	// 不按当前软件过滤，确保卡密删除后重用时，新旧代际流水仍可完整查看；
+	// 不按当前软件过滤，确保卡密删除后重用时，保留期内的新旧代际流水仍可查看；
 	// 当前卡密归属校验已经保证代理不会看到其他卡密的记录。
 	rows, total, err := 查询点数流水记录(db_point_ledger.Where("admin = ? AND card = ?", account.Admin, card), page, pageSize)
 	if err != nil {
@@ -567,7 +567,7 @@ func 查询代理账号(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"data": result})
 }
 
-// 删除代理账号只删除代理登录主体，已经生成的点卡和流水继续归管理员所有。
+// 删除代理账号只删除代理登录主体，已经生成的点卡和保留期内的流水继续归管理员所有。
 // 删除完成后撤销该代理的全部管理端令牌，避免旧页面继续操作。
 func 删除代理账号(ctx *gin.Context) {
 	var request struct {

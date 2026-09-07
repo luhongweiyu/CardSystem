@@ -543,7 +543,7 @@ const 批量修改状态 = function (state) {
     .catch(显示错误)
 }
 const 删除单张 = function (row) {
-  ElMessageBox.confirm(`确定删除卡密 ${row.card}？删除后同名卡密可以再次生成，历史流水会保留。`, '确认删除', {
+  ElMessageBox.confirm(`确定删除卡密 ${row.card}？删除后同名卡密可以再次生成，流水仅保留最近30天。`, '确认删除', {
     type: 'warning'
   })
     .then(() => post('/delete_card', { cards: [row.card] }))

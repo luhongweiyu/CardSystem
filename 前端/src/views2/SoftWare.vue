@@ -17,6 +17,9 @@
       <el-table-column label="心跳间隔" width="130">
         <template #default="scope">{{ 周期文本(scope.row.heartbeat_interval_seconds) }}</template>
       </el-table-column>
+      <el-table-column label="自动离线时间" width="140">
+        <template #default="scope">{{ scope.row.online_grace_minutes || 60 }} 分钟</template>
+      </el-table-column>
       <el-table-column prop="Bulletin" label="公告" min-width="220" show-overflow-tooltip />
       <el-table-column v-if="!是代理账号" label="操作" width="230" fixed="right">
         <template #default="scope">
@@ -56,11 +59,11 @@
         <el-form-item label="软件名称" required>
           <el-input v-model="软件框.software" maxlength="64" />
         </el-form-item>
-        <el-form-item label="默认授权时长（秒）" required>
+        <el-form-item label="默认授权时长（分钟）" required>
           <el-input-number
-            v-model="软件框.default_period_seconds"
-            :min="1"
-            :max="31536000"
+            v-model="软件框.default_period_minutes"
+            :min="5"
+            :max="4320"
             :precision="0"
             controls-position="right"
           />
@@ -73,6 +76,16 @@
             :precision="0"
             controls-position="right"
           />
+        </el-form-item>
+        <el-form-item label="自动离线时间（分钟）" required>
+          <el-input-number
+            v-model="软件框.online_grace_minutes"
+            :min="0"
+            :max="4320"
+            :precision="0"
+            controls-position="right"
+          />
+          <div class="字段说明">0 表示默认 60 分钟后自动离线</div>
         </el-form-item>
         <el-form-item label="公告">
           <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
@@ -94,7 +107,9 @@
         <el-table-column label="授权时长" width="150">
           <template #default="scope">{{ 周期文本(scope.row.period_seconds) }}</template>
         </el-table-column>
-        <el-table-column prop="period_seconds" label="秒数" width="110" />
+        <el-table-column label="分钟" width="90">
+          <template #default="scope">{{ 秒转分钟(scope.row.period_seconds) }}</template>
+        </el-table-column>
         <el-table-column prop="cost" label="扣点" width="90" />
         <el-table-column label="状态" width="100">
           <template #default="scope">
@@ -123,11 +138,11 @@
       destroy-on-close
     >
       <el-form label-width="120px">
-        <el-form-item label="授权时长（秒）">
+        <el-form-item label="授权时长（分钟）">
           <el-input-number
-            v-model="价格编辑框.period_seconds"
-            :min="1"
-            :max="31536000"
+            v-model="价格编辑框.period_minutes"
+            :min="5"
+            :max="4320"
             :precision="0"
             controls-position="right"
             :disabled="!!价格编辑框.id"
@@ -228,15 +243,16 @@ const 软件框 = reactive({
   id: 0,
   software: '',
   bulletin: '',
-  default_period_seconds: 3600,
-  heartbeat_interval_seconds: 300
+  default_period_minutes: 60,
+  heartbeat_interval_seconds: 300,
+  online_grace_minutes: 60
 })
 const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', heartbeatSeconds: 300, rows: [] })
 const 价格编辑框 = reactive({
   显示: false,
   id: 0,
   software: 0,
-  period_seconds: 3600,
+  period_minutes: 60,
   cost: 1,
   enabled: true,
   is_default: false
@@ -253,6 +269,9 @@ const 周期文本 = function (seconds) {
   if (value % 3600 === 0) return `${value / 3600} 小时`
   if (value % 60 === 0) return `${value / 60} 分钟`
   return `${value} 秒`
+}
+const 秒转分钟 = function (seconds) {
+  return Math.floor(Number(seconds || 0) / 60)
 }
 
 const 查询软件 = function () {
@@ -274,8 +293,9 @@ const 打开软件编辑 = function () {
     id: 0,
     software: '',
     bulletin: '',
-    default_period_seconds: 3600,
-    heartbeat_interval_seconds: 300
+    default_period_minutes: 60,
+    heartbeat_interval_seconds: 300,
+    online_grace_minutes: 60
   })
 }
 const 编辑软件 = function (row) {
@@ -284,8 +304,9 @@ const 编辑软件 = function (row) {
     id: row.ID,
     software: row.Software,
     bulletin: row.Bulletin || '',
-    default_period_seconds: Number(row.default_period_seconds || 3600),
-    heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300)
+    default_period_minutes: 秒转分钟(row.default_period_seconds || 3600),
+    heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300),
+    online_grace_minutes: Number(row.online_grace_minutes || 60)
   })
 }
 const 保存软件 = function () {
@@ -294,11 +315,19 @@ const 保存软件 = function () {
     return
   }
   if (
-    !Number.isInteger(软件框.default_period_seconds) ||
-    软件框.default_period_seconds < 1 ||
-    软件框.default_period_seconds > 31536000
+    !Number.isInteger(软件框.default_period_minutes) ||
+    软件框.default_period_minutes < 5 ||
+    软件框.default_period_minutes > 4320
   ) {
-    ElMessage.warning('默认授权时长必须在1至31536000秒之间')
+    ElMessage.warning('默认授权时长必须在5至4320分钟之间')
+    return
+  }
+  if (
+    !Number.isInteger(软件框.online_grace_minutes) ||
+    (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 5) ||
+    软件框.online_grace_minutes > 4320
+  ) {
+    ElMessage.warning('自动离线时间必须为0或5至4320分钟，0表示默认60分钟')
     return
   }
   if (
@@ -315,8 +344,9 @@ const 保存软件 = function () {
     id: 软件框.id,
     software: 软件框.software,
     bulletin: 软件框.bulletin,
-    default_period_seconds: 软件框.default_period_seconds,
-    heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds
+    default_period_seconds: 软件框.default_period_minutes * 60,
+    heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds,
+    online_grace_minutes: 软件框.online_grace_minutes
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存软件失败')
@@ -330,7 +360,7 @@ const 保存软件 = function () {
     })
 }
 const 删除软件 = function (row) {
-  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡和设备会话，流水会保留。继续？`, '确认删除', {
+  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡和设备会话，流水仅保留最近30天。继续？`, '确认删除', {
     type: 'warning'
   })
     .then(() => post('/user_del_soft', { id: row.ID }))
@@ -367,7 +397,7 @@ const 新增价格 = function () {
     显示: true,
     id: 0,
     software: 价格框.software,
-    period_seconds: 3600,
+    period_minutes: 60,
     cost: 1,
     enabled: true,
     is_default: !价格框.rows.length
@@ -378,16 +408,20 @@ const 编辑价格 = function (row) {
     显示: true,
     id: row.id,
     software: row.software,
-    period_seconds: Number(row.period_seconds),
+    period_minutes: 秒转分钟(row.period_seconds),
     cost: Number(row.cost),
     enabled: Boolean(row.enabled),
     is_default: Boolean(row.is_default)
   })
 }
 const 保存价格 = function () {
+  if (!Number.isInteger(价格编辑框.period_minutes) || 价格编辑框.period_minutes < 5 || 价格编辑框.period_minutes > 4320) {
+    ElMessage.warning('授权时长必须在5至4320分钟之间')
+    return
+  }
   post('/point_period_price/save', {
     software: 价格编辑框.software,
-    period_seconds: 价格编辑框.period_seconds,
+    period_seconds: 价格编辑框.period_minutes * 60,
     cost: 价格编辑框.cost,
     enabled: 价格编辑框.enabled,
     is_default: 价格编辑框.is_default
@@ -499,7 +533,7 @@ const 代理充值 = function () {
     .catch(显示错误)
 }
 const 删除代理 = function (row) {
-  ElMessageBox.confirm(`确定删除渠道合伙人“${row.name}”？已生成的点卡和流水会保留。`, '确认删除', {
+  ElMessageBox.confirm(`确定删除渠道合伙人“${row.name}”？已生成的点卡和流水仅保留最近30天。`, '确认删除', {
     type: 'warning'
   })
     .then(() => post('/删除代理账号', { id: row.id }))
@@ -551,6 +585,11 @@ h3 {
   margin-bottom: 12px;
 }
 .价格说明 {
+  margin-left: 10px;
+  color: #9099a8;
+  font-size: 12px;
+}
+.字段说明 {
   margin-left: 10px;
   color: #9099a8;
   font-size: 12px;

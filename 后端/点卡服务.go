@@ -44,8 +44,8 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 	if params.Software <= 0 {
 		return fmt.Errorf("软件参数错误")
 	}
-	if params.PeriodSeconds < 0 || params.PeriodSeconds > 最大计费周期秒 {
-		return fmt.Errorf("授权时长必须在1至%d秒之间，0表示使用默认授权时长", 最大计费周期秒)
+	if !授权时长秒有效(params.PeriodSeconds, true) {
+		return fmt.Errorf("授权时长必须为0或%d至%d秒且为整分钟，0表示使用默认授权时长", 最小计费周期秒, 最大计费周期秒)
 	}
 	if params.DeviceID != "" {
 		deviceID, valid := 规范化设备标识(params.DeviceID)
@@ -87,7 +87,7 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 	if period == 0 {
 		period = settings.DefaultPeriodSeconds
 	}
-	if period <= 0 || period > 最大计费周期秒 {
+	if !授权时长秒有效(period, false) {
 		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不正确")
 	}
 	price, exists := config.价格[period]

@@ -61,11 +61,19 @@ func 读取软件计费配置(tx *gorm.DB, admin string, softwareID int) (点卡
 	if query.Error != nil {
 		return 点卡配置缓存条目{}, fmt.Errorf("读取软件设置失败")
 	}
-	if settings.DefaultPeriodSeconds <= 0 || settings.DefaultPeriodSeconds > 最大计费周期秒 {
+	if !授权时长秒有效(settings.DefaultPeriodSeconds, false) {
 		return 点卡配置缓存条目{}, fmt.Errorf("软件默认授权时长配置不正确")
 	}
 	if settings.HeartbeatIntervalSeconds <= 0 || settings.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return 点卡配置缓存条目{}, fmt.Errorf("软件心跳间隔配置不正确")
+	}
+	// 兼容新增字段前已经存在的软件记录：数据库中的 0 按默认 60 分钟解释，
+	// 不在只读配置加载期间回写，避免缓存读取承担数据迁移职责。
+	if settings.OnlineGraceMinutes == 0 {
+		settings.OnlineGraceMinutes = 默认自动离线时间分钟
+	}
+	if settings.OnlineGraceMinutes < 最小自动离线时间分钟 || settings.OnlineGraceMinutes > 最大自动离线时间分钟 {
+		return 点卡配置缓存条目{}, fmt.Errorf("软件自动离线时间配置不正确")
 	}
 
 	var prices []点卡周期价格

@@ -10,7 +10,7 @@
 
 `GET/POST /card/period_prices`（只读）
 
-参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用点卡计费方案、默认授权时长和心跳间隔：
+参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用点卡计费方案、默认授权时长、心跳间隔和自动离线时间。计费周期有效范围为 5 分钟至 3 天，管理端按分钟设置，接口字段仍以秒表示：
 
 ```json
 {
@@ -18,7 +18,8 @@
   "data": [{"period_seconds": 3600, "cost": 5, "is_default": true}],
   "software": 1,
   "default_period_seconds": 3600,
-  "heartbeat_interval_seconds": 300
+  "heartbeat_interval_seconds": 300,
+  "online_grace_minutes": 60
 }
 ```
 
@@ -41,7 +42,7 @@
 - `software` 无需提交，服务端始终使用卡密记录中绑定的软件编号。
 - `device_id` 可选；省略时统一按空字符串处理。使用非空设备 ID 时应由客户端生成并持久化，不能使用 IP。
 - `device_alias` 仅登录时可选，最长 64 个字符，不参与唯一性，也不要求不重复。
-- `period_seconds` 可选，含义是授权时长秒数。省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
+- `period_seconds` 可选，含义是授权时长秒数（管理端按分钟配置）。有效值为 0 或 300 至 259200 秒；省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
 
 成功响应业务字段：`needle`、`authorized_until`、`heartbeat_interval_seconds`；顶层还会返回本次请求的 `nonce`。
 
@@ -62,13 +63,13 @@
 
 服务端使用管理员、卡密和 `device_id` 查找设备会话，再使用 `needle` 校验该会话。`device_id` 可选，但必须与登录时保持一致：登录时省略则心跳也省略，登录时提交则心跳必须提交相同值。心跳不接收或更新 `device_alias`。响应返回新的 `authorized_until`、`heartbeat_interval_seconds`、`needle` 和本次请求 `nonce`。
 
-授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件心跳间隔计算：
+授权尚未到期时，心跳只更新 `last_heartbeat_at`，不会扣点。授权到期后，服务端按软件自动离线时间计算：
 
-`推断截止 = last_heartbeat_at + heartbeat_interval_seconds × 2`
+`推断截止 = last_heartbeat_at + online_grace_minutes × 1分钟`
 
 如果推断截止晚于旧 `authorized_until` 且当前时间尚未超过推断截止，视为设备可能仍在线，从旧截止时间续一个授权时长并扣一次点。超过推断窗口后，实际收到登录或心跳就从当前时间开始新的授权时长；后台清理在没有新请求时会删除该离线会话。三条路径采用同一续费起点规则。
 
-授权时长按软件已启用的计费方案执行，不强制要求达到心跳间隔的 2 倍；心跳间隔最大为 86400 秒。在线判断仍使用两个心跳间隔的推测窗口。
+授权时长按软件已启用的计费方案执行；心跳间隔最大为 86400 秒。自动离线时间设置为 0 时按 60 分钟处理。
 
 ## 4. 退出
 
@@ -79,7 +80,7 @@
 ## 5. 查询卡密和流水
 
 - `GET/POST /card/query`：查询当前卡密余额、状态、授权设备数 `authorized_device_count`、在线设备数 `online_device_count` 和设备列表 `devices`。查询只读，不扣点、不续费。
-- `GET/POST /card/point_ledger/query`：只查询当前卡密自己的流水，支持 `page`、`page_size`；可选 `software` 仅校验当前卡密归属，不会截断同名卡密的历史流水。
+- `GET/POST /card/point_ledger/query`：只查询当前卡密自己的流水，支持 `page`、`page_size`；可选 `software` 仅校验当前卡密归属。流水只保留最近 30 天，删除卡密后重用同名卡密时，保留期内的新旧流水可能混合显示。
 - `GET/POST /card/bulletin`：读取卡密所属软件公告。
 - `GET/POST /card/config`：读取或写入卡密配置，配置最多 200 个字符（写入受可选签名保护）。
 
@@ -93,13 +94,13 @@
 | `balance_before` / `balance_after` | 变动前后余额 |
 | `remark` | 原因和设备 ID/别名快照（如有） |
 
-只有余额确实改变时才写流水；同一授权时长内的重复登录/心跳不会重复写入。生成卡密时也会写一条“生成卡密初始点数”补点流水，便于审计。删除后重用同名卡密不会删除旧流水，新旧记录允许混合保存。
+只有余额确实改变时才写流水；同一授权时长内的重复登录/心跳不会重复写入。生成卡密时也会写一条“生成卡密初始点数”补点流水，便于审计。后台定时清理超过 30 天的流水；删除后重用同名卡密时，保留期内的新旧记录允许混合保存。
 
 ## 6. 管理端和代理账号
 
 管理员接口统一位于 `/admin`：
 
-- `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认授权时长/心跳间隔设置。
+- `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认授权时长、心跳间隔、自动离线时间设置。
 - `/point_period_price/list|save|delete`：点卡计费方案管理。
 - `/add_new_card`、`/user_query_card`、`/modify_card`、`/delete_card`、`/冻卡s`：点卡管理。
 - `/point_card/adjust`：管理员手工补点或扣回，金额为有符号整数。

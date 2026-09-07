@@ -325,7 +325,7 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 	if query.Error != nil {
 		return result, fmt.Errorf("查询设备会话失败")
 	}
-	在线截止 := now.Add(-time.Duration(settings.HeartbeatIntervalSeconds*2) * time.Second)
+	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
 	result.Devices = make([]卡密设备详情, 0, len(rows))
 	for _, row := range rows {
 		authorized := row.AuthorizedUntil.After(now)
@@ -636,7 +636,7 @@ func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin stri
 	if err := tx.Table("point_ledger").CreateInBatches(&ledgers, 500).Error; err != nil {
 		return fmt.Errorf("写入初始点数流水失败")
 	}
-	// 同名卡删除后可以重新利用，重建时清理上一代遗留会话；流水保留。
+	// 同名卡删除后可以重新利用，重建时清理上一代遗留会话；流水由后台按保留期清理。
 	if err := tx.Table("point_device_session").Where("admin = ? AND card IN ?", admin, cards).Delete(&点卡设备会话{}).Error; err != nil {
 		return fmt.Errorf("清理旧设备会话失败")
 	}

@@ -83,8 +83,8 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	if request.PeriodSeconds <= 0 || request.PeriodSeconds > 最大计费周期秒 {
-		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在1至%d秒之间", 最大计费周期秒))
+	if !授权时长秒有效(request.PeriodSeconds, false) {
+		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在%d至%d秒之间且为整分钟", 最小计费周期秒, 最大计费周期秒))
 		return
 	}
 	if request.Cost <= 0 || request.Cost > 最大单次点数 {
@@ -239,7 +239,7 @@ func 卡端_查询周期价格(ctx *gin.Context) {
 	for _, price := range prices {
 		result = append(result, 点卡公开周期价格{PeriodSeconds: price.PeriodSeconds, Cost: price.Cost, IsDefault: price.PeriodSeconds == settings.DefaultPeriodSeconds})
 	}
-	成功提示(ctx, gin.H{"data": result, "software": softwareID, "default_period_seconds": settings.DefaultPeriodSeconds, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})
+	成功提示(ctx, gin.H{"data": result, "software": softwareID, "default_period_seconds": settings.DefaultPeriodSeconds, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds, "online_grace_minutes": settings.OnlineGraceMinutes})
 }
 
 // 管理员_删除点卡周期价格按管理员条件删除，避免拿到其他租户 ID 后越权。
