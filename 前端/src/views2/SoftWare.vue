@@ -3,7 +3,7 @@
     <div class="页面标题行">
       <div>
         <h2>软件与点卡计费</h2>
-        <p class="说明">客户端只提交授权时长秒数，实际扣点价格始终由服务端决定。</p>
+        <p class="说明">客户端按分钟选择授权时长，实际扣点价格始终由服务端决定。</p>
       </div>
       <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
     </div>
@@ -12,7 +12,7 @@
       <el-table-column prop="ID" label="ID" width="70" />
       <el-table-column prop="Software" label="软件名称" min-width="170" />
       <el-table-column label="默认授权时长" width="130">
-        <template #default="scope">{{ 周期文本(scope.row.default_period_seconds) }}</template>
+        <template #default="scope">{{ scope.row.default_period_minutes }} 分钟</template>
       </el-table-column>
       <el-table-column label="心跳间隔" width="130">
         <template #default="scope">{{ 周期文本(scope.row.heartbeat_interval_seconds) }}</template>
@@ -62,8 +62,8 @@
         <el-form-item label="默认授权时长（分钟）" required>
           <el-input-number
             v-model="软件框.default_period_minutes"
-            :min="5"
-            :max="4320"
+            :min="最小计费周期分钟"
+            :max="最大计费周期分钟"
             :precision="0"
             controls-position="right"
           />
@@ -105,10 +105,7 @@
       </div>
       <el-table :data="价格框.rows" border>
         <el-table-column label="授权时长" width="150">
-          <template #default="scope">{{ 周期文本(scope.row.period_seconds) }}</template>
-        </el-table-column>
-        <el-table-column label="分钟" width="90">
-          <template #default="scope">{{ 秒转分钟(scope.row.period_seconds) }}</template>
+          <template #default="scope">{{ scope.row.period_minutes }} 分钟</template>
         </el-table-column>
         <el-table-column prop="cost" label="扣点" width="90" />
         <el-table-column label="状态" width="100">
@@ -141,8 +138,8 @@
         <el-form-item label="授权时长（分钟）">
           <el-input-number
             v-model="价格编辑框.period_minutes"
-            :min="5"
-            :max="4320"
+            :min="最小计费周期分钟"
+            :max="最大计费周期分钟"
             :precision="0"
             controls-position="right"
             :disabled="!!价格编辑框.id"
@@ -231,6 +228,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
 
+const 最小计费周期分钟 = 5
+const 最大计费周期分钟 = 3 * 24 * 60
+
 const stores = use登录状态Store()
 const post = stores.post
 const 是代理账号 = computed(() => Boolean(stores.是代理账号))
@@ -270,10 +270,6 @@ const 周期文本 = function (seconds) {
   if (value % 60 === 0) return `${value / 60} 分钟`
   return `${value} 秒`
 }
-const 秒转分钟 = function (seconds) {
-  return Math.floor(Number(seconds || 0) / 60)
-}
-
 const 查询软件 = function () {
   return post('/user_query_soft_list', {}).then((res) => {
     if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
@@ -304,7 +300,7 @@ const 编辑软件 = function (row) {
     id: row.ID,
     software: row.Software,
     bulletin: row.Bulletin || '',
-    default_period_minutes: 秒转分钟(row.default_period_seconds || 3600),
+    default_period_minutes: Number(row.default_period_minutes || 60),
     heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300),
     online_grace_minutes: Number(row.online_grace_minutes || 60)
   })
@@ -316,16 +312,16 @@ const 保存软件 = function () {
   }
   if (
     !Number.isInteger(软件框.default_period_minutes) ||
-    软件框.default_period_minutes < 5 ||
-    软件框.default_period_minutes > 4320
+    软件框.default_period_minutes < 最小计费周期分钟 ||
+    软件框.default_period_minutes > 最大计费周期分钟
   ) {
     ElMessage.warning('默认授权时长必须在5至4320分钟之间')
     return
   }
   if (
     !Number.isInteger(软件框.online_grace_minutes) ||
-    (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 5) ||
-    软件框.online_grace_minutes > 4320
+    (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 最小计费周期分钟) ||
+    软件框.online_grace_minutes > 最大计费周期分钟
   ) {
     ElMessage.warning('自动离线时间必须为0或5至4320分钟，0表示默认60分钟')
     return
@@ -344,7 +340,7 @@ const 保存软件 = function () {
     id: 软件框.id,
     software: 软件框.software,
     bulletin: 软件框.bulletin,
-    default_period_seconds: 软件框.default_period_minutes * 60,
+    default_period_minutes: 软件框.default_period_minutes,
     heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds,
     online_grace_minutes: 软件框.online_grace_minutes
   })
@@ -408,20 +404,24 @@ const 编辑价格 = function (row) {
     显示: true,
     id: row.id,
     software: row.software,
-    period_minutes: 秒转分钟(row.period_seconds),
+    period_minutes: Number(row.period_minutes || 60),
     cost: Number(row.cost),
     enabled: Boolean(row.enabled),
     is_default: Boolean(row.is_default)
   })
 }
 const 保存价格 = function () {
-  if (!Number.isInteger(价格编辑框.period_minutes) || 价格编辑框.period_minutes < 5 || 价格编辑框.period_minutes > 4320) {
+  if (
+    !Number.isInteger(价格编辑框.period_minutes) ||
+    价格编辑框.period_minutes < 最小计费周期分钟 ||
+    价格编辑框.period_minutes > 最大计费周期分钟
+  ) {
     ElMessage.warning('授权时长必须在5至4320分钟之间')
     return
   }
   post('/point_period_price/save', {
     software: 价格编辑框.software,
-    period_seconds: 价格编辑框.period_minutes * 60,
+    period_minutes: 价格编辑框.period_minutes,
     cost: 价格编辑框.cost,
     enabled: 价格编辑框.enabled,
     is_default: 价格编辑框.is_default

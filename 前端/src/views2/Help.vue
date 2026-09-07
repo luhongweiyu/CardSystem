@@ -5,7 +5,7 @@
     <el-card shadow="never" class="说明卡片">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="登录">
-          POST /card/card_login，提交 card；可选 device_id、period_seconds 和 device_alias，软件由卡密自动确定。
+          POST /card/card_login，提交 card；可选 device_id、period_minutes 和 device_alias，软件由卡密自动确定。
         </el-descriptions-item>
         <el-descriptions-item label="心跳">
           POST /card/card_ping，提交登录返回的 needle，device_id 必须与登录时保持一致；不提交 device_alias。
