@@ -47,7 +47,7 @@ body,
 }
 .侧栏 {
   transition: width 0.2s;
-  background: #545c64;
+  background: #252b36;
   overflow: hidden;
 }
 .内容 {
