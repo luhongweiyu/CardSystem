@@ -9,7 +9,7 @@
     <span class="系统名称">卡密管理</span>
 
     <div class="顶部信息">
-      <el-link v-if="访客链接" :href="访客链接" target="_blank" type="success">访客查询页</el-link>
+      <el-link v-if="访客链接" :href="访客链接" target="_blank" type="success">卡密查询页</el-link>
       <span>{{ 是代理账号 ? '渠道合伙人' : '管理员' }}：{{ 账号 }}</span>
       <span v-if="是代理账号">余额：{{ 账号信息.balance ?? 0 }} 点</span>
       <span v-else>本小时请求：{{ api次数 }}</span>
@@ -29,7 +29,7 @@ const { 导航开关, 账号, 密码, token, 登录状态, 用户id, api次数, 
 
 const 访客链接 = computed(() => {
   const centerID = 是代理账号.value ? 账号信息.value.center_id : 用户id.value
-  return centerID ? `${window.location.origin}/visitor/index.html?center_id=${encodeURIComponent(centerID)}` : ''
+  return centerID ? `${window.location.origin}/usercard/index.html?center_id=${encodeURIComponent(centerID)}` : ''
 })
 
 const 开关导航 = function () {

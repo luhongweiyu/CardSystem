@@ -139,8 +139,9 @@
         <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="250" fixed="right">
         <template #default="scope">
+          <el-button link type="primary" @click="打开详情(scope.row)">详情</el-button>
           <el-button link type="primary" @click="打开流水(scope.row)">流水</el-button>
           <el-button link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
           <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
@@ -159,6 +160,47 @@
       @size-change="查询卡密(true)"
       @current-change="查询卡密(false)"
     />
+
+    <!-- 设备详情。直接复用公开查询接口，和持卡查询页保持相同的在线状态判断。 -->
+    <el-dialog v-model="详情框.显示" title="设备详情" width="980px" destroy-on-close>
+      <div class="详情摘要">
+        <span>卡密：{{ 详情框.card }}</span>
+        <span>软件：{{ 软件名称(详情框.software) }}</span>
+        <span>授权设备：{{ 详情框.authorized_device_count }}</span>
+        <span>在线设备：{{ 详情框.online_device_count }}</span>
+      </div>
+      <el-table :data="详情框.devices" border stripe v-loading="详情框.加载中" empty-text="暂无设备会话">
+        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
+        <el-table-column label="授权到期" width="180">
+          <template #default="scope">{{ 格式化时间(scope.row.authorized_until) }}</template>
+        </el-table-column>
+        <el-table-column label="授权状态" width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.authorized ? 'success' : 'info'">
+              {{ scope.row.authorized ? '未到期' : '已到期' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="在线状态" width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.online ? 'success' : 'info'">
+              {{ scope.row.online ? '在线' : '离线' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+      </el-table>
+      <el-pagination
+        v-if="详情框.total > 0"
+        v-model:current-page="详情框.page"
+        v-model:page-size="详情框.page_size"
+        class="分页"
+        layout="total, prev, pager, next"
+        :total="详情框.total"
+        @current-change="查询详情(false)"
+      />
+    </el-dialog>
 
     <!-- 生成卡密 -->
     <el-dialog v-model="生成框.显示" title="生成卡密" width="560px" destroy-on-close>
@@ -291,7 +333,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { use登录状态Store } from '../stores/登录状态.js'
-import { 获取接口错误提示 } from '../api/请求客户端.js'
+import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -339,6 +381,18 @@ const 流水框 = reactive({
   rows: [],
   page: 1,
   page_size: 20,
+  total: 0
+})
+const 详情框 = reactive({
+  显示: false,
+  加载中: false,
+  card: '',
+  software: 0,
+  authorized_device_count: 0,
+  online_device_count: 0,
+  devices: [],
+  page: 1,
+  page_size: 50,
   total: 0
 })
 
@@ -548,6 +602,50 @@ const 删除单张 = function (row) {
       if (error !== 'cancel' && error !== 'close') 显示错误(error)
     })
 }
+const 打开详情 = function (row) {
+  Object.assign(详情框, {
+    显示: true,
+    card: row.card,
+    software: Number(row.software || 0),
+    authorized_device_count: 0,
+    online_device_count: 0,
+    devices: [],
+    page: 1,
+    total: 0
+  })
+  查询详情(true)
+}
+const 查询详情 = function (resetPage = false) {
+  if (resetPage) 详情框.page = 1
+  const centerID = 是代理账号.value ? 账号信息.center_id : stores.用户id
+  if (!centerID || !详情框.card) {
+    ElMessage.error('卡密查询参数不完整')
+    return
+  }
+  详情框.加载中 = true
+  // 公开详情接口会合并尚未同步的心跳缓存，管理端看到的在线状态与持卡查询页一致。
+  return apiClient
+    .post('/visitor/查询卡密', {
+      center_id: centerID,
+      card: 详情框.card,
+      page: 详情框.page,
+      page_size: 详情框.page_size
+    })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询设备详情失败')
+      详情框.software = Number(res.data.software || 详情框.software)
+      详情框.authorized_device_count = Number(res.data.authorized_device_count || 0)
+      详情框.online_device_count = Number(res.data.online_device_count || 0)
+      详情框.devices = Array.isArray(res.data.devices) ? res.data.devices : []
+      详情框.total = Number(res.data.device_total || 0)
+      详情框.page = Number(res.data.device_page || 详情框.page)
+      详情框.page_size = Number(res.data.device_page_size || 详情框.page_size)
+    })
+    .catch(显示错误)
+    .finally(() => {
+      详情框.加载中 = false
+    })
+}
 const 批量删除 = function () {
   ElMessageBox.confirm(`确定删除已选的 ${已选卡密.value.length} 张点卡？`, '确认删除', { type: 'warning' })
     .then(() => post('/delete_card', { cards: 已选卡密.value }))
@@ -678,6 +776,13 @@ h2 {
 }
 .流水摘要 {
   margin-bottom: 10px;
+  color: #c7ced9;
+}
+.详情摘要 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 12px;
   color: #c7ced9;
 }
 .增加 {
