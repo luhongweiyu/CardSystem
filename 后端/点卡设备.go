@@ -472,8 +472,7 @@ func 清理点卡设备会话() {
 		日志("log/启动记录.txt", "清理点卡设备会话查询失败:"+err.Error())
 		return
 	}
-	// 使用 ID 游标轮转批次。余额不足或价格停用的会话会暂时保留，如果每次都
-	// 固定取最前 500 条，它们会让后续到期会话永远得不到结算。
+	// 使用 ID 游标轮转批次，避免单批处理失败时长期卡住后续到期会话。
 	if len(sessions) == 0 && 点卡会话清理游标 != 0 {
 		点卡会话清理游标 = 0
 		if err := query(0); err != nil {
@@ -486,11 +485,6 @@ func 清理点卡设备会话() {
 	}
 	for _, session := range sessions {
 		if err := 结算过期点卡会话(session.ID, now); err != nil {
-			// 余额不足或授权时长对应的方案被管理员停用是可恢复的业务状态，会话按规则
-			// 暂时保留即可；仅数据库等非预期故障写入运行日志。
-			if errors.Is(err, 错误_点卡余额不足) || errors.Is(err, 错误_周期价格不可用) {
-				continue
-			}
 			日志("log/启动记录.txt", fmt.Sprintf("结算过期设备会话%d失败:%s", session.ID, err.Error()))
 		}
 	}
@@ -554,14 +548,20 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		}
 		price, _, err := 查询周期价格(tx, session.Admin, session.Software, period)
 		if err != nil {
-			// 授权时长对应的方案被停用或暂时未配置时保留会话，管理员修复配置后
-			// 客户端可以继续心跳重试，不需要重新生成 needle。
+			// 后台清理没有客户端可以返回错误。价格方案停用或不存在时直接删除
+			// 已过期会话，避免每分钟重复读取和结算；恢复配置后由客户端重新登录。
+			if errors.Is(err, 错误_周期价格不可用) {
+				return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
+			}
 			return err
 		}
 		params := 点卡扣费参数{Admin: session.Admin, Card: session.Card, Software: session.Software, PeriodSeconds: period, DeviceID: session.DeviceID, DeviceAlias: session.DeviceAlias, RemarkPrefix: "后台续费"}
 		if _, err := 扣除点数事务(tx, tableName, &card, params, price, period, now); err != nil {
-			// 余额不足时保留过期会话，给管理员补点后可以由下一次心跳
-			// 或清理任务重试；推断窗口结束后才会按离线会话删除。
+			// 余额不足时同样删除已过期会话，避免清理任务反复重试。管理员补点后，
+			// 客户端重新登录即可建立新的授权会话。
+			if errors.Is(err, 错误_点卡余额不足) {
+				return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
+			}
 			return err
 		}
 		until := session.AuthorizedUntil.Add(time.Duration(period) * time.Second)
