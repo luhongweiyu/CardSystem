@@ -138,21 +138,16 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	if deviceCount >= 最大卡密设备数 {
 		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
 	}
-	for attempt := 0; attempt < 3; attempt++ {
-		now := time.Now()
-		session = 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
-			DeviceAlias: alias, Needle: GetRandomString(32, "a"), RenewalPeriodSeconds: renewalPeriod,
-			AuthorizedUntil: now, LastHeartbeatAt: now}
-		if err := tx.Table("point_device_session").Create(&session).Error; err == nil {
-			return session, false, nil
-		}
-		// 并发请求可能已经创建了同一设备会话；重新读取后复用它，
-		// 不把唯一索引冲突误报成系统故障。
-		if existing, exists, readErr := 查询点卡设备会话按设备(tx, admin, card, deviceID, true); readErr == nil && exists {
-			return existing, true, nil
-		}
+	now := time.Now()
+	session = 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
+		DeviceAlias: alias, Needle: GetRandomString(32, "a"), RenewalPeriodSeconds: renewalPeriod,
+		AuthorizedUntil: now, LastHeartbeatAt: now}
+	if err := tx.Table("point_device_session").Create(&session).Error; err != nil {
+		// 登录事务已先锁定卡密行，正常登录路径不会并发创建同一卡密设备；
+		// 其他数据库错误也不应通过重复写入来掩盖，直接交由事务回滚。
+		return 点卡设备会话{}, false, fmt.Errorf("创建设备会话失败")
 	}
-	return 点卡设备会话{}, false, fmt.Errorf("创建设备会话失败")
+	return session, false, nil
 }
 
 // 登录授权时长选择规则：显式 period_seconds 必须存在且启用；不显式指定时，
