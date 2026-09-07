@@ -177,7 +177,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		return 点卡登录结果{}, err
 	}
 	if !授权时长秒有效(periodSeconds, true) {
-		return 点卡登录结果{}, fmt.Errorf("授权时长必须为0或%d至%d秒且为整分钟，0表示使用默认授权时长", 最小计费周期秒, 最大计费周期秒)
+		return 点卡登录结果{}, fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小计费周期分钟, 最大计费周期分钟)
 	}
 	tableName, err := 卡密数据表名(admin)
 	if err != nil {

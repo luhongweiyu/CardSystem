@@ -387,13 +387,14 @@ func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
 }
 
 // card_login 是点卡客户端的登录入口。软件编号由卡密记录决定，客户端不需要
-// 重复提交；period_seconds 不传时使用该软件的默认授权时长。
+// 重复提交；period_minutes 不传时使用该软件的默认授权时长。
 func card_login(ctx *gin.Context) {
-	period, valid := 解析整数参数(ctx, "period_seconds")
-	if !valid || period < 0 {
-		失败提示(ctx, "period_seconds参数错误")
+	periodMinutes, valid := 解析整数参数(ctx, "period_minutes")
+	if !valid || periodMinutes < 0 || !授权时长分钟有效(periodMinutes, true) {
+		失败提示(ctx, "period_minutes参数错误")
 		return
 	}
+	period := 分钟转秒(periodMinutes)
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {

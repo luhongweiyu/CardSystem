@@ -17,7 +17,7 @@ import (
 // 点卡计费方案请求是管理员配置软件授权时长时使用的输入模型。
 type 点卡周期价格请求 struct {
 	Software      int   `json:"software"`
-	PeriodSeconds int64 `json:"period_seconds"`
+	PeriodMinutes int64 `json:"period_minutes"`
 	Cost          int64 `json:"cost"`
 	IsDefault     *bool `json:"is_default"`
 	Enabled       *bool `json:"enabled"`
@@ -83,10 +83,11 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	if !授权时长秒有效(request.PeriodSeconds, false) {
-		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在%d至%d秒之间且为整分钟", 最小计费周期秒, 最大计费周期秒))
+	if !授权时长分钟有效(request.PeriodMinutes, false) {
+		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在%d至%d分钟之间", 最小计费周期分钟, 最大计费周期分钟))
 		return
 	}
+	periodSeconds := 分钟转秒(request.PeriodMinutes)
 	if request.Cost <= 0 || request.Cost > 最大单次点数 {
 		失败提示管理端(ctx, fmt.Sprintf("扣点价格必须在1至%d之间", 最大单次点数))
 		return
@@ -115,7 +116,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		if err := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ? AND enabled = ?", admin, request.Software, settings.DefaultPeriodSeconds, true).Count(&currentDefaultCount).Error; err != nil {
 			return fmt.Errorf("检查默认授权时长失败")
 		}
-		if !isDefault && request.PeriodSeconds != settings.DefaultPeriodSeconds && currentDefaultCount == 0 {
+		if !isDefault && periodSeconds != settings.DefaultPeriodSeconds && currentDefaultCount == 0 {
 			if !enabled {
 				return fmt.Errorf("请先保存并启用一个默认授权时长方案")
 			}
@@ -123,7 +124,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		}
 		// 当前软件默认授权时长不能被直接停用或取消默认。需要切换默认时，
 		// 把另一个启用方案设为默认即可，事务会同时更新软件设置。
-		if request.PeriodSeconds == settings.DefaultPeriodSeconds && !isDefault {
+		if periodSeconds == settings.DefaultPeriodSeconds && !isDefault {
 			if !enabled {
 				return fmt.Errorf("默认方案不能停用，请先设置另一个默认方案")
 			}
@@ -133,13 +134,13 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 			if err := tx.Table("point_period_price").Where("admin = ? AND software = ?", admin, request.Software).Updates(map[string]interface{}{"is_default": false}).Error; err != nil {
 				return fmt.Errorf("更新默认方案失败")
 			}
-			if err := tx.Table("software").Where("name = ? AND id = ?", admin, request.Software).Update("default_period_seconds", request.PeriodSeconds).Error; err != nil {
+			if err := tx.Table("software").Where("name = ? AND id = ?", admin, request.Software).Update("default_period_seconds", periodSeconds).Error; err != nil {
 				return fmt.Errorf("更新软件默认授权时长失败")
 			}
 		}
-		query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ?", admin, request.Software, request.PeriodSeconds).First(&saved)
+		query := tx.Table("point_period_price").Where("admin = ? AND software = ? AND period_seconds = ?", admin, request.Software, periodSeconds).First(&saved)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-			saved = 点卡周期价格{Admin: admin, Software: request.Software, PeriodSeconds: request.PeriodSeconds, Cost: request.Cost, IsDefault: isDefault, Enabled: enabled}
+			saved = 点卡周期价格{Admin: admin, Software: request.Software, PeriodSeconds: periodSeconds, Cost: request.Cost, IsDefault: isDefault, Enabled: enabled}
 			return 创建点卡周期价格(tx, &saved)
 		}
 		if query.Error != nil {
@@ -156,7 +157,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		return
 	}
 	清除软件计费配置缓存(admin, request.Software)
-	成功提示管理端(ctx, gin.H{"msg": "保存成功", "data": saved})
+	成功提示管理端(ctx, gin.H{"msg": "保存成功", "data": gin.H{"id": saved.ID, "software": saved.Software, "period_minutes": 秒转分钟(saved.PeriodSeconds), "cost": saved.Cost, "is_default": saved.IsDefault, "enabled": saved.Enabled}})
 }
 
 // 管理员_查询点卡周期价格只返回当前管理员自己的点卡计费方案配置。
@@ -176,13 +177,17 @@ func 管理员_查询点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, "查询点卡计费方案失败")
 		return
 	}
-	成功提示管理端(ctx, gin.H{"data": rows})
+	data := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		data = append(data, gin.H{"id": row.ID, "admin": row.Admin, "software": row.Software, "period_minutes": 秒转分钟(row.PeriodSeconds), "cost": row.Cost, "is_default": row.IsDefault, "enabled": row.Enabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt})
+	}
+	成功提示管理端(ctx, gin.H{"data": data})
 }
 
 // 点卡公开计费方案只返回客户端选择授权时长所需的字段。管理员名称、数据库
 // 主键和停用记录不会暴露；客户端可先调用此接口再决定本次登录提交哪个授权时长。
 type 点卡公开周期价格 struct {
-	PeriodSeconds int64 `json:"period_seconds"`
+	PeriodMinutes int64 `json:"period_minutes"`
 	Cost          int64 `json:"cost"`
 	IsDefault     bool  `json:"is_default"`
 }
@@ -237,9 +242,9 @@ func 卡端_查询周期价格(ctx *gin.Context) {
 	}
 	result := make([]点卡公开周期价格, 0, len(prices))
 	for _, price := range prices {
-		result = append(result, 点卡公开周期价格{PeriodSeconds: price.PeriodSeconds, Cost: price.Cost, IsDefault: price.PeriodSeconds == settings.DefaultPeriodSeconds})
+		result = append(result, 点卡公开周期价格{PeriodMinutes: 秒转分钟(price.PeriodSeconds), Cost: price.Cost, IsDefault: price.PeriodSeconds == settings.DefaultPeriodSeconds})
 	}
-	成功提示(ctx, gin.H{"data": result, "software": softwareID, "default_period_seconds": settings.DefaultPeriodSeconds, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds, "online_grace_minutes": settings.OnlineGraceMinutes})
+	成功提示(ctx, gin.H{"data": result, "software": softwareID, "default_period_minutes": 秒转分钟(settings.DefaultPeriodSeconds), "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds, "online_grace_minutes": settings.OnlineGraceMinutes})
 }
 
 // 管理员_删除点卡周期价格按管理员条件删除，避免拿到其他租户 ID 后越权。

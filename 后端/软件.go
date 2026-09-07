@@ -19,7 +19,8 @@ type 软件请求 struct {
 	ID                       int    `json:"id"`
 	Software                 string `json:"software"`
 	Bulletin                 string `json:"bulletin"`
-	DefaultPeriodSeconds     int64  `json:"default_period_seconds"`
+	DefaultPeriodMinutes     int64  `json:"default_period_minutes"`
+	DefaultPeriodSeconds     int64  `json:"-"`
 	HeartbeatIntervalSeconds int64  `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       *int64 `json:"online_grace_minutes"`
 }
@@ -29,7 +30,7 @@ type 软件列表项 struct {
 	ID                       int       `json:"ID"`
 	Software                 string    `json:"Software"`
 	Bulletin                 string    `json:"Bulletin"`
-	DefaultPeriodSeconds     int64     `json:"default_period_seconds"`
+	DefaultPeriodMinutes     int64     `json:"default_period_minutes"`
 	HeartbeatIntervalSeconds int64     `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       int64     `json:"online_grace_minutes"`
 	CreatedAt                time.Time `json:"created_at"`
@@ -47,7 +48,7 @@ func 读取软件列表(admin string) ([]软件列表项, error) {
 	result := make([]软件列表项, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, 软件列表项{ID: row.ID, Software: row.Software, Bulletin: row.Bulletin,
-			DefaultPeriodSeconds: row.DefaultPeriodSeconds, HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
+			DefaultPeriodMinutes: 秒转分钟(row.DefaultPeriodSeconds), HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
 			OnlineGraceMinutes: row.OnlineGraceMinutes, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
@@ -75,8 +76,8 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	if !bulletinValid {
 		return request, fmt.Errorf("软件公告不能包含非法控制字符且不能超过5000个字符")
 	}
-	if request.DefaultPeriodSeconds == 0 {
-		request.DefaultPeriodSeconds = 默认登录周期秒
+	if request.DefaultPeriodMinutes == 0 {
+		request.DefaultPeriodMinutes = 默认登录周期分钟
 	}
 	if request.HeartbeatIntervalSeconds == 0 {
 		request.HeartbeatIntervalSeconds = 默认心跳周期秒
@@ -87,9 +88,10 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	} else if *request.OnlineGraceMinutes == 0 {
 		*request.OnlineGraceMinutes = 默认自动离线时间分钟
 	}
-	if !授权时长秒有效(request.DefaultPeriodSeconds, false) {
-		return request, fmt.Errorf("默认授权时长必须在%d至%d秒之间且为整分钟", 最小计费周期秒, 最大计费周期秒)
+	if !授权时长分钟有效(request.DefaultPeriodMinutes, false) {
+		return request, fmt.Errorf("默认授权时长必须在%d至%d分钟之间", 最小计费周期分钟, 最大计费周期分钟)
 	}
+	request.DefaultPeriodSeconds = 分钟转秒(request.DefaultPeriodMinutes)
 	if request.HeartbeatIntervalSeconds <= 0 || request.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return request, fmt.Errorf("心跳间隔必须在1至%d秒之间", 最大心跳周期秒)
 	}
@@ -140,7 +142,7 @@ func user_add_soft(ctx *gin.Context) {
 		return
 	}
 	清除软件计费配置缓存(admin, created.ID)
-	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodSeconds: created.DefaultPeriodSeconds, HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, CreatedAt: created.CreatedAt}})
+	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodMinutes: 秒转分钟(created.DefaultPeriodSeconds), HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, CreatedAt: created.CreatedAt}})
 }
 
 func user_del_soft(ctx *gin.Context) {
@@ -215,8 +217,8 @@ func user_modify_bulletin(ctx *gin.Context) {
 		if request.Software == "" {
 			request.Software = current.Software
 		}
-		if request.DefaultPeriodSeconds == 0 {
-			request.DefaultPeriodSeconds = current.DefaultPeriodSeconds
+		if request.DefaultPeriodMinutes == 0 {
+			request.DefaultPeriodMinutes = 秒转分钟(current.DefaultPeriodSeconds)
 		}
 		if request.HeartbeatIntervalSeconds == 0 {
 			request.HeartbeatIntervalSeconds = current.HeartbeatIntervalSeconds

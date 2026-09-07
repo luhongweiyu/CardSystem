@@ -80,7 +80,7 @@ func Test生成扣点备注包含设备快照(t *testing.T) {
 	}, 3600, 2)
 	// 流水只要求保留设备信息快照，不把展示标签绑定为接口或业务契约，
 	// 避免以后调整“ID”“设备”等文案时破坏与计费无关的测试。
-	for _, expected := range []string{"登录扣点", "授权时长=3600秒", "扣点=2", "device-123456", "办公室电脑"} {
+	for _, expected := range []string{"登录扣点", "授权时长=60分钟", "扣点=2", "device-123456", "办公室电脑"} {
 		if !strings.Contains(remark, expected) {
 			t.Fatalf("流水备注缺少%q: %s", expected, remark)
 		}

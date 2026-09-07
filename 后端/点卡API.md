@@ -10,14 +10,14 @@
 
 `GET/POST /card/period_prices`（只读）
 
-参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用点卡计费方案、默认授权时长、心跳间隔和自动离线时间。计费周期有效范围为 5 分钟至 3 天，管理端按分钟设置，接口字段仍以秒表示：
+参数：`center_id/name`、`card`，可选 `software`。返回当前卡密所属软件的启用点卡计费方案、默认授权时长、心跳间隔和自动离线时间。计费周期有效范围为 5 分钟至 3 天，接口统一按分钟表示：
 
 ```json
 {
   "state": true,
-  "data": [{"period_seconds": 3600, "cost": 5, "is_default": true}],
+  "data": [{"period_minutes": 60, "cost": 5, "is_default": true}],
   "software": 1,
-  "default_period_seconds": 3600,
+  "default_period_minutes": 60,
   "heartbeat_interval_seconds": 300,
   "online_grace_minutes": 60
 }
@@ -33,7 +33,7 @@
   "card": "1abcdefghijklmnop",
   "device_id": "7f6a0a38-2b1c-4f21-9b9c-3c5d5c7a1e22",
   "device_alias": "办公室电脑",
-  "period_seconds": 3600
+  "period_minutes": 60
 }
 ```
 
@@ -42,7 +42,7 @@
 - `software` 无需提交，服务端始终使用卡密记录中绑定的软件编号。
 - `device_id` 可选；省略时统一按空字符串处理。使用非空设备 ID 时应由客户端生成并持久化，不能使用 IP。
 - `device_alias` 仅登录时可选，最长 64 个字符，不参与唯一性，也不要求不重复。
-- `period_seconds` 可选，含义是授权时长秒数（管理端按分钟配置）。有效值为 0 或 300 至 259200 秒；省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
+- `period_minutes` 可选，含义是授权时长分钟数。有效值为 0 或 5 至 4320 分钟；省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
 
 成功响应业务字段：`needle`、`authorized_until`、`heartbeat_interval_seconds`；顶层还会返回本次请求的 `nonce`。
 

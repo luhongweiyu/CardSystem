@@ -45,7 +45,7 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 		return fmt.Errorf("软件参数错误")
 	}
 	if !授权时长秒有效(params.PeriodSeconds, true) {
-		return fmt.Errorf("授权时长必须为0或%d至%d秒且为整分钟，0表示使用默认授权时长", 最小计费周期秒, 最大计费周期秒)
+		return fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小计费周期分钟, 最大计费周期分钟)
 	}
 	if params.DeviceID != "" {
 		deviceID, valid := 规范化设备标识(params.DeviceID)
@@ -125,7 +125,7 @@ func 生成扣点备注(params 点卡扣费参数, period int64, price int64) st
 	} else {
 		parts = append(parts, "登录扣点")
 	}
-	parts = append(parts, fmt.Sprintf("授权时长=%d秒", period), fmt.Sprintf("扣点=%d", price))
+	parts = append(parts, fmt.Sprintf("授权时长=%d分钟", 秒转分钟(period)), fmt.Sprintf("扣点=%d", price))
 	if params.DeviceID != "" {
 		parts = append(parts, "ID="+params.DeviceID)
 	}
