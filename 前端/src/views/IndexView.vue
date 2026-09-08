@@ -4,7 +4,7 @@
       <img class="品牌图标" src="../assets/logo.svg" alt="卡密管理" />
       <div v-show="!导航开关" class="品牌文字">
         <strong>卡密管理</strong>
-        <span>点卡控制台</span>
+        <span>卡密控制台</span>
       </div>
     </div>
 
@@ -47,6 +47,7 @@ const { 导航开关, 账号, 是代理账号 } = storeToRefs(stores)
 const 管理员菜单 = [
   { path: '/index', label: '首页', icon: 'HomeFilled' },
   { path: '/card', label: '点卡', icon: 'Postcard' },
+  { path: '/duration-card', label: '时长卡', icon: 'Timer' },
   { path: '/software', label: '软件管理', icon: 'Iphone' },
   { path: '/point-ledger', label: '点数流水', icon: 'Tickets' },
   { path: '/setting', label: '设置', icon: 'Setting' },

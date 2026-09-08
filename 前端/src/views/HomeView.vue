@@ -4,14 +4,14 @@
       <div class="欢迎内容">
         <div class="产品标识">
           <span class="产品图标"><el-icon><Postcard /></el-icon></span>
-          <span>点卡管理工作台</span>
+          <span>卡密管理工作台</span>
         </div>
-        <h1>{{ 是代理账号 ? '小伙伴工作台' : '点卡管理工作台' }}</h1>
+        <h1>{{ 是代理账号 ? '小伙伴工作台' : '卡密管理工作台' }}</h1>
         <p>
           {{
             是代理账号
               ? '从这里管理名下点卡、查看接入方式和运行记录。'
-              : '从这里快速进入点卡、软件计费、流水和系统设置。'
+              : '从这里快速进入点卡、时长卡、软件计费和系统设置。'
           }}
         </p>
       </div>
@@ -68,7 +68,7 @@
 
     <div class="底部提示">
       <el-icon><InfoFilled /></el-icon>
-      <span>所有点卡余额、设备授权和点数流水均以服务端数据为准。</span>
+      <span>点卡余额、设备授权和时长卡到期时间均以服务端数据为准。</span>
     </div>
   </section>
 </template>
@@ -95,6 +95,7 @@ const 功能菜单 = computed(() => {
   }
   return [
     通用入口[0],
+    { path: '/duration-card', label: '时长卡管理', description: '生成、查询和续费固定时长卡', icon: 'Timer', color: '紫色' },
     { path: '/software', label: '软件管理', description: '配置软件和点卡计费方案', icon: 'Iphone', color: '绿色' },
     { path: '/point-ledger', label: '点数流水', description: '查看所有余额变动记录', icon: 'Tickets', color: '青色' },
     { path: '/setting', label: '账号设置', description: '管理公告、联系方式和安全选项', icon: 'Setting', color: '粉色' },

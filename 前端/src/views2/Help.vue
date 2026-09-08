@@ -1,7 +1,7 @@
 <template>
   <section class="页面">
     <h2>接入帮助</h2>
-    <p class="说明">客户端按“登录 → 按心跳间隔发送心跳 → 退出”的流程使用点卡。</p>
+    <p class="说明">点卡和时长卡都按“登录 → 按心跳间隔发送心跳 → 退出”接入，但使用不同接口前缀。</p>
     <el-card shadow="never" class="说明卡片">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="登录">
@@ -19,6 +19,15 @@
         </el-descriptions-item>
         <el-descriptions-item label="流水查询">
           GET/POST /card/point_ledger/query，只能查询当前卡密自己的点数流水。
+        </el-descriptions-item>
+        <el-descriptions-item label="时长卡登录">
+          POST /duration/card_login，提交 card；软件从时长卡记录读取，首次登录会激活固定时长。
+        </el-descriptions-item>
+        <el-descriptions-item label="时长卡心跳">
+          POST /duration/card_ping，提交登录返回的 needle；时长卡模式同一时间只保留最后一次登录的 needle。
+        </el-descriptions-item>
+        <el-descriptions-item label="时长卡退出">
+          POST /duration/card_logout，提交 card 和 needle；退出只清除当前在线校验，不改变剩余时长。
         </el-descriptions-item>
       </el-descriptions>
       <p class="提示">

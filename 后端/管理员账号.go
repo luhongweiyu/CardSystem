@@ -135,6 +135,15 @@ func user_register(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化卡密数据失败"})
 		return
 	}
+	durationTableName, durationTableErr := 时长卡数据表名(a.Name)
+	if durationTableErr != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化时长卡数据失败"})
+		return
+	}
+	if err := db.Table(durationTableName).AutoMigrate(&时长卡记录{}); err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化时长卡数据失败"})
+		return
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("user").Create(&a).Error; err != nil {
 			return err

@@ -1,15 +1,19 @@
 <template>
   <main class="查询页" v-loading="加载中">
     <el-card class="查询卡片" shadow="never">
-      <h2>点卡查询</h2>
-      <p class="说明">输入卡密可查看当前点数、授权设备和在线设备数量。</p>
+      <h2>卡密查询</h2>
+      <p class="说明">先选择卡密模式，再输入完整卡密查询。</p>
+      <el-radio-group v-model="模式" class="模式选择" @change="详情 = null">
+        <el-radio-button label="point">点卡</el-radio-button>
+        <el-radio-button label="duration">时长卡</el-radio-button>
+      </el-radio-group>
       <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情">
         <template #prepend>卡密</template>
       </el-input>
       <el-button class="查询按钮" type="primary" @click="查询详情">查询</el-button>
     </el-card>
 
-    <el-card v-if="详情" class="结果卡片" shadow="never">
+    <el-card v-if="详情?.mode === 'point'" class="结果卡片" shadow="never">
       <div class="信息网格">
         <span>卡密</span>
         <strong>{{ 详情.card }}</strong>
@@ -61,6 +65,27 @@
       <el-button type="primary" plain @click="打开流水">查看点数流水</el-button>
     </el-card>
 
+    <el-card v-if="详情?.mode === 'duration'" class="结果卡片" shadow="never">
+      <div class="信息网格">
+        <span>卡密</span>
+        <strong>{{ 详情.card }}</strong>
+        <span>软件</span>
+        <strong>#{{ 详情.software }}</strong>
+        <span>卡面时长</span>
+        <strong>{{ 时长文本(详情.duration_minutes) }}</strong>
+        <span>状态</span>
+        <el-tag :type="详情.card_state === 4 ? 'danger' : 详情.status === '已激活' ? 'success' : 'info'">
+          {{ 详情.status }}
+        </el-tag>
+        <span>使用时间</span>
+        <strong>{{ 格式化时间(详情.use_time) }}</strong>
+        <span>到期时间</span>
+        <strong>{{ 格式化时间(详情.end_time) }}</strong>
+        <span>在线状态</span>
+        <strong>{{ 详情.online ? '在线' : '不在线' }}</strong>
+      </div>
+    </el-card>
+
     <el-dialog v-model="流水框.显示" title="点数流水" width="900px">
       <div class="流水摘要">当前余额：{{ 流水框.balance }} 点</div>
       <el-table :data="流水框.rows" border v-loading="流水框.加载中">
@@ -99,6 +124,7 @@ import apiClient, { 获取接口错误提示, 规范化卡密 } from './api/请�
 
 const centerID = new URLSearchParams(window.location.search).get('center_id') || ''
 const 卡密 = ref('')
+const 模式 = ref('point')
 const 加载中 = ref(false)
 const 详情 = ref(null)
 const 流水框 = reactive({ 显示: false, 加载中: false, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
@@ -106,6 +132,13 @@ const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 格式化时间 = (value) => (value ? new Date(value).toLocaleString('zh-CN') : '-')
+const 时长文本 = (minutes) => {
+  const value = Number(minutes || 0)
+  if (value === 52560000) return '永久卡'
+  if (value % 1440 === 0) return `${value / 1440} 天`
+  if (value % 60 === 0) return `${value / 60} 小时`
+  return `${value} 分钟`
+}
 
 const 查询详情 = function (page = 1) {
   详情.value = null
@@ -119,6 +152,18 @@ const 查询详情 = function (page = 1) {
     return
   }
   卡密.value = card
+  if (模式.value === 'duration') {
+    加载中.value = true
+    apiClient
+      .post('/visitor/查询时长卡', { center_id: centerID, card })
+      .then((res) => {
+        if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
+        详情.value = { mode: 'duration', ...(res.data.data || {}) }
+      })
+      .catch(错误)
+      .finally(() => { 加载中.value = false })
+    return
+  }
   设备分页.page = page
   加载中.value = true
   apiClient
@@ -126,6 +171,7 @@ const 查询详情 = function (page = 1) {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
       详情.value = {
+        mode: 'point',
         card,
         software: Number(res.data.software || 0),
         point_balance: Number(res.data.point_balance || 0),
@@ -193,6 +239,10 @@ body,
 }
 .查询按钮 {
   margin-top: 12px;
+}
+.模式选择 {
+  display: flex;
+  margin-bottom: 12px;
 }
 .说明 {
   color: #9da7b5;

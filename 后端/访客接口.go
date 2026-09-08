@@ -161,6 +161,33 @@ func visitor_查询点数流水(ctx *gin.Context) {
 	成功提示访客(ctx, gin.H{"data": 点数流水展示列表(rows, false), "num": total, "page": page, "page_size": pageSize, "balance": row.Point_balance})
 }
 
+// 访客查询时长卡只按完整卡密精确读取独立时长卡表，不会回退到点卡表。
+// 访客页需要展示到期时间和激活状态，因此复用同一套状态推断逻辑。
+func 访客_查询时长卡(ctx *gin.Context) {
+	admin, ok := 访客管理员(ctx)
+	if !ok {
+		失败提示访客(ctx, "访客上下文错误")
+		return
+	}
+	card := strings.ToLower(strings.TrimSpace(input(ctx, "card")))
+	if !卡密格式规则.MatchString(card) {
+		失败提示访客(ctx, "请输入完整且格式正确的卡密")
+		return
+	}
+	data, err := 时长卡详情(admin, card, time.Now())
+	if err != nil {
+		失败提示访客(ctx, err.Error())
+		return
+	}
+	// 访客查询是公开页面，只返回状态所需字段，不返回服务端 needle。
+	delete(data, "needle")
+	delete(data, "last_heartbeat_at")
+	delete(data, "notes")
+	delete(data, "config_content")
+	delete(data, "agent_id")
+	成功提示访客(ctx, gin.H{"data": data})
+}
+
 func 失败提示访客(ctx *gin.Context, message string) {
 	ctx.JSON(http.StatusOK, gin.H{"state": false, "code": 0, "msg": message})
 }

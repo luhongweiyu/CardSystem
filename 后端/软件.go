@@ -159,11 +159,17 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	durationTableName, err := 时长卡数据表名(admin)
+	if err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
 	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
 	var deletedCardCount int64
+	var deletedDurationCardCount int64
 	var current 软件
 	if query := db.Table("software").Where("id = ? AND name = ?", request.ID, admin).First(&current); query.Error != nil {
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
@@ -177,6 +183,10 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, "统计关联卡密失败")
 		return
 	}
+	if err := db.Table(durationTableName).Where("software = ?", request.ID).Count(&deletedDurationCardCount).Error; err != nil {
+		失败提示管理端(ctx, "统计关联时长卡失败")
+		return
+	}
 	// 删除软件使用多条独立语句，不把所有关联数据放进一个长事务。先删除软件
 	// 行可阻止新的发卡或配置修改，后续语句再清理已经存在的关联数据。
 	if result := db.Table("software").Where("id = ? AND name = ?", request.ID, admin).Delete(&软件{}); result.Error != nil || result.RowsAffected != 1 {
@@ -185,6 +195,10 @@ func user_del_soft(ctx *gin.Context) {
 	}
 	if err := db.Table(tableName).Where("software = ?", request.ID).Delete(&卡密表样式{}).Error; err != nil {
 		失败提示管理端(ctx, "删除关联卡密失败")
+		return
+	}
+	if err := db.Table(durationTableName).Where("software = ?", request.ID).Delete(&时长卡记录{}).Error; err != nil {
+		失败提示管理端(ctx, "删除关联时长卡失败")
 		return
 	}
 	if err := db.Table("point_device_session").Where("admin = ? AND software = ?", admin, request.ID).Delete(&点卡设备会话{}).Error; err != nil {
@@ -200,7 +214,7 @@ func user_del_soft(ctx *gin.Context) {
 		日志("log/启动记录.txt", "删除软件后同步心跳缓存失败:"+err.Error())
 	}
 	清除软件计费配置缓存(admin, request.ID)
-	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount})
+	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount, "deleted_duration_card_count": deletedDurationCardCount})
 }
 
 func user_modify_bulletin(ctx *gin.Context) {

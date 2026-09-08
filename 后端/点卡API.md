@@ -1,4 +1,4 @@
-# 点卡 API
+# 点卡与时长卡 API
 
 所有接口同时支持 JSON POST；标注“兼容 GET”的接口也接受查询参数。成功响应通常包含 `state: true, code: 1`，失败响应包含 `state: false, code: 0, msg`。
 
@@ -115,3 +115,42 @@
 代理价格是扁平 JSON：键为软件 ID，值为每生成 1 点卡点数需要消耗的代理余额，例如 `{"1": 0.25}`。未出现在映射中的软件不授权代理发卡；价格必须大于 0 且最多两位小数，配置最多 100 个软件且不超过 4096 字节，一批点卡的总费用最终按整数点向上取整。
 
 管理端和代理端的 `/user_query_card` 支持服务端排序：`sort_by` 可用 `card`、`software`、`point_balance`、`card_state`、`create_time`、`use_time`，`sort_order` 和 `card_order` 使用 `asc` 或 `desc`。单独选择 `card` 时只按卡密排序；选择其他字段时该字段为第一排序、卡密为第二排序。备注不参与排序，分页和总数始终由数据库计算。
+
+## 7. 时长卡客户端接口
+
+时长卡与点卡使用不同表和接口。卡密本身保存固定时长，接口不读取 `point_balance`，也不会写入点数流水。
+
+### 登录
+
+`GET/POST /duration/card_login`
+
+提交 `center_id/name` 和 `card`。软件编号从时长卡记录读取，不需要提交 `software`。未激活卡在首次登录时激活；如果生成时设置了最晚激活时间，超过该时间后不能激活。成功响应包含：
+
+```json
+{
+  "needle": "服务端随机心跳令牌",
+  "authorized_until": "2026-09-09T12:00:00+08:00",
+  "software": 1,
+  "heartbeat_interval_seconds": 300
+}
+```
+
+重复登录只刷新 `needle`，不会再次延长 `authorized_until`；同一张时长卡同时只接受最后一次登录生成的 needle。
+
+### 心跳和退出
+
+- `GET/POST /duration/card_ping`：提交 `card`、`needle`，只更新最后心跳时间并返回当前到期时间；needle 不正确、卡被冻结或已到期时失败。
+- `GET/POST /duration/card_logout`：提交 `card`，可附带 `needle`；清除在线校验，不改变卡密剩余时长。
+- `GET/POST /duration/query`：查询当前时长卡的固定时长、激活状态、到期时间和配置。
+- `GET/POST /duration/bulletin`：读取时长卡所属软件的公告。
+- `GET/POST /duration/config`：读取或写入卡密配置，仍受 200 字符限制。
+
+### 时长卡管理
+
+管理员接口位于 `/admin`：
+
+- `/duration_card/list`：分页筛选和排序；状态值 `1` 未激活、`2` 已激活、`3` 已到期、`4` 冻结。
+- `/duration_card/create`：生成时长卡，`duration_minutes` 范围为 5 分钟至 36500 天，`latest_activation_minutes` 为 `-1` 表示不限、`0` 表示立即激活。
+- `/duration_card/detail`、`/duration_card/save`、`/duration_card/state`、`/duration_card/renew`、`/duration_card/delete`：详情、编辑、冻结/解冻、续费和删除。
+
+访客页面可调用 `POST /visitor/查询时长卡`，提交 `center_id` 和完整 `card`，只返回状态和到期信息，不返回服务端 needle。

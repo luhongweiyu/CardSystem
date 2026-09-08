@@ -135,6 +135,13 @@ func 连接数据库() error {
 		if err := db.Table(tableName).AutoMigrate(&卡密表样式{}); err != nil {
 			return fmt.Errorf("初始化或更新管理员 %s 的卡密表结构失败: %w", administrator.Name, err)
 		}
+		durationTableName, durationTableErr := 时长卡数据表名(administrator.Name)
+		if durationTableErr != nil {
+			return fmt.Errorf("管理员 %s 的时长卡表名不正确: %w", administrator.Name, durationTableErr)
+		}
+		if err := db.Table(durationTableName).AutoMigrate(&时长卡记录{}); err != nil {
+			return fmt.Errorf("初始化或更新管理员 %s 的时长卡表结构失败: %w", administrator.Name, err)
+		}
 		if err := user_刷新用户设置(administrator.Name); err != nil {
 			return fmt.Errorf("加载管理员 %s 的运行设置失败: %w", administrator.Name, err)
 		}

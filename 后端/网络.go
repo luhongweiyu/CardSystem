@@ -247,6 +247,14 @@ func 启动网络() error {
 		admin.POST("/point_period_price/list", 管理员_查询点卡周期价格)
 		admin.POST("/point_period_price/save", 管理员_保存点卡周期价格)
 		admin.POST("/point_period_price/delete", 管理员_删除点卡周期价格)
+		// 时长卡与点卡完全分开，使用独立表和独立管理接口。
+		admin.POST("/duration_card/list", 管理员_查询时长卡列表)
+		admin.POST("/duration_card/create", 管理员_添加时长卡)
+		admin.POST("/duration_card/detail", 管理员_查询时长卡详情)
+		admin.POST("/duration_card/save", 管理员_修改时长卡)
+		admin.POST("/duration_card/delete", 管理员_删除时长卡)
+		admin.POST("/duration_card/state", 管理员_批量修改时长卡状态)
+		admin.POST("/duration_card/renew", 管理员_续费时长卡)
 		admin.POST("/创建代理账号", 管理员_创建代理账号)
 		admin.POST("/设置代理账号", 设置代理账号)
 		admin.POST("/查询代理账号", 查询代理账号)
@@ -281,11 +289,22 @@ func 启动网络() error {
 	cardRead.Match([]string{"POST", "GET"}, "/period_prices", 卡端_查询周期价格)
 	cardRead.Match([]string{"POST", "GET"}, "/point_ledger/query", 卡端_查询点数流水)
 
+	// 独立时长卡客户端接口。卡密和管理员的解析、签名规则与点卡一致，
+	// 但后续业务只读取 duration_card_<管理员> 表。
+	duration := router.Group("/duration", card_id获取用户设置, 卡密md5验证)
+	duration.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
+	duration.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
+	duration.Match([]string{"POST", "GET"}, "/card_logout", durationCardLogout)
+	duration.Match([]string{"POST", "GET"}, "/query", durationCardQuery)
+	duration.Match([]string{"POST", "GET"}, "/bulletin", durationCardBulletin)
+	duration.Match([]string{"POST", "GET"}, "/config", durationCardConfig)
+
 	// 访客页只读卡密和点数流水，不再提供时长充值、暂停或恢复接口。
 	visitor := router.Group("/visitor", visitor_验证对应id)
 	visitor.POST("/查询所有卡密", visitor_查询所有卡密)
 	visitor.POST("/查询卡密", visitor_查询卡密详情)
 	visitor.POST("/point_ledger/query", visitor_查询点数流水)
+	visitor.POST("/查询时长卡", 访客_查询时长卡)
 
 	静态文件夹(router, "./assets")
 	port := strings.TrimSpace(viper.GetString("网站.端口"))

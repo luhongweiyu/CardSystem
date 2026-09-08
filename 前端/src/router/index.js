@@ -8,6 +8,7 @@ const router = createRouter({
     { path: '/', redirect: '/index' },
     { path: '/index', name: 'index', component: () => import('../views/HomeView.vue') },
     { path: '/card', name: 'card', component: () => import('../views2/Card.vue') },
+    { path: '/duration-card', name: 'duration-card', component: () => import('../views2/时长卡.vue') },
     { path: '/software', name: 'software', component: () => import('../views2/SoftWare.vue') },
     { path: '/point-ledger', name: 'point-ledger', component: () => import('../views2/点数流水.vue') },
     { path: '/log', name: 'log', component: () => import('../views2/Log.vue') },

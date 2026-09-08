@@ -356,7 +356,7 @@ const 保存软件 = function () {
     })
 }
 const 删除软件 = function (row) {
-  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡和设备会话，流水仅保留最近30天。继续？`, '确认删除', {
+  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡、时长卡和设备会话，流水仅保留最近30天。继续？`, '确认删除', {
     type: 'warning'
   })
     .then(() => post('/user_del_soft', { id: row.ID }))
