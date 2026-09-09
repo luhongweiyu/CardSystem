@@ -10,7 +10,7 @@
 
     <div class="顶部信息">
       <el-link v-if="访客链接" :href="访客链接" target="_blank" type="success">卡密查询页</el-link>
-      <span>{{ 是代理账号 ? '渠道合伙人' : '管理员' }}：{{ 账号 }}</span>
+      <span>{{ 是代理账号 ? '小伙伴' : '管理员' }}：{{ 账号 }}</span>
       <span v-if="是代理账号">余额：{{ 账号信息.balance ?? 0 }} 点</span>
       <span v-else>本小时请求：{{ api次数 }}</span>
       <el-button type="danger" plain size="small" @click="退出登录">退出登录</el-button>

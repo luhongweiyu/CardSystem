@@ -23,6 +23,7 @@ type 软件请求 struct {
 	DefaultPeriodSeconds     int64  `json:"-"`
 	HeartbeatIntervalSeconds int64  `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       *int64 `json:"online_grace_minutes"`
+	PauseDeductMinutes       *int64 `json:"pause_deduct_minutes"`
 }
 
 // 软件列表项是管理端和代理账号共用的轻量返回结构。
@@ -33,6 +34,7 @@ type 软件列表项 struct {
 	DefaultPeriodMinutes     int64     `json:"default_period_minutes"`
 	HeartbeatIntervalSeconds int64     `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       int64     `json:"online_grace_minutes"`
+	PauseDeductMinutes       int64     `json:"pause_deduct_minutes"`
 	CreatedAt                time.Time `json:"created_at"`
 }
 
@@ -49,7 +51,7 @@ func 读取软件列表(admin string) ([]软件列表项, error) {
 	for _, row := range rows {
 		result = append(result, 软件列表项{ID: row.ID, Software: row.Software, Bulletin: row.Bulletin,
 			DefaultPeriodMinutes: 秒转分钟(row.DefaultPeriodSeconds), HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
-			OnlineGraceMinutes: row.OnlineGraceMinutes, CreatedAt: row.CreatedAt})
+			OnlineGraceMinutes: row.OnlineGraceMinutes, PauseDeductMinutes: row.PauseDeductMinutes, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
 }
@@ -77,7 +79,7 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 		return request, fmt.Errorf("软件公告不能包含非法控制字符且不能超过5000个字符")
 	}
 	if request.DefaultPeriodMinutes == 0 {
-		request.DefaultPeriodMinutes = 默认登录周期分钟
+		request.DefaultPeriodMinutes = 默认点卡授权周期分钟
 	}
 	if request.HeartbeatIntervalSeconds == 0 {
 		request.HeartbeatIntervalSeconds = 默认心跳周期秒
@@ -88,8 +90,8 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	} else if *request.OnlineGraceMinutes == 0 {
 		*request.OnlineGraceMinutes = 默认自动离线时间分钟
 	}
-	if !授权时长分钟有效(request.DefaultPeriodMinutes, false) {
-		return request, fmt.Errorf("默认授权时长必须在%d至%d分钟之间", 最小计费周期分钟, 最大计费周期分钟)
+	if !点卡授权时长分钟有效(request.DefaultPeriodMinutes, false) {
+		return request, fmt.Errorf("默认授权时长必须在%d至%d分钟之间", 最小点卡计费周期分钟, 最大点卡计费周期分钟)
 	}
 	request.DefaultPeriodSeconds = 分钟转秒(request.DefaultPeriodMinutes)
 	if request.HeartbeatIntervalSeconds <= 0 || request.HeartbeatIntervalSeconds > 最大心跳周期秒 {
@@ -97,6 +99,13 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	}
 	if *request.OnlineGraceMinutes != 0 && (*request.OnlineGraceMinutes < 最小自动离线时间分钟 || *request.OnlineGraceMinutes > 最大自动离线时间分钟) {
 		return request, fmt.Errorf("自动离线时间必须为0或%d至%d分钟", 最小自动离线时间分钟, 最大自动离线时间分钟)
+	}
+	if request.PauseDeductMinutes == nil {
+		默认值 := int64(0)
+		request.PauseDeductMinutes = &默认值
+	}
+	if *request.PauseDeductMinutes < 0 || *request.PauseDeductMinutes > 时长卡永久分钟 {
+		return request, fmt.Errorf("暂停扣除时长必须为0至%d天", 时长卡永久分钟/1440)
 	}
 	return request, nil
 }
@@ -126,7 +135,8 @@ func user_add_soft(ctx *gin.Context) {
 	err = db.Transaction(func(tx *gorm.DB) error {
 		created = 软件{Name: admin, Software: request.Software, Bulletin: request.Bulletin,
 			CreatedAt: time.Now(), DefaultPeriodSeconds: request.DefaultPeriodSeconds,
-			HeartbeatIntervalSeconds: request.HeartbeatIntervalSeconds, OnlineGraceMinutes: *request.OnlineGraceMinutes}
+			HeartbeatIntervalSeconds: request.HeartbeatIntervalSeconds, OnlineGraceMinutes: *request.OnlineGraceMinutes,
+			PauseDeductMinutes: *request.PauseDeductMinutes}
 		if err := tx.Table("software").Create(&created).Error; err != nil {
 			return fmt.Errorf("创建软件失败")
 		}
@@ -141,8 +151,8 @@ func user_add_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	清除软件计费配置缓存(admin, created.ID)
-	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodMinutes: 秒转分钟(created.DefaultPeriodSeconds), HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, CreatedAt: created.CreatedAt}})
+	清除点卡计费配置缓存(admin, created.ID)
+	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodMinutes: 秒转分钟(created.DefaultPeriodSeconds), HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, PauseDeductMinutes: created.PauseDeductMinutes, CreatedAt: created.CreatedAt}})
 }
 
 func user_del_soft(ctx *gin.Context) {
@@ -154,7 +164,7 @@ func user_del_soft(ctx *gin.Context) {
 		return
 	}
 	admin := 管理员_用户名(ctx)
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -164,7 +174,11 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+	if err := 同步并删除软件点卡心跳缓存(admin, request.ID); err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	if err := 同步并删除软件时长卡心跳缓存(admin, request.ID); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
@@ -193,11 +207,11 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, "删除软件失败")
 		return
 	}
-	if err := db.Table(tableName).Where("software = ?", request.ID).Delete(&卡密表样式{}).Error; err != nil {
+	if err := db.Table(tableName).Where("software = ?", request.ID).Delete(&点卡表样式{}).Error; err != nil {
 		失败提示管理端(ctx, "删除关联卡密失败")
 		return
 	}
-	if err := db.Table(durationTableName).Where("software = ?", request.ID).Delete(&时长卡记录{}).Error; err != nil {
+	if err := db.Table(durationTableName).Where("software = ?", request.ID).Delete(&时长卡表样式{}).Error; err != nil {
 		失败提示管理端(ctx, "删除关联时长卡失败")
 		return
 	}
@@ -209,11 +223,24 @@ func user_del_soft(ctx *gin.Context) {
 		失败提示管理端(ctx, "删除点卡计费方案失败")
 		return
 	}
+	// 时长卡代理价格不属于卡密流水，软件删除后也必须一并清理；否则
+	// 旧软件编号被重新使用时，代理可能意外继承旧价格锚点。
+	if err := db.Table(时长卡代理价格表名).Where("admin = ? AND software = ?", admin, request.ID).Delete(&时长卡代理价格{}).Error; err != nil {
+		失败提示管理端(ctx, "删除时长卡代理价格失败")
+		return
+	}
+	if err := db.Table(时长充值卡表名).Where("admin = ? AND software = ?", admin, request.ID).Delete(&时长充值卡{}).Error; err != nil {
+		失败提示管理端(ctx, "删除关联时长充值卡失败")
+		return
+	}
 	// 流水是审计记录，软件删除后仍保留至 30 天清理任务执行，不影响其他软件查询。
-	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+	if err := 同步并删除软件点卡心跳缓存(admin, request.ID); err != nil {
 		日志("log/启动记录.txt", "删除软件后同步心跳缓存失败:"+err.Error())
 	}
-	清除软件计费配置缓存(admin, request.ID)
+	if err := 同步并删除软件时长卡心跳缓存(admin, request.ID); err != nil {
+		日志("log/启动记录.txt", "删除软件后同步时长卡心跳缓存失败:"+err.Error())
+	}
+	清除点卡计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功", "deleted_card_count": deletedCardCount, "deleted_duration_card_count": deletedDurationCardCount})
 }
 
@@ -230,7 +257,11 @@ func user_modify_bulletin(ctx *gin.Context) {
 	admin := 管理员_用户名(ctx)
 	// 心跳间隔和自动离线时间都属于软件设置。修改前统一同步并失效该软件的
 	// 会话缓存，下一次心跳会读取修改后的完整配置。
-	if err := 同步并删除软件心跳缓存(admin, request.ID); err != nil {
+	if err := 同步并删除软件点卡心跳缓存(admin, request.ID); err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	if err := 同步并删除软件时长卡心跳缓存(admin, request.ID); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
@@ -257,6 +288,10 @@ func user_modify_bulletin(ctx *gin.Context) {
 			}
 			request.OnlineGraceMinutes = &当前值
 		}
+		if request.PauseDeductMinutes == nil {
+			当前值 := current.PauseDeductMinutes
+			request.PauseDeductMinutes = &当前值
+		}
 		var parseErr error
 		request, parseErr = 解析软件设置(request, true)
 		if parseErr != nil {
@@ -279,7 +314,7 @@ func user_modify_bulletin(ctx *gin.Context) {
 				return fmt.Errorf("请先添加并启用%d秒的点卡计费方案", request.DefaultPeriodSeconds)
 			}
 		}
-		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds, "online_grace_minutes": *request.OnlineGraceMinutes}
+		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds, "online_grace_minutes": *request.OnlineGraceMinutes, "pause_deduct_minutes": *request.PauseDeductMinutes}
 		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Updates(updates); result.Error != nil {
 			return fmt.Errorf("修改软件失败")
 		}
@@ -297,10 +332,13 @@ func user_modify_bulletin(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	if cacheErr := 同步并删除软件心跳缓存(admin, request.ID); cacheErr != nil {
+	if cacheErr := 同步并删除软件点卡心跳缓存(admin, request.ID); cacheErr != nil {
 		日志("log/启动记录.txt", "修改软件后同步心跳缓存失败:"+cacheErr.Error())
 	}
-	清除软件计费配置缓存(admin, request.ID)
+	if cacheErr := 同步并删除软件时长卡心跳缓存(admin, request.ID); cacheErr != nil {
+		日志("log/启动记录.txt", "修改软件后同步时长卡心跳缓存失败:"+cacheErr.Error())
+	}
+	清除点卡计费配置缓存(admin, request.ID)
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})
 }
 
@@ -312,8 +350,8 @@ func user_soft_验证(name string, soft int) bool {
 	return db_software.Where("name = ? AND id = ?", name, soft).Count(&count).Error == nil && count == 1
 }
 
-// card_get_bulletin 是客户端查询软件公告的公开接口。
-func card_get_bulletin(ctx *gin.Context) {
+// 点卡获取公告是点卡客户端查询软件公告的公开接口。
+func 点卡获取公告(ctx *gin.Context) {
 	softwareID, err := strconv.Atoi(input(ctx, "software"))
 	if err != nil || softwareID <= 0 {
 		失败提示(ctx, "software错误")
@@ -325,7 +363,7 @@ func card_get_bulletin(ctx *gin.Context) {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	card, found, readErr := 读取卡密记录(cardContext.Name, cardContext.Card)
+	card, found, readErr := 读取点卡记录(cardContext.Name, cardContext.Card)
 	if readErr != nil {
 		失败提示(ctx, readErr.Error())
 		return

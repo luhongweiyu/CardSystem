@@ -86,6 +86,8 @@ const { 账号, api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
 const 功能菜单 = computed(() => {
   const 通用入口 = [
     { path: '/card', label: '点卡管理', description: '生成、查询、冻结或删除卡密', icon: 'Postcard', color: '蓝色' },
+    { path: '/duration-card', label: '时长卡管理', description: '生成、查询和续费固定时长卡', icon: 'Timer', color: '紫色' },
+    { path: '/duration-recharge-card', label: '时长充值卡', description: '生成和管理可重复使用的充值卡', icon: 'CreditCard', color: '橙色' },
     { path: '/help', label: '接入帮助', description: '查看登录、心跳和签名参数', icon: 'QuestionFilled', color: '紫色' },
     { path: '/log', label: '运行日志', description: '查看当前账号的操作记录', icon: 'List', color: '橙色' },
     { path: '/about', label: '关于系统', description: '查看版本和支持信息', icon: 'InfoFilled', color: '灰色' }
@@ -94,12 +96,11 @@ const 功能菜单 = computed(() => {
     return 通用入口
   }
   return [
-    通用入口[0],
-    { path: '/duration-card', label: '时长卡管理', description: '生成、查询和续费固定时长卡', icon: 'Timer', color: '紫色' },
+    ...通用入口.slice(0, 3),
     { path: '/software', label: '软件管理', description: '配置软件和点卡计费方案', icon: 'Iphone', color: '绿色' },
     { path: '/point-ledger', label: '点数流水', description: '查看所有余额变动记录', icon: 'Tickets', color: '青色' },
     { path: '/setting', label: '账号设置', description: '管理公告、联系方式和安全选项', icon: 'Setting', color: '粉色' },
-    ...通用入口.slice(1)
+    ...通用入口.slice(3)
   ]
 })
 

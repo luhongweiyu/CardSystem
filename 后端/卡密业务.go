@@ -94,9 +94,9 @@ func GetRandomString(length int, lower string) string {
 	return string(result)
 }
 
-// card_id获取用户设置校验持卡接口的管理员范围，并把卡密上下文写入 Gin。
+// 卡端读取用户设置校验持卡接口的管理员范围，并把卡密上下文写入 Gin。
 // center_id 是面向访客页面的公开入口，name 仅用于管理员生成的内部链接。
-func card_id获取用户设置(ctx *gin.Context) {
+func 卡端读取用户设置(ctx *gin.Context) {
 	card := strings.ToLower(strings.TrimSpace(input(ctx, "card")))
 	if !卡密格式规则.MatchString(card) {
 		失败提示(ctx, "card错误")
@@ -272,30 +272,30 @@ func 卡密md5验证(ctx *gin.Context) {
 	}
 }
 
-// 读取卡密记录直接按主键查询管理员独立卡密表。卡密余额和状态会频繁变化，
+// 读取点卡记录直接按主键查询管理员独立点卡表。点卡余额和状态会频繁变化，
 // 不在进程内保存无上限缓存，避免大量不同卡密查询造成内存持续增长或读到旧值。
-func 读取卡密记录(admin string, card string) (卡密表样式, bool, error) {
+func 读取点卡记录(admin string, card string) (点卡表样式, bool, error) {
 	admin = strings.TrimSpace(admin)
 	card = strings.ToLower(strings.TrimSpace(card))
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
-		return 卡密表样式{}, false, err
+		return 点卡表样式{}, false, err
 	}
 	if db == nil {
-		return 卡密表样式{}, false, fmt.Errorf("数据库尚未初始化")
+		return 点卡表样式{}, false, fmt.Errorf("数据库尚未初始化")
 	}
-	var cardRow 卡密表样式
+	var cardRow 点卡表样式
 	query := db.Table(tableName).Where("card = ?", card).First(&cardRow)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return 卡密表样式{}, false, nil
+		return 点卡表样式{}, false, nil
 	}
 	if query.Error != nil {
-		return 卡密表样式{}, false, fmt.Errorf("读取卡密失败")
+		return 点卡表样式{}, false, fmt.Errorf("读取点卡失败")
 	}
 	return cardRow, true, nil
 }
 
-type 卡密设备详情 struct {
+type 点卡设备详情 struct {
 	DeviceID        string    `json:"device_id"`
 	DeviceAlias     string    `json:"device_alias"`
 	Needle          string    `json:"needle"`
@@ -304,18 +304,18 @@ type 卡密设备详情 struct {
 	Online          bool      `json:"online"`
 }
 
-type 卡密设备统计 struct {
+type 点卡设备统计 struct {
 	AuthorizedCount int64    `json:"authorized_device_count"`
 	OnlineCount     int64    `json:"online_device_count"`
 	DeviceTotal     int64    `json:"device_total"`
 	DevicePage      int      `json:"device_page"`
 	DevicePageSize  int      `json:"device_page_size"`
-	Devices         []卡密设备详情 `json:"devices"`
+	Devices         []点卡设备详情 `json:"devices"`
 }
 
-// 读取卡密设备分页参数只允许较小的明细页，避免单个卡密异常累积大量设备时
+// 读取点卡设备分页参数只允许较小的明细页，避免单个点卡异常累积大量设备时
 // 直接返回超大响应；设备总数仍由服务端单独统计。
-func 读取卡密设备分页参数(ctx *gin.Context) (int, int) {
+func 读取点卡设备分页参数(ctx *gin.Context) (int, int) {
 	page, _ := strconv.Atoi(input(ctx, "page"))
 	if page == 0 {
 		page, _ = strconv.Atoi(input(ctx, "当前页"))
@@ -338,11 +338,11 @@ func 读取卡密设备分页参数(ctx *gin.Context) (int, int) {
 	return page, pageSize
 }
 
-// 查询卡密设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
+// 查询点卡设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
 // 在线状态严格按计费规则使用最后心跳推断窗口，needle 按业务要求随设备明细返回。
 // 设备明细按页查询，避免异常设备数量导致响应过大。
-func 查询卡密设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int) (卡密设备统计, error) {
-	var result 卡密设备统计
+func 查询点卡设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int) (点卡设备统计, error) {
+	var result 点卡设备统计
 	settings, err := 读取软件设置(db, admin, softwareID)
 	if err != nil {
 		return result, err
@@ -384,14 +384,14 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 	if query.Error != nil {
 		return result, fmt.Errorf("查询设备会话失败")
 	}
-	result.Devices = make([]卡密设备详情, 0, len(rows))
+	result.Devices = make([]点卡设备详情, 0, len(rows))
 	for _, row := range rows {
 		// 普通心跳可能尚未达到数据库同步期限；详情查询只合并内存快照，
 		// 不强制落库也能返回当前真实在线状态。
 		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
 		online := row.LastHeartbeatAt.After(在线截止)
-		result.Devices = append(result.Devices, 卡密设备详情{
+		result.Devices = append(result.Devices, 点卡设备详情{
 			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
 			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online,
 		})
@@ -399,14 +399,14 @@ func 查询卡密设备统计(admin string, card string, softwareID int, now tim
 	return result, nil
 }
 
-func 卡密_查询详情(ctx *gin.Context) {
+func 点卡查询详情(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	cardRow, found, err := 读取卡密记录(cardContext.Name, cardContext.Card)
+	cardRow, found, err := 读取点卡记录(cardContext.Name, cardContext.Card)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -415,8 +415,8 @@ func 卡密_查询详情(ctx *gin.Context) {
 		失败提示(ctx, "卡密不存在")
 		return
 	}
-	设备页, 设备每页 := 读取卡密设备分页参数(ctx)
-	设备统计, err := 查询卡密设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页)
+	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
+	设备统计, err := 查询点卡设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -442,11 +442,11 @@ func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
 	return value, err == nil
 }
 
-// card_login 是点卡客户端的登录入口。软件编号由卡密记录决定，客户端不需要
+// 点卡登录是点卡客户端的登录入口。软件编号由点卡记录决定，客户端不需要
 // 重复提交；period_minutes 不传时使用该软件的默认授权时长。
-func card_login(ctx *gin.Context) {
+func 点卡登录(ctx *gin.Context) {
 	periodMinutes, valid := 解析整数参数(ctx, "period_minutes")
-	if !valid || periodMinutes < 0 || !授权时长分钟有效(periodMinutes, true) {
+	if !valid || periodMinutes < 0 || !点卡授权时长分钟有效(periodMinutes, true) {
 		失败提示(ctx, "period_minutes参数错误")
 		return
 	}
@@ -469,7 +469,7 @@ func card_login(ctx *gin.Context) {
 	})
 }
 
-func card_ping(ctx *gin.Context) {
+func 点卡心跳(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {
@@ -493,7 +493,7 @@ func card_ping(ctx *gin.Context) {
 	})
 }
 
-func card_logout(ctx *gin.Context) {
+func 点卡退出(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {
@@ -516,14 +516,14 @@ func 校验卡密配置内容(content string) error {
 	return nil
 }
 
-func modify_card_configContent(ctx *gin.Context) {
+func 点卡修改配置内容(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	tableName, err := 卡密数据表名(cardContext.Name)
+	tableName, err := 点卡数据表名(cardContext.Name)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -546,7 +546,7 @@ func modify_card_configContent(ctx *gin.Context) {
 		失败提示(ctx, "type参数不正确")
 		return
 	}
-	cardRow, found, err := 读取卡密记录(cardContext.Name, cardContext.Card)
+	cardRow, found, err := 读取点卡记录(cardContext.Name, cardContext.Card)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
@@ -558,7 +558,9 @@ func modify_card_configContent(ctx *gin.Context) {
 	成功提示(ctx, cardRow.Config_content)
 }
 
-func 解析卡密列表(raw string) ([]string, error) {
+// 解析卡密文本列表只负责拆分和校验卡密文本；点卡、时长卡和充值卡的
+// 落库流程分别由各自业务负责。
+func 解析卡密文本列表(raw string) ([]string, error) {
 	items := strings.FieldsFunc(raw, func(r rune) bool { return r == '\n' || r == '\r' || r == ',' || r == ';' || r == ' ' || r == '\t' })
 	if len(items) == 0 {
 		return nil, fmt.Errorf("请输入卡密")
@@ -579,22 +581,22 @@ func 解析卡密列表(raw string) ([]string, error) {
 	return result, nil
 }
 
-// 生成随机卡密只负责生成候选值；批量生成时由调用方在事务外统一预检查，
+// 生成随机卡密文本只负责生成候选值；批量生成时由调用方在事务外统一预检查，
 // 最终写入仍由数据库主键唯一约束兜底。
-func 生成随机卡密(softwareID int) string {
+func 生成随机卡密文本(softwareID int) string {
 	return strconv.FormatInt(int64(softwareID), 36) + GetRandomString(16, "a")
 }
 
-// 校验并准备生成卡密的参数。卡密文本解析、随机值生成和重复预检查都在事务外
+// 校验并准备生成点卡卡密的参数。卡密文本解析、随机值生成和重复预检查都在事务外
 // 完成，避免无效请求或大批量计算持有数据库锁。最终写入仍依赖卡密主键唯一约束，
 // 防止预检查完成后被并发请求抢先创建。
-func 准备生成卡密(admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
+func 准备生成点卡卡密(admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) || softwareID <= 0 {
 		return "", nil, fmt.Errorf("管理员或软件参数错误")
 	}
-	if points <= 0 || points > 最大单次点数 || count <= 0 || count > 最大单次生成卡密数量 {
-		return "", nil, fmt.Errorf("点数必须在1至%d之间，数量必须在1至%d之间", 最大单次点数, 最大单次生成卡密数量)
+	if points <= 0 || points > 最大单次点数 || count <= 0 || count > 最大单次生成点卡数量 {
+		return "", nil, fmt.Errorf("点数必须在1至%d之间，数量必须在1至%d之间", 最大单次点数, 最大单次生成点卡数量)
 	}
 	if _, valid := 规范化可显示文本(notes, 500); !valid {
 		return "", nil, fmt.Errorf("卡密备注不能包含控制字符且不能超过500个字符")
@@ -605,7 +607,7 @@ func 准备生成卡密(admin string, softwareID int, points int64, count int, c
 	var specified []string
 	if !random {
 		var err error
-		specified, err = 解析卡密列表(customCards)
+		specified, err = 解析卡密文本列表(customCards)
 		if err != nil {
 			return "", nil, err
 		}
@@ -621,7 +623,7 @@ func 准备生成卡密(admin string, softwareID int, points int64, count int, c
 	if softwareQuery.Error != nil {
 		return "", nil, fmt.Errorf("检查软件失败")
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return "", nil, err
 	}
@@ -629,7 +631,7 @@ func 准备生成卡密(admin string, softwareID int, points int64, count int, c
 	if random {
 		seen := make(map[string]struct{}, count)
 		for len(cards) < count {
-			card := strings.ToLower(生成随机卡密(softwareID))
+			card := strings.ToLower(生成随机卡密文本(softwareID))
 			if _, exists := seen[card]; exists {
 				continue
 			}
@@ -649,9 +651,9 @@ func 准备生成卡密(admin string, softwareID int, points int64, count int, c
 	return tableName, cards, nil
 }
 
-// 锁定生成卡密软件只在最终写入事务中短暂锁定软件行，和删除软件保持一致的
+// 锁定发卡软件只在最终写入事务中短暂锁定软件行，和删除软件保持一致的
 // 加锁顺序，避免软件删除与卡密写入并发时产生孤立卡密。
-func 锁定生成卡密软件(tx *gorm.DB, admin string, softwareID int) error {
+func 锁定发卡软件(tx *gorm.DB, admin string, softwareID int) error {
 	var softwareRow 软件
 	query := tx.Table("software").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id").Where("name = ? AND id = ?", strings.TrimSpace(admin), softwareID).First(&softwareRow)
@@ -664,23 +666,23 @@ func 锁定生成卡密软件(tx *gorm.DB, admin string, softwareID int) error {
 	return nil
 }
 
-// 创建卡密并记录初始流水只负责持久化已经校验过的卡密。调用方应把它放在自己的
+// 创建点卡并记录初始流水只负责持久化已经校验过的点卡。调用方应把它放在自己的
 // 事务中，保证卡密和对应的初始流水同时成功或失败。
-func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
+func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
 	// 准备阶段已经完成校验；这里再次去除首尾空格，确保管理员入口和
 	// 代理入口无论调用路径如何，落库内容保持一致。
 	var valid bool
 	if notes, valid = 规范化可显示文本(notes, 500); !valid {
 		return fmt.Errorf("卡密备注格式不正确")
 	}
-	rows := make([]卡密表样式, 0, len(cards))
+	rows := make([]点卡表样式, 0, len(cards))
 	ledgers := make([]点数流水, 0, len(cards))
 	remark := "生成卡密初始点数"
 	if agentID > 0 {
 		remark += fmt.Sprintf("；渠道合伙人ID=%d", agentID)
 	}
 	for _, card := range cards {
-		rows = append(rows, 卡密表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID})
+		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID})
 		// 初始余额也作为一条补点流水保存，便于审计同名卡重新生成后的新旧记录。
 		ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, EventType: 点数事件_补点, Change: points, BalanceBefore: 0, BalanceAfter: points, Remark: remark, CreatedAt: now})
 	}
@@ -702,19 +704,19 @@ func 创建卡密并记录初始流水(tx *gorm.DB, tableName string, admin stri
 	return nil
 }
 
-// 生成并保存卡密采用全量事务：任意卡密重复或数据库错误都会全部回滚，
-// 避免管理员得到数量不确定的半成功结果。代理生成卡密时会复用同一
+// 生成并保存点卡卡密采用全量事务：任意卡密重复或数据库错误都会全部回滚，
+// 避免管理员得到数量不确定的半成功结果。代理生成点卡时会复用同一
 // 套准备/创建函数，并把渠道余额扣减放进同一事务。
-func 生成并保存卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
-	tableName, cards, err := 准备生成卡密(admin, softwareID, points, count, customCards, random, notes, config)
+func 生成并保存点卡卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
+	tableName, cards, err := 准备生成点卡卡密(admin, softwareID, points, count, customCards, random, notes, config)
 	if err != nil {
 		return nil, err
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := 锁定生成卡密软件(tx, admin, softwareID); err != nil {
+		if err := 锁定发卡软件(tx, admin, softwareID); err != nil {
 			return err
 		}
-		if err := 创建卡密并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
+		if err := 创建点卡并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		return nil
@@ -725,7 +727,7 @@ func 生成并保存卡密(admin string, agentID int, softwareID int, points int
 	return cards, nil
 }
 
-type 卡密生成请求 struct {
+type 点卡卡密生成请求 struct {
 	Software      int    `json:"software"`
 	Points        int64  `json:"points"`
 	Num           int    `json:"num"`
@@ -735,8 +737,8 @@ type 卡密生成请求 struct {
 	ConfigContent string `json:"config_content"`
 }
 
-func 管理员_添加卡密(ctx *gin.Context) {
-	var request 卡密生成请求
+func 管理员_添加点卡卡密(ctx *gin.Context) {
+	var request 点卡卡密生成请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
 		失败提示管理端(ctx, "数据错误")
 		return
@@ -746,7 +748,7 @@ func 管理员_添加卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	cards, err := 生成并保存卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+	cards, err := 生成并保存点卡卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -755,7 +757,7 @@ func 管理员_添加卡密(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张卡密", len(cards)), "data": strings.Join(cards, "\n")})
 }
 
-type 卡密列表项 struct {
+type 点卡卡密列表项 struct {
 	Card                  string     `json:"card"`
 	CreateTime            time.Time  `json:"create_time"`
 	UseTime               *time.Time `json:"use_time"`
@@ -768,7 +770,8 @@ type 卡密列表项 struct {
 	AuthorizedDeviceCount int64      `json:"authorized_device_count"`
 }
 
-func 读取分页参数(ctx *gin.Context) (int, int) {
+// 读取通用分页参数供点卡、时长卡和时长充值卡列表复用。
+func 读取通用分页参数(ctx *gin.Context) (int, int) {
 	page, _ := strconv.Atoi(input(ctx, "page"))
 	if page == 0 {
 		page, _ = strconv.Atoi(input(ctx, "当前页"))
@@ -788,15 +791,15 @@ func 读取分页参数(ctx *gin.Context) (int, int) {
 	return page, pageSize
 }
 
-// 卡密列表排序只允许固定白名单字段。排序由数据库完成，避免前端只对当前页
+// 点卡列表排序只允许固定白名单字段。排序由数据库完成，避免前端只对当前页
 // 排序造成分页结果错误；card_order 只作为其他字段相等时的第二排序键。
-type 卡密列表排序参数 struct {
+type 点卡卡密列表排序参数 struct {
 	字段   string
 	方向   string
 	卡密方向 string
 }
 
-func 读取卡密列表排序(ctx *gin.Context) 卡密列表排序参数 {
+func 读取点卡卡密列表排序(ctx *gin.Context) 点卡卡密列表排序参数 {
 	field := strings.TrimSpace(input(ctx, "sort_by"))
 	order := strings.ToLower(strings.TrimSpace(input(ctx, "sort_order")))
 	cardOrder := strings.ToLower(strings.TrimSpace(input(ctx, "card_order")))
@@ -814,23 +817,23 @@ func 读取卡密列表排序(ctx *gin.Context) 卡密列表排序参数 {
 	if cardOrder != "asc" && cardOrder != "desc" {
 		cardOrder = "asc"
 	}
-	return 卡密列表排序参数{字段: field, 方向: order, 卡密方向: cardOrder}
+	return 点卡卡密列表排序参数{字段: field, 方向: order, 卡密方向: cardOrder}
 }
 
-// 应用卡密列表排序生成固定 SQL 片段。字段和方向均来自白名单，不能直接
+// 应用点卡卡密列表排序生成固定 SQL 片段。字段和方向均来自白名单，不能直接
 // 使用客户端传入的原始字符串；卡密本身是唯一键，作为第二排序键时可保证
 // 相同余额、状态或时间的记录翻页顺序稳定。
-func 应用卡密列表排序(query *gorm.DB, tableName string, sorting 卡密列表排序参数, admin string, now time.Time) *gorm.DB {
+func 应用点卡卡密列表排序(query *gorm.DB, tableName string, sorting 点卡卡密列表排序参数, admin string, now time.Time) *gorm.DB {
 	if sorting.字段 == "card" {
 		return query.Order("`card` " + sorting.方向)
 	}
 	return query.Order("`" + sorting.字段 + "` " + sorting.方向 + ", `card` " + sorting.卡密方向)
 }
 
-// 查询卡密列表是管理员和代理账号共用的查询实现；agentID 非零时限制到该代理
+// 查询点卡卡密列表是管理员和代理账号共用的查询实现；agentID 非零时限制到该代理
 // 创建的卡密。卡密类型和时长筛选已删除，所有记录都是纯点卡卡密。
-func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
-	tableName, err := 卡密数据表名(admin)
+func 查询点卡卡密列表(ctx *gin.Context, admin string, agentID int) {
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -843,7 +846,7 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		失败提示管理端(ctx, "卡密或备注筛选条件过长")
 		return
 	}
-	sorting := 读取卡密列表排序(ctx)
+	sorting := 读取点卡卡密列表排序(ctx)
 	now := time.Now()
 	query := db.Table(tableName)
 	if softwareID > 0 {
@@ -867,9 +870,9 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 		失败提示管理端(ctx, "查询卡密数量失败")
 		return
 	}
-	page, pageSize := 读取分页参数(ctx)
-	var rows []卡密表样式
-	query = 应用卡密列表排序(query, tableName, sorting, admin, now)
+	page, pageSize := 读取通用分页参数(ctx)
+	var rows []点卡表样式
+	query = 应用点卡卡密列表排序(query, tableName, sorting, admin, now)
 	if err := query.Limit(pageSize).Offset((page - 1) * pageSize).Find(&rows).Error; err != nil {
 		失败提示管理端(ctx, "查询卡密失败")
 		return
@@ -893,20 +896,20 @@ func 查询卡密列表(ctx *gin.Context, admin string, agentID int) {
 			counts[item.Card] = item.Count
 		}
 	}
-	data := make([]卡密列表项, 0, len(rows))
+	data := make([]点卡卡密列表项, 0, len(rows))
 	for _, row := range rows {
-		data = append(data, 卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AuthorizedDeviceCount: counts[row.Card]})
+		data = append(data, 点卡卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AuthorizedDeviceCount: counts[row.Card]})
 	}
 	成功提示管理端(ctx, gin.H{"data": data, "num": total, "page": page, "page_size": pageSize})
 }
 
-func 管理员_查询所有卡密(ctx *gin.Context) {
+func 管理员_查询点卡卡密列表(ctx *gin.Context) {
 	account, ok := 管理员_取账号信息(ctx)
 	if !ok {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	查询卡密列表(ctx, account.Name, 0)
+	查询点卡卡密列表(ctx, account.Name, 0)
 }
 
 func 查询操作日志(ctx *gin.Context) {
@@ -925,9 +928,9 @@ func 查询操作日志(ctx *gin.Context) {
 	ctx.String(http.StatusOK, read(time.Now())+"\n"+read(time.Now().AddDate(0, -1, 0)))
 }
 
-// 校验代理卡密归属在失效心跳缓存前确认代理确实拥有该卡，避免无权操作请求
+// 校验代理点卡归属在失效心跳缓存前确认代理确实拥有该卡，避免无权操作请求
 // 仅凭已知卡密名称干扰其他渠道的设备心跳。管理员操作无需额外查询。
-func 校验代理卡密归属(tableName string, agentID int, card string) error {
+func 校验代理点卡归属(tableName string, agentID int, card string) error {
 	if agentID <= 0 {
 		return nil
 	}
@@ -941,11 +944,11 @@ func 校验代理卡密归属(tableName string, agentID int, card string) error 
 	return nil
 }
 
-func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []string, error) {
+func 删除点卡记录(admin string, agentID int, cards []string) ([]string, []string, error) {
 	if len(cards) == 0 || len(cards) > 1000 {
 		return nil, cards, fmt.Errorf("单次操作卡密数量必须在1至1000之间")
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return nil, cards, err
 	}
@@ -962,7 +965,7 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 			失败 = append(失败, raw)
 			continue
 		}
-		if err := 校验代理卡密归属(tableName, agentID, card); err != nil {
+		if err := 校验代理点卡归属(tableName, agentID, card); err != nil {
 			失败 = append(失败, raw)
 			continue
 		}
@@ -975,7 +978,7 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 	for _, item := range 待删除 {
 		待删除卡密值 = append(待删除卡密值, item.卡密)
 	}
-	同步错误 := 同步并删除卡密心跳缓存_按卡返回错误(admin, 待删除卡密值)
+	同步错误 := 批量同步并删除点卡心跳缓存_按卡返回错误(admin, 待删除卡密值)
 	成功卡密值 := make([]string, 0, len(待删除))
 	for _, item := range 待删除 {
 		if _, exists := 同步错误[item.卡密]; exists {
@@ -987,7 +990,7 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 			if agentID > 0 {
 				query = query.Where("agent_id = ?", agentID)
 			}
-			result := query.Delete(&卡密表样式{})
+			result := query.Delete(&点卡表样式{})
 			if result.Error != nil || result.RowsAffected != 1 {
 				return fmt.Errorf("卡密不存在或无权删除")
 			}
@@ -1002,13 +1005,13 @@ func 删除卡密记录(admin string, agentID int, cards []string) ([]string, []
 	}
 	// 删除事务期间可能出现新的并发心跳，提交后对实际删除成功的卡密再统一
 	// 扫描并失效一次；此时业务已经成功，缓存错误只写日志，不能改写结果。
-	if cacheErr := 同步并删除卡密心跳缓存(admin, 成功卡密值); cacheErr != nil {
+	if cacheErr := 批量同步并删除点卡心跳缓存(admin, 成功卡密值); cacheErr != nil {
 		日志("log/启动记录.txt", "批量删除卡密后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	return 成功, 失败, nil
 }
 
-func 管理员_删除卡密(ctx *gin.Context) {
+func 管理员_删除点卡卡密(ctx *gin.Context) {
 	var request struct {
 		Cards []string `json:"cards"`
 	}
@@ -1021,7 +1024,7 @@ func 管理员_删除卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	success, failed, err := 删除卡密记录(account.Name, 0, request.Cards)
+	success, failed, err := 删除点卡记录(account.Name, 0, request.Cards)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -1031,7 +1034,7 @@ func 管理员_删除卡密(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
-func 修改卡密记录(admin string, agentID int, cardValue string, notes *string, config *string, state int) error {
+func 修改点卡记录(admin string, agentID int, cardValue string, notes *string, config *string, state int) error {
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) {
 		return fmt.Errorf("管理员名称格式不正确")
@@ -1055,7 +1058,7 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 			return err
 		}
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return err
 	}
@@ -1072,12 +1075,12 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 	if len(updates) == 0 {
 		return fmt.Errorf("没有需要修改的内容")
 	}
-	if err := 校验代理卡密归属(tableName, agentID, card); err != nil {
+	if err := 校验代理点卡归属(tableName, agentID, card); err != nil {
 		return err
 	}
 	// 卡密状态或属性发生变化时统一失效设备心跳快照。即使只修改备注，下一次
 	// 心跳重新加载数据库也能保证所有管理操作采用同一条缓存处理路径。
-	if err := 同步并删除卡密心跳缓存(admin, []string{card}); err != nil {
+	if err := 批量同步并删除点卡心跳缓存(admin, []string{card}); err != nil {
 		return err
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -1085,7 +1088,7 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 		if agentID > 0 {
 			query = query.Where("agent_id = ?", agentID)
 		}
-		var current 卡密表样式
+		var current 点卡表样式
 		if result := query.First(&current); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("卡密不存在或无权修改")
@@ -1105,14 +1108,14 @@ func 修改卡密记录(admin string, agentID int, cardValue string, notes *stri
 	if err != nil {
 		return err
 	}
-	if cacheErr := 同步并删除卡密心跳缓存(admin, []string{card}); cacheErr != nil {
+	if cacheErr := 批量同步并删除点卡心跳缓存(admin, []string{card}); cacheErr != nil {
 		// 卡密修改已经提交，第二次失效只用于清除事务期间并发建立的快照。
 		日志("log/启动记录.txt", "修改卡密后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	return nil
 }
 
-func modify_card(ctx *gin.Context) {
+func 管理员_修改点卡(ctx *gin.Context) {
 	var request struct {
 		Card          string  `json:"card"`
 		Notes         *string `json:"notes"`
@@ -1128,14 +1131,14 @@ func modify_card(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	if err := 修改卡密记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState); err != nil {
+	if err := 修改点卡记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})
 }
 
-func 修改卡密_批量(admin string, agentID int, cards []string, state int) ([]string, []string, error) {
+func 修改点卡_批量(admin string, agentID int, cards []string, state int) ([]string, []string, error) {
 	if state != 卡密状态_正常 && state != 卡密状态_冻结 {
 		return nil, cards, fmt.Errorf("卡密状态不正确")
 	}
@@ -1144,7 +1147,7 @@ func 修改卡密_批量(admin string, agentID int, cards []string, state int) (
 	}
 	success, failed := []string{}, []string{}
 	for _, card := range cards {
-		if err := 修改卡密记录(admin, agentID, card, nil, nil, state); err != nil {
+		if err := 修改点卡记录(admin, agentID, card, nil, nil, state); err != nil {
 			failed = append(failed, card)
 		} else {
 			success = append(success, card)
@@ -1153,7 +1156,7 @@ func 修改卡密_批量(admin string, agentID int, cards []string, state int) (
 	return success, failed, nil
 }
 
-func 管理员_冻卡s(ctx *gin.Context) {
+func 管理员_批量修改点卡状态(ctx *gin.Context) {
 	var request struct {
 		Cards     []string `json:"cards"`
 		CardState int      `json:"card_state"`
@@ -1167,7 +1170,7 @@ func 管理员_冻卡s(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	success, failed, err := 修改卡密_批量(account.Name, 0, request.Cards, request.CardState)
+	success, failed, err := 修改点卡_批量(account.Name, 0, request.Cards, request.CardState)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return

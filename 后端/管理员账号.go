@@ -129,9 +129,9 @@ func user_register(ctx *gin.Context) {
 		return
 	}
 	a := user{Name: request.Name, Password: request.Password, PasswordHash: hash}
-	tableName, _ := 卡密数据表名(a.Name)
+	tableName, _ := 点卡数据表名(a.Name)
 	// 先确认卡密表能够创建，再提交账号事务；失败时不会留下一个无法使用的账号。
-	if err := db.Table(tableName).AutoMigrate(&卡密表样式{}); err != nil {
+	if err := db.Table(tableName).AutoMigrate(&点卡表样式{}); err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化卡密数据失败"})
 		return
 	}
@@ -140,7 +140,7 @@ func user_register(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化时长卡数据失败"})
 		return
 	}
-	if err := db.Table(durationTableName).AutoMigrate(&时长卡记录{}); err != nil {
+	if err := db.Table(durationTableName).AutoMigrate(&时长卡表样式{}); err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"state": false, "msg": "初始化时长卡数据失败"})
 		return
 	}

@@ -94,12 +94,12 @@ func Test规范化点卡扣费参数(t *testing.T) {
 		t.Fatal("负数授权时长应当被拒绝")
 	}
 	for _, period := range []int64{1, 299, 259201} {
-		if 授权时长秒有效(period, false) {
+		if 点卡授权时长秒有效(period, false) {
 			t.Fatalf("非法授权时长不应通过: %d秒", period)
 		}
 	}
 	for _, period := range []int64{300, 3600, 259200} {
-		if !授权时长秒有效(period, false) {
+		if !点卡授权时长秒有效(period, false) {
 			t.Fatalf("合法授权时长被拒绝: %d秒", period)
 		}
 	}

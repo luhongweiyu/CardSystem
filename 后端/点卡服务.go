@@ -44,8 +44,8 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 	if params.Software <= 0 {
 		return fmt.Errorf("软件参数错误")
 	}
-	if !授权时长秒有效(params.PeriodSeconds, true) {
-		return fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小计费周期分钟, 最大计费周期分钟)
+	if !点卡授权时长秒有效(params.PeriodSeconds, true) {
+		return fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小点卡计费周期分钟, 最大点卡计费周期分钟)
 	}
 	if params.DeviceID != "" {
 		deviceID, valid := 规范化设备标识(params.DeviceID)
@@ -70,15 +70,15 @@ func 规范化点卡扣费参数(params *点卡扣费参数) error {
 // 读取软件设置只返回计费和心跳相关配置。配置允许短期只读缓存，但不存在
 // 的软件和数据库中的非法值仍直接报错，不会悄悄换用另一套默认值。
 func 读取软件设置(tx *gorm.DB, admin string, softwareID int) (software, error) {
-	config, err := 读取软件计费配置(tx, admin, softwareID)
+	config, err := 读取点卡计费配置(tx, admin, softwareID)
 	return config.设置, err
 }
 
 // 查询可用点卡计费方案。requested=0 时使用软件表中的默认授权时长；is_default
 // 只是便于管理端展示的同步标记，不作为第二套默认值来源。
 // 明确提交了授权时长但该方案未启用时直接报错，不静默换成另一个方案。
-func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int64) (点卡周期价格, software, error) {
-	config, err := 读取软件计费配置(tx, admin, softwareID)
+func 查询点卡周期价格(tx *gorm.DB, admin string, softwareID int, requested int64) (点卡周期价格, software, error) {
+	config, err := 读取点卡计费配置(tx, admin, softwareID)
 	settings := config.设置
 	if err != nil {
 		return 点卡周期价格{}, settings, err
@@ -87,7 +87,7 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 	if period == 0 {
 		period = settings.DefaultPeriodSeconds
 	}
-	if !授权时长秒有效(period, false) {
+	if !点卡授权时长秒有效(period, false) {
 		return 点卡周期价格{}, settings, fmt.Errorf("授权时长不正确")
 	}
 	price, exists := config.价格[period]
@@ -101,7 +101,7 @@ func 查询周期价格(tx *gorm.DB, admin string, softwareID int, requested int
 }
 
 // 校验点卡基础状态必须在卡密行锁持有期间执行，保证检查和扣点属于同一事务。
-func 校验点卡状态(card 卡密表样式, softwareID int) error {
+func 校验点卡状态(card 点卡表样式, softwareID int) error {
 	if card.Card == "" {
 		return fmt.Errorf("点卡不存在")
 	}
@@ -155,7 +155,7 @@ func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID int, 
 }
 
 // 扣除点数事务在调用方已经锁定卡密行的前提下执行。
-func 扣除点数事务(tx *gorm.DB, tableName string, card *卡密表样式, params 点卡扣费参数, price 点卡周期价格, period int64, now time.Time) (点卡扣费结果, error) {
+func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, params 点卡扣费参数, price 点卡周期价格, period int64, now time.Time) (点卡扣费结果, error) {
 	if card.Point_balance < price.Cost {
 		return 点卡扣费结果{}, fmt.Errorf("%w，需要%d点，当前%d点", 错误_点卡余额不足, price.Cost, card.Point_balance)
 	}
@@ -195,13 +195,13 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 	if len([]rune(clientIP)) > 64 {
 		clientIP = clientIP[:64]
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return 0, err
 	}
 	var balance int64
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var card 卡密表样式
+		var card 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", cardValue).First(&card)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("点卡不存在")

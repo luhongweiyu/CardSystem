@@ -27,7 +27,7 @@
 
         <div class="按钮行" v-if="!注册界面">
           <el-button type="primary" @click="登录(false)">管理员登录</el-button>
-          <el-button type="success" @click="登录(true)">合伙人登录</el-button>
+          <el-button type="success" @click="登录(true)">小伙伴登录</el-button>
         </div>
         <div class="按钮行" v-else>
           <el-button type="primary" @click="提交注册">确认注册</el-button>

@@ -81,8 +81,15 @@
         <strong>{{ 格式化时间(详情.use_time) }}</strong>
         <span>到期时间</span>
         <strong>{{ 格式化时间(详情.end_time) }}</strong>
+        <span>暂停剩余</span>
+        <strong>{{ 详情.status === '已暂停' ? 时长文本(详情.paused_remaining_minutes) : '-' }}</strong>
         <span>在线状态</span>
         <strong>{{ 详情.online ? '在线' : '不在线' }}</strong>
+      </div>
+      <div class="操作行">
+        <el-button v-if="详情.status === '已激活'" type="warning" @click="暂停时长卡">暂停时长</el-button>
+        <el-button v-if="详情.status === '已暂停'" type="success" @click="恢复时长卡">恢复时长</el-button>
+        <el-button v-if="可充值" type="primary" plain @click="打开充值">使用充值卡</el-button>
       </div>
     </el-card>
 
@@ -114,11 +121,20 @@
         @current-change="查询流水(false)"
       />
     </el-dialog>
+
+    <el-dialog v-model="充值框.显示" title="使用时长充值卡" width="460px" destroy-on-close>
+      <p class="对话框说明">目标卡：{{ 详情?.card }}；充值卡必须与目标卡属于同一软件。</p>
+      <el-input v-model="充值框.card" clearable placeholder="请输入充值卡卡密" @keyup.enter="使用充值卡" />
+      <template #footer>
+        <el-button @click="充值框.显示 = false">取消</el-button>
+        <el-button type="primary" :loading="充值框.加载中" @click="使用充值卡">确认充值</el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import apiClient, { 获取接口错误提示, 规范化卡密 } from './api/请求客户端.js'
 
@@ -129,6 +145,7 @@ const 加载中 = ref(false)
 const 详情 = ref(null)
 const 流水框 = reactive({ 显示: false, 加载中: false, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
 const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
+const 充值框 = reactive({ 显示: false, 加载中: false, card: '' })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 格式化时间 = (value) => (value ? new Date(value).toLocaleString('zh-CN') : '-')
@@ -139,6 +156,9 @@ const 时长文本 = (minutes) => {
   if (value % 60 === 0) return `${value / 60} 小时`
   return `${value} 分钟`
 }
+// 只有仍在使用或暂停保留时长的目标卡允许充值；已到期卡需要先按管理端续费，
+// 不能把独立充值卡直接用于已结束的卡，保持与服务端业务条件一致。
+const 可充值 = computed(() => ['已激活', '已暂停'].includes(详情.value?.status))
 
 const 查询详情 = function (page = 1) {
   详情.value = null
@@ -167,7 +187,7 @@ const 查询详情 = function (page = 1) {
   设备分页.page = page
   加载中.value = true
   apiClient
-    .post('/card/query', { center_id: centerID, card, page: 设备分页.page, page_size: 设备分页.page_size })
+    .post('/point_card/query', { center_id: centerID, card, page: 设备分页.page, page_size: 设备分页.page_size })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
       详情.value = {
@@ -195,12 +215,77 @@ const 打开流水 = function () {
   流水框.rows = []
   查询流水(true)
 }
+const 打开充值 = function () {
+  充值框.card = ''
+  充值框.显示 = true
+}
+const 刷新时长卡详情 = function () {
+  if (!详情.value?.card) return Promise.resolve()
+  const card = 详情.value.card
+  加载中.value = true
+  return apiClient
+    .post('/visitor/查询时长卡', { center_id: centerID, card })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询失败')
+      详情.value = { mode: 'duration', ...(res.data.data || {}) }
+    })
+    .catch(错误)
+    .finally(() => { 加载中.value = false })
+}
+const 暂停时长卡 = function () {
+  if (!详情.value?.card) return
+  apiClient
+    .post('/visitor/duration_card/pause', { center_id: centerID, card: 详情.value.card })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '暂停失败')
+      ElMessage.success(res.data.msg || '暂停成功')
+      return 刷新时长卡详情()
+    })
+    .catch(错误)
+}
+const 恢复时长卡 = function () {
+  if (!详情.value?.card) return
+  apiClient
+    .post('/visitor/duration_card/resume', { center_id: centerID, card: 详情.value.card })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '恢复失败')
+      ElMessage.success(res.data.msg || '恢复成功')
+      return 刷新时长卡详情()
+    })
+    .catch(错误)
+}
+const 使用充值卡 = function () {
+  const sourceCard = 规范化卡密(充值框.card)
+  if (!sourceCard || !详情.value?.card) {
+    ElMessage.warning('请输入格式正确的充值卡')
+    return
+  }
+  充值框.card = sourceCard
+  充值框.加载中 = true
+  apiClient
+    .post('/visitor/duration_recharge_card/redeem', {
+      center_id: centerID,
+      recharge_card: sourceCard,
+      cards: [详情.value.card]
+    })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '充值失败')
+      if (Array.isArray(res.data.failed) && res.data.failed.length) {
+        throw new Error(res.data.failed.includes(详情.value.card) ? '目标时长卡充值失败' : (res.data.msg || '充值失败'))
+      }
+      ElMessage.success(res.data.msg || '充值成功')
+      充值框.显示 = false
+      return 刷新时长卡详情()
+    })
+    .catch(错误)
+    .finally(() => { 充值框.加载中 = false })
+}
 const 查询流水 = function (resetPage = false) {
   if (!详情.value) return
   if (resetPage) 流水框.page = 1
   流水框.加载中 = true
   apiClient
-    .post('/card/point_ledger/query', {
+    .post('/point_card/point_ledger/query', {
       center_id: centerID,
       card: 详情.value.card,
       software: 详情.value.software,
@@ -239,6 +324,16 @@ body,
 }
 .查询按钮 {
   margin-top: 12px;
+}
+.操作行 {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.对话框说明 {
+  margin: 0 0 12px;
+  color: #9da7b5;
+  line-height: 1.6;
 }
 .模式选择 {
   display: flex;

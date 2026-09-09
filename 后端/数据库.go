@@ -17,13 +17,14 @@ const (
 	卡密状态_冻结 = 4
 )
 
-// 卡密表样式是每个管理员独立的 card_<管理员名> 表中的记录。
+// 点卡表样式用于定义每个管理员独立的 point_card_<管理员名> 表结构；
+// 每个实例对应表中的一行点卡数据。
 //
 // 这张表只保存卡密本身的长期属性和当前点数余额。设备授权状态放在
 // 点卡设备会话表，扣点历史放在点数流水表，避免一张卡上混入多种状态。
 // 字段名保留了项目原有的数据库列名，新增的代理账号字段使用清晰的
 // agent_id 列。
-type 卡密表样式 struct {
+type 点卡表样式 struct {
 	Card        string     `gorm:"column:card;size:63;primaryKey;autoIncrement:false" json:"card"`
 	Create_time time.Time  `gorm:"column:create_time;not null;index" json:"create_time"`
 	Use_time    *time.Time `gorm:"column:use_time" json:"use_time"`
@@ -50,6 +51,9 @@ type software struct {
 	// OnlineGraceMinutes 是授权到期后仍允许按最近心跳推断在线的时间窗口，单位为分钟。
 	// 为 0 的历史数据在读取时按默认 60 分钟处理；新软件创建时会直接写入默认值。
 	OnlineGraceMinutes int64 `gorm:"column:online_grace_minutes;not null;default:60" json:"online_grace_minutes"`
+	// PauseDeductMinutes 是时长卡主动暂停时一次性扣除的分钟数。0 表示关闭
+	// 暂停功能；该配置不参与点卡计费和在线判断。
+	PauseDeductMinutes int64 `gorm:"column:pause_deduct_minutes;not null;default:0" json:"pause_deduct_minutes"`
 }
 
 // 软件是 software 的中文别名，业务代码使用中文类型名，数据库表名保持稳定。
@@ -63,6 +67,8 @@ var db_software *gorm.DB
 var db_point_period_price *gorm.DB
 var db_point_ledger *gorm.DB
 var db_point_device_session *gorm.DB
+var db_duration_card_agent_price *gorm.DB
+var db_duration_recharge_card *gorm.DB
 
 // 连接数据库建立连接、初始化公共表，并为每个管理员创建自己的卡密表。
 // 物理分表是当前租户隔离方案；将来如果规模增长，可以在此处把表名解析
@@ -100,6 +106,14 @@ func 连接数据库() error {
 	if err := db_代理账号.AutoMigrate(&代理账号记录{}); err != nil {
 		return fmt.Errorf("初始化或更新代理账号表结构失败: %w", err)
 	}
+	db_duration_card_agent_price = db.Table(时长卡代理价格表名).Session(&gorm.Session{})
+	if err := db_duration_card_agent_price.AutoMigrate(&时长卡代理价格{}); err != nil {
+		return fmt.Errorf("初始化或更新代理时长卡价格表结构失败: %w", err)
+	}
+	db_duration_recharge_card = db.Table(时长充值卡表名).Session(&gorm.Session{})
+	if err := db_duration_recharge_card.AutoMigrate(&时长充值卡{}); err != nil {
+		return fmt.Errorf("初始化或更新时长充值卡表结构失败: %w", err)
+	}
 	db_user_info = db.Table("user_info").Session(&gorm.Session{})
 	if err := db_user_info.AutoMigrate(&user_info{}); err != nil {
 		return fmt.Errorf("初始化或更新管理员设置表结构失败: %w", err)
@@ -126,20 +140,20 @@ func 连接数据库() error {
 		return fmt.Errorf("读取管理员列表失败: %w", err)
 	}
 	for _, administrator := range administrators {
-		tableName, tableErr := 卡密数据表名(administrator.Name)
+		tableName, tableErr := 点卡数据表名(administrator.Name)
 		if tableErr != nil {
 			// 异常账号名无法安全拼接表名；不阻塞其他合法账号启动。
 			日志("log/启动记录.txt", fmt.Sprintf("跳过非法管理员卡密表:%q", administrator.Name))
 			continue
 		}
-		if err := db.Table(tableName).AutoMigrate(&卡密表样式{}); err != nil {
+		if err := db.Table(tableName).AutoMigrate(&点卡表样式{}); err != nil {
 			return fmt.Errorf("初始化或更新管理员 %s 的卡密表结构失败: %w", administrator.Name, err)
 		}
 		durationTableName, durationTableErr := 时长卡数据表名(administrator.Name)
 		if durationTableErr != nil {
 			return fmt.Errorf("管理员 %s 的时长卡表名不正确: %w", administrator.Name, durationTableErr)
 		}
-		if err := db.Table(durationTableName).AutoMigrate(&时长卡记录{}); err != nil {
+		if err := db.Table(durationTableName).AutoMigrate(&时长卡表样式{}); err != nil {
 			return fmt.Errorf("初始化或更新管理员 %s 的时长卡表结构失败: %w", administrator.Name, err)
 		}
 		if err := user_刷新用户设置(administrator.Name); err != nil {

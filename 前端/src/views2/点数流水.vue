@@ -88,7 +88,7 @@ const 查询软件 = () =>
 const 查询流水 = function (resetPage = false) {
   if (resetPage) 分页.page = 1
   加载中.value = true
-  post('/point_ledger/query', { ...筛选, page: 分页.page, page_size: 分页.page_size })
+  post('/point_card/ledger', { ...筛选, page: 分页.page, page_size: 分页.page_size })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询流水失败')
       列表.value = res.data.data || []

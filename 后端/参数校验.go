@@ -22,8 +22,17 @@ func 验证管理员名称(name string) bool {
 	return 管理员名称规则.MatchString(name)
 }
 
-// 卡密数据表名供新模块和敏感批量操作生成动态表名，拒绝把不可信名称带入 SQL 标识符。
-func 卡密数据表名(name string) (string, error) {
+// 点卡数据表名返回正式点卡表名。旧版 card_<管理员名> 只作为人工迁移
+// 来源，运行时业务不回退读取旧表，避免两种模式的字段和状态混用。
+func 点卡数据表名(name string) (string, error) {
+	if !验证管理员名称(name) {
+		return "", fmt.Errorf("管理员名称格式不正确")
+	}
+	return "point_card_" + name, nil
+}
+
+// 旧卡密数据表名仅供迁移脚本或人工核对使用，业务接口不得调用。
+func 旧卡密数据表名(name string) (string, error) {
 	if !验证管理员名称(name) {
 		return "", fmt.Errorf("管理员名称格式不正确")
 	}

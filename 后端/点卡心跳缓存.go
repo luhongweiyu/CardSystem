@@ -77,10 +77,10 @@ func 写入点卡心跳缓存(session 点卡设备会话, heartbeatSeconds int64
 	全局点卡心跳缓存.Unlock()
 }
 
-// 尝试记录缓存心跳只处理仍在授权期内的普通心跳。授权已经到期时不能先把
+// 尝试记录点卡缓存心跳只处理仍在授权期内的普通心跳。授权已经到期时不能先把
 // last_heartbeat_at 改成当前时间，否则会把真正离线后重新启动的设备误判为连续在线；
 // 这类请求返回未处理，由现有数据库事务决定续费起点。
-func 尝试记录缓存心跳(admin string, card string, deviceID string, needle string, now time.Time) (点卡心跳结果, bool, error) {
+func 尝试记录点卡缓存心跳(admin string, card string, deviceID string, needle string, now time.Time) (点卡心跳结果, bool, error) {
 	key := 生成点卡心跳缓存键(admin, card, deviceID)
 	entry := 查找点卡心跳缓存(key)
 	if entry == nil {
@@ -181,7 +181,7 @@ func 同步并删除点卡心跳缓存(admin string, card string, deviceID strin
 	return syncErr
 }
 
-func 心跳缓存条目快照() map[点卡心跳缓存键]*点卡心跳缓存条目 {
+func 点卡心跳缓存条目快照() map[点卡心跳缓存键]*点卡心跳缓存条目 {
 	全局点卡心跳缓存.RLock()
 	entries := make(map[点卡心跳缓存键]*点卡心跳缓存条目, len(全局点卡心跳缓存.数据))
 	for key, entry := range 全局点卡心跳缓存.数据 {
@@ -191,9 +191,9 @@ func 心跳缓存条目快照() map[点卡心跳缓存键]*点卡心跳缓存条
 	return entries
 }
 
-// 同步并删除卡密心跳缓存_按卡返回错误只扫描一次缓存，并分别记录每张卡首次
+// 批量同步并删除点卡心跳缓存_按卡返回错误只扫描一次缓存，并分别记录每张卡首次
 // 遇到的同步错误。批量删除可据此跳过同步失败的卡密，同时继续处理其他卡密。
-func 同步并删除卡密心跳缓存_按卡返回错误(admin string, cards []string) map[string]error {
+func 批量同步并删除点卡心跳缓存_按卡返回错误(admin string, cards []string) map[string]error {
 	admin = strings.TrimSpace(admin)
 	cardSet := make(map[string]struct{}, len(cards))
 	for _, card := range cards {
@@ -206,7 +206,7 @@ func 同步并删除卡密心跳缓存_按卡返回错误(admin string, cards []
 		return nil
 	}
 	errorsByCard := make(map[string]error)
-	for key := range 心跳缓存条目快照() {
+	for key := range 点卡心跳缓存条目快照() {
 		if key.管理员 != admin {
 			continue
 		}
@@ -222,21 +222,21 @@ func 同步并删除卡密心跳缓存_按卡返回错误(admin string, cards []
 	return errorsByCard
 }
 
-// 同步并删除卡密心跳缓存用于冻结、删除和同名卡密重新生成。即使一张卡有多台
+// 批量同步并删除点卡心跳缓存用于冻结、删除和同名点卡重新生成。即使一张卡有多台
 // 设备，也逐设备短暂加锁和同步，不使用覆盖整张卡的大事务。
-func 同步并删除卡密心跳缓存(admin string, cards []string) error {
-	for _, err := range 同步并删除卡密心跳缓存_按卡返回错误(admin, cards) {
+func 批量同步并删除点卡心跳缓存(admin string, cards []string) error {
+	for _, err := range 批量同步并删除点卡心跳缓存_按卡返回错误(admin, cards) {
 		return err
 	}
 	return nil
 }
 
-// 同步并删除软件心跳缓存用于软件修改或删除。软件编号只从已经加载的会话快照
+// 同步并删除软件点卡心跳缓存用于软件修改或删除。软件编号只从已经加载的会话快照
 // 判断；条目可能被并发移除，因此匹配和真正删除时都会重新检查条目状态。
-func 同步并删除软件心跳缓存(admin string, softwareID int) error {
+func 同步并删除软件点卡心跳缓存(admin string, softwareID int) error {
 	admin = strings.TrimSpace(admin)
 	var firstErr error
-	for key, entry := range 心跳缓存条目快照() {
+	for key, entry := range 点卡心跳缓存条目快照() {
 		if key.管理员 != admin {
 			continue
 		}

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func Test计算代理发卡费用(t *testing.T) {
+func Test计算代理点卡费用(t *testing.T) {
 	tests := []struct {
 		name   string
 		price  float64
@@ -20,7 +20,7 @@ func Test计算代理发卡费用(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := 计算代理发卡费用(test.price, test.points, test.count)
+			got, err := 计算代理点卡费用(test.price, test.points, test.count)
 			if err != nil {
 				t.Fatalf("计算失败: %v", err)
 			}
@@ -32,11 +32,11 @@ func Test计算代理发卡费用(t *testing.T) {
 
 	invalidValues := []float64{-1, 0, math.NaN(), math.Inf(1)}
 	for _, value := range invalidValues {
-		if _, err := 计算代理发卡费用(value, 1, 1); err == nil {
+		if _, err := 计算代理点卡费用(value, 1, 1); err == nil {
 			t.Fatalf("异常消费值 %v 应当被拒绝", value)
 		}
 	}
-	if _, err := 计算代理发卡费用(1000000000, 1000000000, 1000); err == nil {
+	if _, err := 计算代理点卡费用(1000000000, 1000000000, 1000); err == nil {
 		t.Fatal("超出int64范围的代理费用应当被拒绝")
 	}
 }

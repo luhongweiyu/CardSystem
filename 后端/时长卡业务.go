@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -70,7 +71,7 @@ func 解析时长卡生成卡密(custom string, random bool, softwareID, count i
 		result := make([]string, 0, count)
 		seen := make(map[string]struct{}, count)
 		for len(result) < count {
-			card := strings.ToLower(生成随机卡密(softwareID))
+			card := strings.ToLower(生成随机卡密文本(softwareID))
 			if _, exists := seen[card]; exists {
 				continue
 			}
@@ -79,7 +80,7 @@ func 解析时长卡生成卡密(custom string, random bool, softwareID, count i
 		}
 		return result, nil
 	}
-	return 解析卡密列表(custom)
+	return 解析卡密文本列表(custom)
 }
 
 // 准备时长卡只做输入解析、随机值生成和重复预检查，避免把不可信的大
@@ -131,7 +132,7 @@ func 时长卡激活截止时间(now time.Time, request 时长卡生成请求) *
 
 // 时长卡计算到期时间只在首次激活时执行，普通卡按分钟计算，旧版约定的
 // 36500天永久卡统一固定到2099年。
-func 时长卡计算到期时间(now time.Time, row 时长卡记录) (time.Time, error) {
+func 时长卡计算到期时间(now time.Time, row 时长卡表样式) (time.Time, error) {
 	if row.DurationMinutes < 时长卡最小时长分钟 || row.DurationMinutes > 时长卡永久分钟 {
 		return time.Time{}, fmt.Errorf("时长卡时长配置不正确")
 	}
@@ -154,7 +155,7 @@ func 时长卡计算到期时间(now time.Time, row 时长卡记录) (time.Time,
 
 // 激活时长卡必须在行锁内执行。latest_activation_at 只限制首次激活，
 // 后续登录不重新计算时长，也不会把已有到期时间延长。
-func 激活时长卡_已加锁(tx *gorm.DB, tableName string, row *时长卡记录, now time.Time) error {
+func 激活时长卡_已加锁(tx *gorm.DB, tableName string, row *时长卡表样式, now time.Time) error {
 	if row.EndTime != nil {
 		return nil
 	}
@@ -173,9 +174,9 @@ func 激活时长卡_已加锁(tx *gorm.DB, tableName string, row *时长卡记�
 // 保存时长卡批次只持久化已经完成校验和查重的记录。调用方负责在事务中
 // 锁定软件，避免软件删除与发卡并发产生孤立数据。
 func 保存时长卡批次(tx *gorm.DB, tableName string, agentID int, request 时长卡生成请求, cards []string, now time.Time) error {
-	rows := make([]时长卡记录, 0, len(cards))
+	rows := make([]时长卡表样式, 0, len(cards))
 	for _, card := range cards {
-		row := 时长卡记录{
+		row := 时长卡表样式{
 			Card: card, CreateTime: now, Software: request.Software,
 			CardState: 卡密状态_正常, DurationMinutes: request.DurationMinutes,
 			LatestActivationAt: 时长卡激活截止时间(now, request), Notes: request.Notes,
@@ -206,7 +207,7 @@ func 生成并保存时长卡(admin string, agentID int, request 时长卡生成
 	}
 	now := time.Now()
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := 锁定生成卡密软件(tx, admin, request.Software); err != nil {
+		if err := 锁定发卡软件(tx, admin, request.Software); err != nil {
 			return err
 		}
 		return 保存时长卡批次(tx, tableName, agentID, request, cards, now)
@@ -274,25 +275,32 @@ func 查询时长卡列表(ctx *gin.Context, admin string, agentID int) {
 		query = query.Where("card_state = ? AND end_time IS NOT NULL AND end_time <= ?", 卡密状态_正常, now)
 	case 卡密状态_冻结:
 		query = query.Where("card_state = ?", 卡密状态_冻结)
+	case 时长卡状态_暂停:
+		query = query.Where("card_state = ?", 时长卡状态_暂停)
+	case 时长卡状态_已充值:
+		query = query.Where("card_state = ?", 时长卡状态_已充值)
 	}
 	var total int64
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		失败提示管理端(ctx, "查询时长卡数量失败")
 		return
 	}
-	page, pageSize := 读取分页参数(ctx)
+	page, pageSize := 读取通用分页参数(ctx)
 	sorting := 解析时长卡排序(ctx)
 	query = query.Order("`" + sorting.字段 + "` " + sorting.方向)
 	if sorting.字段 != "card" {
 		query = query.Order("`card` ASC")
 	}
-	var rows []时长卡记录
+	var rows []时长卡表样式
 	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
 		失败提示管理端(ctx, "查询时长卡失败")
 		return
 	}
 	data := make([]时长卡列表项, 0, len(rows))
 	for _, row := range rows {
+		// 心跳缓存中的时间可能尚未到同步期限，列表仍需展示当前进程
+		// 已收到的最新心跳；卡密其他字段继续使用数据库结果。
+		合并时长卡心跳缓存(admin, &row)
 		data = append(data, 时长卡列表项转换带管理员(admin, row, now))
 	}
 	成功提示管理端(ctx, gin.H{"data": data, "num": total, "page": page, "page_size": pageSize})
@@ -300,7 +308,7 @@ func 查询时长卡列表(ctx *gin.Context, admin string, agentID int) {
 
 // 列表转换需要管理员名读取软件配置。通过参数传入而不是使用全局变量，
 // 避免并发请求在不同租户之间串用在线判定窗口。
-func 时长卡列表项转换带管理员(admin string, row 时长卡记录, now time.Time) 时长卡列表项 {
+func 时长卡列表项转换带管理员(admin string, row 时长卡表样式, now time.Time) 时长卡列表项 {
 	online := false
 	if row.CardState == 卡密状态_正常 && row.LastHeartbeatAt != nil && row.EndTime != nil && row.EndTime.After(now) && row.Needle != "" {
 		if settings, err := 读取软件设置(db, admin, row.Software); err == nil {
@@ -310,7 +318,8 @@ func 时长卡列表项转换带管理员(admin string, row 时长卡记录, now
 	return 时长卡列表项{Card: row.Card, CreateTime: row.CreateTime, UseTime: row.UseTime,
 		EndTime: row.EndTime, Software: row.Software, CardState: row.CardState,
 		DurationMinutes: row.DurationMinutes, LatestActivationAt: row.LatestActivationAt,
-		Notes: row.Notes, ConfigContent: row.ConfigContent, AgentID: row.AgentID, Online: online}
+		Notes: row.Notes, ConfigContent: row.ConfigContent, PausedRemainingMinutes: row.PausedRemainingMinutes,
+		AgentID: row.AgentID, Online: online}
 }
 
 // 管理员_查询时长卡列表只绑定当前认证管理员，客户端提交的 name 不参与
@@ -338,13 +347,13 @@ func 管理员_添加时长卡(ctx *gin.Context) {
 }
 
 // 读取时长卡按管理员独立表和完整卡密主键查询，不回退到点卡表。
-func 读取时长卡(admin, card string) (时长卡记录, bool, error) {
+func 读取时长卡(admin, card string) (时长卡表样式, bool, error) {
 	tableName, err := 时长卡数据表名(admin)
 	if err != nil {
-		return 时长卡记录{}, false, err
+		return 时长卡表样式{}, false, err
 	}
 	card = strings.ToLower(strings.TrimSpace(card))
-	var row 时长卡记录
+	var row 时长卡表样式
 	query := db.Table(tableName).Where("card = ?", card).First(&row)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		return row, false, nil
@@ -365,10 +374,23 @@ func 时长卡详情(admin, card string, now time.Time) (gin.H, error) {
 	if !found {
 		return nil, fmt.Errorf("时长卡不存在")
 	}
+	return 构建时长卡详情(admin, row, now), nil
+}
+
+// 构建时长卡详情只负责把数据库记录转换为接口结果，管理员、代理和访客
+// 在完成各自的权限查询后复用它，避免三套状态文字逐渐不一致。
+func 构建时长卡详情(admin string, row 时长卡表样式, now time.Time) gin.H {
+	// 详情需要返回当前 needle，因此在转换列表字段前合并尚未落库的
+	// 心跳快照；访客随后会移除不应公开的字段。
+	合并时长卡心跳缓存(admin, &row)
 	item := 时长卡列表项转换带管理员(admin, row, now)
 	status := "未激活"
 	if row.CardState == 卡密状态_冻结 {
 		status = "冻结"
+	} else if row.CardState == 时长卡状态_暂停 {
+		status = "已暂停"
+	} else if row.CardState == 时长卡状态_已充值 {
+		status = "已用于充值"
 	} else if row.EndTime != nil {
 		if row.EndTime.After(now) {
 			status = "已激活"
@@ -381,7 +403,7 @@ func 时长卡详情(admin, card string, now time.Time) (gin.H, error) {
 		"latest_activation_at": item.LatestActivationAt, "card_state": item.CardState,
 		"status": status, "online": item.Online, "needle": row.Needle,
 		"last_heartbeat_at": row.LastHeartbeatAt, "notes": row.Notes, "config_content": row.ConfigContent,
-		"agent_id": row.AgentID}, nil
+		"paused_remaining_minutes": row.PausedRemainingMinutes, "agent_id": row.AgentID}
 }
 
 // 管理员_查询时长卡详情允许当前管理员查看完整在线校验信息，便于排查
@@ -409,63 +431,9 @@ func 管理员_修改时长卡(ctx *gin.Context) {
 		失败提示管理端(ctx, "数据错误")
 		return
 	}
-	admin := 管理员_用户名(ctx)
-	tableName, err := 时长卡数据表名(admin)
-	if err != nil {
+	if err := 修改时长卡范围(管理员_用户名(ctx), 0, request.Card, request.Notes, request.ConfigContent, request.CardState); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
-	}
-	card := strings.ToLower(strings.TrimSpace(request.Card))
-	if !卡密格式规则.MatchString(card) {
-		失败提示管理端(ctx, "卡密格式不正确")
-		return
-	}
-	updates := make(map[string]interface{})
-	if request.Notes != nil {
-		value, valid := 规范化可显示文本(*request.Notes, 时长卡最大备注字符数)
-		if !valid {
-			失败提示管理端(ctx, "备注格式不正确")
-			return
-		}
-		updates["notes"] = value
-	}
-	if request.ConfigContent != nil {
-		if err := 校验卡密配置内容(*request.ConfigContent); err != nil {
-			失败提示管理端(ctx, err.Error())
-			return
-		}
-		updates["config_content"] = *request.ConfigContent
-	}
-	if request.CardState != nil {
-		if *request.CardState != 卡密状态_正常 && *request.CardState != 卡密状态_冻结 {
-			失败提示管理端(ctx, "卡密状态不正确")
-			return
-		}
-		updates["card_state"] = *request.CardState
-		if *request.CardState == 卡密状态_冻结 {
-			updates["needle"] = ""
-			updates["last_heartbeat_at"] = nil
-		}
-	}
-	if len(updates) == 0 {
-		失败提示管理端(ctx, "没有需要修改的内容")
-		return
-	}
-	result := db.Table(tableName).Where("card = ?", card).Updates(updates)
-	if result.Error != nil {
-		失败提示管理端(ctx, "修改时长卡失败")
-		return
-	}
-	if result.RowsAffected == 0 {
-		var count int64
-		if err := db.Table(tableName).Where("card = ?", card).Count(&count).Error; err != nil {
-			失败提示管理端(ctx, "确认时长卡修改结果失败")
-			return
-		}
-		if count != 1 {
-			失败提示管理端(ctx, "时长卡不存在")
-			return
-		}
 	}
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})
 }
@@ -490,13 +458,22 @@ func 处理时长卡批量状态(admin string, cards []string, state int) ([]str
 			failed = append(failed, raw)
 			continue
 		}
+		if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+			failed = append(failed, raw)
+			continue
+		}
 		updates := map[string]interface{}{"card_state": state}
 		if state == 卡密状态_冻结 {
 			updates["needle"] = ""
 			updates["last_heartbeat_at"] = nil
 		}
-		result := db.Table(tableName).Where("card = ?", card).Updates(updates)
+		// 暂停和已用于充值属于专用状态，只能由对应业务接口转换，不能
+		// 通过批量冻结/解冻把一次性充值来源重新恢复为可用卡。
+		result := db.Table(tableName).Where("card = ? AND card_state IN ?", card, []int{卡密状态_正常, 卡密状态_冻结}).Updates(updates)
 		if result.Error == nil && (result.RowsAffected == 1 || 时长卡记录存在(tableName, card)) {
+			if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+				日志("log/启动记录.txt", "修改时长卡状态后同步心跳缓存失败:"+cacheErr.Error())
+			}
 			success = append(success, card)
 		} else {
 			failed = append(failed, raw)
@@ -506,10 +483,10 @@ func 处理时长卡批量状态(admin string, cards []string, state int) ([]str
 }
 
 // 时长卡记录存在只用于把“值没有变化”的零影响行更新识别为幂等成功；
-// 查询错误按不存在处理，调用方仍会把该卡放入失败清单。
+// 暂停或已用于充值的专用状态不属于可编辑记录，不能被误判为成功。
 func 时长卡记录存在(tableName, card string) bool {
 	var count int64
-	return db.Table(tableName).Where("card = ?", card).Count(&count).Error == nil && count == 1
+	return db.Table(tableName).Where("card = ? AND card_state IN ?", card, []int{卡密状态_正常, 卡密状态_冻结}).Count(&count).Error == nil && count == 1
 }
 
 // 管理员_批量修改时长卡状态返回成功和失败清单，方便页面明确展示部分
@@ -547,8 +524,15 @@ func 删除时长卡记录(admin string, cards []string) ([]string, []string, er
 			failed = append(failed, raw)
 			continue
 		}
-		result := db.Table(tableName).Where("card = ?", card).Delete(&时长卡记录{})
+		if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+			failed = append(failed, raw)
+			continue
+		}
+		result := db.Table(tableName).Where("card = ?", card).Delete(&时长卡表样式{})
 		if result.Error == nil && result.RowsAffected == 1 {
+			if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+				日志("log/启动记录.txt", "删除时长卡后同步心跳缓存失败:"+cacheErr.Error())
+			}
 			success = append(success, card)
 		} else {
 			failed = append(failed, raw)
@@ -574,8 +558,9 @@ func 管理员_删除时长卡(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
-// 管理员_续费时长卡只处理已经激活且状态正常的卡。已到期卡从当前时间
-// 重新增加，未到期卡从原截止时间增加，未激活卡不能通过续费偷换卡面时长。
+// 管理员_续费时长卡处理已激活或暂停中的时长卡。已到期卡从当前时间重新
+// 增加，未到期卡从原截止时间增加，暂停卡累加暂停剩余分钟；未激活卡不能
+// 通过续费偷换卡面时长。
 func 管理员_续费时长卡(ctx *gin.Context) {
 	var request struct {
 		Cards           []string `json:"cards"`
@@ -601,8 +586,12 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			failed = append(failed, raw)
 			continue
 		}
+		if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
+			failed = append(failed, raw)
+			continue
+		}
 		err := db.Transaction(func(tx *gorm.DB) error {
-			var row 时长卡记录
+			var row 时长卡表样式
 			query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
 			if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("不存在")
@@ -612,6 +601,12 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			}
 			if row.CardState == 卡密状态_冻结 {
 				return fmt.Errorf("已冻结")
+			}
+			if row.CardState == 时长卡状态_暂停 && row.EndTime == nil && row.PausedRemainingMinutes > 0 {
+				if request.DurationMinutes > math.MaxInt64-row.PausedRemainingMinutes {
+					return fmt.Errorf("暂停剩余时长溢出")
+				}
+				return tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", row.PausedRemainingMinutes+request.DurationMinutes).Error
 			}
 			if row.CardState != 卡密状态_正常 {
 				return fmt.Errorf("状态不正常")
@@ -630,6 +625,9 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 		if err != nil {
 			failed = append(failed, raw)
 		} else {
+			if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
+				日志("log/启动记录.txt", "续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
+			}
 			success = append(success, card)
 		}
 	}
@@ -651,8 +649,14 @@ func durationCardLogin(ctx *gin.Context) {
 		失败提示(ctx, err.Error())
 		return
 	}
+	// 登录会刷新服务端 needle。先同步并删除旧缓存，避免旧心跳在
+	// 登录事务之后重新覆盖新会话的状态。
+	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+		失败提示(ctx, cacheErr.Error())
+		return
+	}
 	now := time.Now()
-	var row 时长卡记录
+	var row 时长卡表样式
 	var settings 软件
 	err = db.Transaction(func(tx *gorm.DB) error {
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
@@ -681,23 +685,31 @@ func durationCardLogin(ctx *gin.Context) {
 			return fmt.Errorf("时长卡已到期")
 		}
 		needle := GetRandomString(32, "a")
-		useTime, heartbeat := now, now
-		updates := map[string]interface{}{"needle": needle, "use_time": useTime, "last_heartbeat_at": heartbeat}
+		heartbeat := now
+		updates := map[string]interface{}{"needle": needle, "last_heartbeat_at": heartbeat}
+		// use_time 表示第一次真正登录时间。重复登录只替换 needle，不能
+		// 把首次使用时间反复覆盖成最近一次登录时间。
+		if row.UseTime == nil {
+			useTime := now
+			updates["use_time"] = useTime
+			row.UseTime = &useTime
+		}
 		if result := tx.Table(tableName).Where("card = ?", card).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("登录时长卡失败")
 		}
-		row.Needle, row.UseTime, row.LastHeartbeatAt = needle, &useTime, &heartbeat
+		row.Needle, row.LastHeartbeatAt = needle, &heartbeat
 		return nil
 	})
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
 	}
+	写入时长卡心跳缓存(admin, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "software": row.Software, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})
 }
 
-// durationCardPing 先读取当前卡状态和 needle，再用包含 needle 的条件更新，
-// 防止读取后恰好发生新登录时，旧客户端覆盖新会话的心跳时间。
+// durationCardPing 优先走内存心跳缓存。缓存未命中、已到期或被状态操作
+// 失效时，才回退到数据库读取并用 needle 条件更新，防止旧客户端覆盖新会话。
 func durationCardPing(ctx *gin.Context) {
 	value, ok := ctx.Get("card")
 	cardContext, valid := value.(卡密请求上下文)
@@ -710,13 +722,27 @@ func durationCardPing(ctx *gin.Context) {
 		失败提示(ctx, "needle不能为空")
 		return
 	}
+	now := time.Now()
+	if row, heartbeatSeconds, handled, cacheErr := 尝试记录时长卡缓存心跳(cardContext.Name, cardContext.Card, needle, now); handled {
+		if cacheErr != nil {
+			失败提示(ctx, cacheErr.Error())
+			return
+		}
+		成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "heartbeat_interval_seconds": heartbeatSeconds})
+		return
+	}
+	// 缓存命中但已到期或状态不再允许心跳时，先把最后一次缓存心跳
+	// 写回数据库，再由下面的完整查询返回准确的业务错误。
+	if cacheErr := 同步并删除时长卡心跳缓存(cardContext.Name, cardContext.Card, needle); cacheErr != nil {
+		失败提示(ctx, cacheErr.Error())
+		return
+	}
 	tableName, err := 时长卡数据表名(cardContext.Name)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
 	}
-	now := time.Now()
-	var row 时长卡记录
+	var row 时长卡表样式
 	query := db.Table(tableName).Where("card = ?", cardContext.Card).First(&row)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		失败提示(ctx, "时长卡不存在")
@@ -751,6 +777,8 @@ func durationCardPing(ctx *gin.Context) {
 		失败提示(ctx, "更新心跳失败")
 		return
 	}
+	row.LastHeartbeatAt = &now
+	写入时长卡心跳缓存(cardContext.Name, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": needle, "authorized_until": row.EndTime, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})
 }
 
@@ -769,6 +797,10 @@ func durationCardLogout(ctx *gin.Context) {
 		return
 	}
 	needle := strings.TrimSpace(input(ctx, "needle"))
+	if cacheErr := 同步并删除时长卡心跳缓存(cardContext.Name, cardContext.Card, needle); cacheErr != nil {
+		失败提示(ctx, cacheErr.Error())
+		return
+	}
 	query := db.Table(tableName).Where("card = ?", cardContext.Card)
 	if needle != "" {
 		query = query.Where("needle = ?", needle)
@@ -776,6 +808,10 @@ func durationCardLogout(ctx *gin.Context) {
 	if result := query.Updates(map[string]interface{}{"needle": "", "last_heartbeat_at": nil}); result.Error != nil {
 		失败提示(ctx, "退出时长卡失败")
 		return
+	}
+	// 退出更新提交后再次失效，防止并发心跳在数据库更新前后重新建立旧缓存。
+	if cacheErr := 同步并删除时长卡心跳缓存(cardContext.Name, cardContext.Card, ""); cacheErr != nil {
+		日志("log/启动记录.txt", "退出时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
 	成功提示(ctx, gin.H{"msg": "退出成功"})
 }

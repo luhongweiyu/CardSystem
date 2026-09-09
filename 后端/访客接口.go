@@ -57,20 +57,20 @@ func 访客管理员(ctx *gin.Context) (string, bool) {
 	return admin, ok && 验证管理员名称(admin)
 }
 
-func 访客读取卡密(ctx *gin.Context) (string, string, 卡密表样式, error) {
+func 访客读取点卡卡密(ctx *gin.Context) (string, string, 点卡表样式, error) {
 	admin, ok := 访客管理员(ctx)
 	if !ok {
-		return "", "", 卡密表样式{}, fmt.Errorf("访客上下文错误")
+		return "", "", 点卡表样式{}, fmt.Errorf("访客上下文错误")
 	}
 	card := strings.ToLower(strings.TrimSpace(input(ctx, "card")))
 	if !卡密格式规则.MatchString(card) {
-		return "", "", 卡密表样式{}, fmt.Errorf("卡密格式不正确")
+		return "", "", 点卡表样式{}, fmt.Errorf("卡密格式不正确")
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
-		return "", "", 卡密表样式{}, err
+		return "", "", 点卡表样式{}, err
 	}
-	var row 卡密表样式
+	var row 点卡表样式
 	query := db.Table(tableName).Where("card = ?", card).First(&row)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		return "", "", row, fmt.Errorf("卡密不存在")
@@ -81,9 +81,9 @@ func 访客读取卡密(ctx *gin.Context) (string, string, 卡密表样式, erro
 	return admin, card, row, nil
 }
 
-// visitor_查询所有卡密保留原路由名称，但只允许按完整卡密精确查询。
+// 访客_查询所有点卡卡密保留原路由名称，但只允许按完整点卡卡密精确查询。
 // 卡密本身是客户端凭证，公开页面绝不能通过空条件或模糊后缀枚举卡密。
-func visitor_查询所有卡密(ctx *gin.Context) {
+func 访客_查询所有点卡卡密(ctx *gin.Context) {
 	admin, ok := 访客管理员(ctx)
 	if !ok {
 		失败提示访客(ctx, "访客上下文错误")
@@ -94,14 +94,14 @@ func visitor_查询所有卡密(ctx *gin.Context) {
 		失败提示访客(ctx, "请输入完整且格式正确的卡密")
 		return
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
 	}
 	// 管理端备注可能包含内部客户信息，访客查询只返回卡密自身状态。
 	query := db.Table(tableName).Select("card, create_time, use_time, software, card_state, point_balance").Where("card = ?", keyword)
-	var rows []卡密访客项
+	var rows []点卡访客项
 	if err := query.Limit(1).Find(&rows).Error; err != nil {
 		失败提示访客(ctx, "查询卡密失败")
 		return
@@ -109,7 +109,7 @@ func visitor_查询所有卡密(ctx *gin.Context) {
 	成功提示访客(ctx, gin.H{"data": rows})
 }
 
-type 卡密访客项 struct {
+type 点卡访客项 struct {
 	Card         string     `json:"card"`
 	CreateTime   time.Time  `json:"create_time"`
 	UseTime      *time.Time `json:"use_time"`
@@ -118,15 +118,15 @@ type 卡密访客项 struct {
 	PointBalance int64      `json:"point_balance"`
 }
 
-// visitor_查询卡密详情是新路径的实现；旧中文路径继续调用同一逻辑。
-func visitor_查询卡密详情(ctx *gin.Context) {
-	admin, card, row, err := 访客读取卡密(ctx)
+// 访客_查询点卡卡密详情是点卡公开查询的实现；旧中文路径继续调用同一逻辑。
+func 访客_查询点卡卡密详情(ctx *gin.Context) {
+	admin, card, row, err := 访客读取点卡卡密(ctx)
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
 	}
-	设备页, 设备每页 := 读取卡密设备分页参数(ctx)
-	设备统计, err := 查询卡密设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页)
+	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
+	设备统计, err := 查询点卡设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
@@ -139,8 +139,8 @@ func visitor_查询卡密详情(ctx *gin.Context) {
 	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices})
 }
 
-func visitor_查询点数流水(ctx *gin.Context) {
-	admin, card, row, err := 访客读取卡密(ctx)
+func 访客_查询点卡流水(ctx *gin.Context) {
+	admin, card, row, err := 访客读取点卡卡密(ctx)
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
@@ -153,12 +153,12 @@ func visitor_查询点数流水(ctx *gin.Context) {
 	page, _ := strconv.Atoi(input(ctx, "page"))
 	pageSize, _ := strconv.Atoi(input(ctx, "page_size"))
 	page, pageSize = 规范化流水分页(page, pageSize)
-	rows, total, err := 查询点数流水记录(db_point_ledger.Where("admin = ? AND card = ?", admin, card), page, pageSize)
+	rows, total, err := 查询点卡流水记录(db_point_ledger.Where("admin = ? AND card = ?", admin, card), page, pageSize)
 	if err != nil {
 		失败提示访客(ctx, "查询点数流水失败")
 		return
 	}
-	成功提示访客(ctx, gin.H{"data": 点数流水展示列表(rows, false), "num": total, "page": page, "page_size": pageSize, "balance": row.Point_balance})
+	成功提示访客(ctx, gin.H{"data": 点卡流水展示列表(rows, false), "num": total, "page": page, "page_size": pageSize, "balance": row.Point_balance})
 }
 
 // 访客查询时长卡只按完整卡密精确读取独立时长卡表，不会回退到点卡表。

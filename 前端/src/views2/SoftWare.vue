@@ -2,7 +2,7 @@
   <section class="页面" v-loading="加载中">
     <div class="页面标题行">
       <div>
-        <h2>软件与点卡计费</h2>
+        <h2>软件</h2>
         <p class="说明">客户端按分钟选择授权时长，实际扣点价格始终由服务端决定。</p>
       </div>
       <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
@@ -19,6 +19,9 @@
       </el-table-column>
       <el-table-column label="自动离线时间" width="140">
         <template #default="scope">{{ scope.row.online_grace_minutes || 60 }} 分钟</template>
+      </el-table-column>
+      <el-table-column label="暂停扣除" width="120">
+        <template #default="scope">{{ scope.row.pause_deduct_minutes || 0 }} 分钟</template>
       </el-table-column>
       <el-table-column prop="Bulletin" label="公告" min-width="220" show-overflow-tooltip />
       <el-table-column v-if="!是代理账号" label="操作" width="230" fixed="right">
@@ -43,9 +46,10 @@
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="账号" width="160" />
         <el-table-column prop="balance" label="余额（点）" width="120" />
-        <el-table-column label="操作" min-width="260">
+        <el-table-column label="操作" min-width="350">
           <template #default="scope">
             <el-button link type="primary" @click="编辑代理(scope.row)">计费方案与密码</el-button>
+            <el-button link type="warning" @click="打开代理时长价格(scope.row)">时长卡价格</el-button>
             <el-button link type="success" @click="打开代理充值(scope.row)">充值点数</el-button>
             <el-button link type="danger" @click="删除代理(scope.row)">删除</el-button>
           </template>
@@ -86,6 +90,16 @@
             controls-position="right"
           />
           <div class="字段说明">0 表示默认 60 分钟后自动离线</div>
+        </el-form-item>
+        <el-form-item label="暂停扣除（分钟）" required>
+          <el-input-number
+            v-model="软件框.pause_deduct_minutes"
+            :min="0"
+            :max="最大时长分钟"
+            :precision="0"
+            controls-position="right"
+          />
+          <div class="字段说明">0 表示不启用时长卡暂停；暂停时从剩余时长中扣除</div>
         </el-form-item>
         <el-form-item label="公告">
           <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
@@ -200,6 +214,68 @@
       </template>
     </el-dialog>
 
+    <!-- 时长卡代理价格：按代理账号和软件整组维护价格锚点。 -->
+    <el-dialog v-model="代理时长价格框.显示" title="时长卡价格设置" width="780px" destroy-on-close>
+      <div class="代理价格标题">
+        <span>小伙伴：{{ 代理时长价格框.name }}</span>
+        <el-select
+          v-model="代理时长价格框.software"
+          placeholder="请选择软件"
+          style="width: 230px"
+          @change="查询代理时长价格"
+        >
+          <el-option v-for="item in 软件列表" :key="item.ID" :label="item.Software" :value="item.ID" />
+        </el-select>
+      </div>
+      <el-alert
+        class="代理价格提示"
+        type="info"
+        :closable="false"
+        title="精确命中锚点使用原价；锚点之间按两侧较高的平均每分钟价格折算。"
+      />
+      <el-table v-loading="代理时长价格框.加载中" :data="代理时长价格框.rows" border>
+        <el-table-column label="卡面时长" min-width="190">
+          <template #default="scope">
+            <el-input-number
+              v-model="scope.row.duration_minutes"
+              :min="最小时长分钟"
+              :max="最大时长分钟"
+              :precision="0"
+              controls-position="right"
+            />
+            <span class="价格单位">{{ 时长卡时长文本(scope.row.duration_minutes) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="代理价格（点）" width="190">
+          <template #default="scope">
+            <el-input-number
+              v-model="scope.row.price"
+              :min="0.01"
+              :max="最大代理价格"
+              :precision="2"
+              controls-position="right"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="scope">
+            <el-switch v-model="scope.row.enabled" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="scope">
+            <el-button link type="danger" @click="删除代理时长价格(scope.$index, scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!代理时长价格框.rows.length && !代理时长价格框.加载中" description="尚未配置时长卡价格" />
+      <template #footer>
+        <el-button @click="代理时长价格框.显示 = false">取消</el-button>
+        <el-button :disabled="代理时长价格框.rows.length >= 50" @click="新增代理时长价格">新增价格锚点</el-button>
+        <el-button type="primary" :loading="代理时长价格框.保存中" @click="保存代理时长价格">保存整组价格</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="代理充值框.显示" title="给渠道合伙人充值" width="420px" destroy-on-close>
       <p>账号：{{ 代理充值框.name }}</p>
       <el-form label-width="90px">
@@ -230,6 +306,9 @@ import { 获取接口错误提示 } from '../api/请求客户端.js'
 
 const 最小计费周期分钟 = 5
 const 最大计费周期分钟 = 3 * 24 * 60
+const 最小时长分钟 = 5
+const 最大时长分钟 = 36500 * 24 * 60
+const 最大代理价格 = 1000000000
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -245,7 +324,8 @@ const 软件框 = reactive({
   bulletin: '',
   default_period_minutes: 60,
   heartbeat_interval_seconds: 300,
-  online_grace_minutes: 60
+  online_grace_minutes: 60,
+  pause_deduct_minutes: 0
 })
 const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', heartbeatSeconds: 300, rows: [] })
 const 价格编辑框 = reactive({
@@ -259,6 +339,15 @@ const 价格编辑框 = reactive({
 })
 const 代理框 = reactive({ 显示: false, name: '', password: '' })
 const 代理编辑框 = reactive({ 显示: false, id: 0, name: '', balance: 0, prices: {}, password: '' })
+const 代理时长价格框 = reactive({
+  显示: false,
+  加载中: false,
+  保存中: false,
+  agent_id: 0,
+  name: '',
+  software: 0,
+  rows: []
+})
 const 代理充值框 = reactive({ 显示: false, id: 0, name: '', amount: 100, note: '' })
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
@@ -269,6 +358,14 @@ const 周期文本 = function (seconds) {
   if (value % 3600 === 0) return `${value / 3600} 小时`
   if (value % 60 === 0) return `${value / 60} 分钟`
   return `${value} 秒`
+}
+const 时长卡时长文本 = function (minutes) {
+  const value = Number(minutes || 0)
+  if (!value) return '-'
+  if (value === 最大时长分钟) return '永久卡'
+  if (value % (24 * 60) === 0) return `${value / (24 * 60)} 天`
+  if (value % 60 === 0) return `${value / 60} 小时`
+  return `${value} 分钟`
 }
 const 查询软件 = function () {
   return post('/user_query_soft_list', {}).then((res) => {
@@ -291,7 +388,8 @@ const 打开软件编辑 = function () {
     bulletin: '',
     default_period_minutes: 60,
     heartbeat_interval_seconds: 300,
-    online_grace_minutes: 60
+    online_grace_minutes: 60,
+    pause_deduct_minutes: 0
   })
 }
 const 编辑软件 = function (row) {
@@ -302,7 +400,8 @@ const 编辑软件 = function (row) {
     bulletin: row.Bulletin || '',
     default_period_minutes: Number(row.default_period_minutes || 60),
     heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300),
-    online_grace_minutes: Number(row.online_grace_minutes || 60)
+    online_grace_minutes: Number(row.online_grace_minutes || 60),
+    pause_deduct_minutes: Number(row.pause_deduct_minutes || 0)
   })
 }
 const 保存软件 = function () {
@@ -334,6 +433,14 @@ const 保存软件 = function () {
     ElMessage.warning('心跳间隔必须在1至86400秒之间')
     return
   }
+  if (
+    !Number.isInteger(软件框.pause_deduct_minutes) ||
+    软件框.pause_deduct_minutes < 0 ||
+    软件框.pause_deduct_minutes > 最大时长分钟
+  ) {
+    ElMessage.warning(`暂停扣除时长必须为0至${最大时长分钟 / 1440}天`)
+    return
+  }
   软件框.加载中 = true
   const url = 软件框.id ? '/user_modify_bulletin' : '/user_add_soft'
   post(url, {
@@ -342,7 +449,8 @@ const 保存软件 = function () {
     bulletin: 软件框.bulletin,
     default_period_minutes: 软件框.default_period_minutes,
     heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds,
-    online_grace_minutes: 软件框.online_grace_minutes
+    online_grace_minutes: 软件框.online_grace_minutes,
+    pause_deduct_minutes: 软件框.pause_deduct_minutes
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存软件失败')
@@ -381,7 +489,7 @@ const 打开价格 = function (row) {
   查询价格()
 }
 const 查询价格 = function () {
-  return post('/point_period_price/list', { software: 价格框.software })
+  return post('/point_card/price/list', { software: 价格框.software })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询点卡计费方案失败')
       价格框.rows = res.data.data || []
@@ -419,7 +527,7 @@ const 保存价格 = function () {
     ElMessage.warning('授权时长必须在5至4320分钟之间')
     return
   }
-  post('/point_period_price/save', {
+  post('/point_card/price/save', {
     software: 价格编辑框.software,
     period_minutes: 价格编辑框.period_minutes,
     cost: 价格编辑框.cost,
@@ -436,7 +544,7 @@ const 保存价格 = function () {
 }
 const 删除价格 = function (row) {
   ElMessageBox.confirm('删除后使用该授权时长的登录会被拒绝，确定删除？', '确认删除', { type: 'warning' })
-    .then(() => post('/point_period_price/delete', { id: row.id }))
+    .then(() => post('/point_card/price/delete', { id: row.id }))
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
       查询价格()
@@ -489,6 +597,122 @@ const 编辑代理 = function (row) {
     prices: normalized,
     password: ''
   })
+}
+
+// 打开时长卡价格设置时先选择一个软件，并从服务端读取该代理的完整锚点
+// 集合。空集合也有明确含义：该代理暂时不能为这个软件生成时长卡。
+const 打开代理时长价格 = function (row) {
+  Object.assign(代理时长价格框, {
+    显示: true,
+    加载中: false,
+    保存中: false,
+    agent_id: Number(row.id),
+    name: row.name || '',
+    software: 软件列表.value[0]?.ID || 0,
+    rows: []
+  })
+  查询代理时长价格()
+}
+const 查询代理时长价格 = function () {
+  if (!代理时长价格框.agent_id || !代理时长价格框.software) {
+    代理时长价格框.rows = []
+    return Promise.resolve()
+  }
+  代理时长价格框.加载中 = true
+  return post('/duration_card/agent_price/list', {
+    agent_id: 代理时长价格框.agent_id,
+    software: 代理时长价格框.software
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询时长卡价格失败')
+      代理时长价格框.rows = (res.data.data || []).map((item) => ({
+        id: Number(item.id || 0),
+        duration_minutes: Number(item.duration_minutes || 0),
+        原始时长分钟: Number(item.duration_minutes || 0),
+        price: Number(item.price || 0),
+        enabled: Boolean(item.enabled)
+      }))
+    })
+    .catch(显示错误)
+    .finally(() => {
+      代理时长价格框.加载中 = false
+    })
+}
+const 新增代理时长价格 = function () {
+  代理时长价格框.rows.push({
+    id: 0,
+    duration_minutes: 1440,
+    原始时长分钟: 0,
+    price: 1,
+    enabled: true
+  })
+}
+const 删除代理时长价格 = function (index, row) {
+  if (!row.id) {
+    代理时长价格框.rows.splice(index, 1)
+    return
+  }
+  ElMessageBox.confirm(`确定删除${时长卡时长文本(row.duration_minutes)}价格锚点？`, '确认删除', { type: 'warning' })
+    .then(() => post('/duration_card/agent_price/delete', {
+      agent_id: 代理时长价格框.agent_id,
+      software: 代理时长价格框.software,
+      // 已保存锚点允许先在表格中编辑时长；删除时必须用数据库中的原始
+      // 时长，避免把编辑后的值误当成删除条件。
+      duration_minutes: row.原始时长分钟 || row.duration_minutes
+    }))
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '删除时长卡价格失败')
+      ElMessage.success(res.data.msg || '删除成功')
+      // 只移除已删除行，不重新查询整组，保留用户尚未保存的其他编辑。
+      代理时长价格框.rows.splice(index, 1)
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+const 保存代理时长价格 = function () {
+  if (!代理时长价格框.agent_id || !代理时长价格框.software) {
+    ElMessage.warning('请选择软件')
+    return
+  }
+  const seen = new Set()
+  for (const row of 代理时长价格框.rows) {
+    if (!Number.isInteger(row.duration_minutes) || row.duration_minutes < 最小时长分钟 || row.duration_minutes > 最大时长分钟) {
+      ElMessage.warning('卡面时长必须为5分钟至36500天的整数')
+      return
+    }
+    if (seen.has(row.duration_minutes)) {
+      ElMessage.warning('卡面时长不能重复')
+      return
+    }
+    const price = Number(row.price)
+    const scaledPrice = price * 100
+    if (!Number.isFinite(price) || price <= 0 || price > 最大代理价格 || Math.abs(scaledPrice - Math.round(scaledPrice)) > 1e-8) {
+      ElMessage.warning('代理价格必须大于0且最多保留两位小数')
+      return
+    }
+    seen.add(row.duration_minutes)
+  }
+  代理时长价格框.保存中 = true
+  post('/duration_card/agent_price/save', {
+    agent_id: 代理时长价格框.agent_id,
+    software: 代理时长价格框.software,
+    // 空数组明确表示清空本软件的全部价格锚点。
+    prices: 代理时长价格框.rows.map((row) => ({
+      duration_minutes: row.duration_minutes,
+      price: Number(row.price),
+      enabled: Boolean(row.enabled)
+    }))
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存时长卡价格失败')
+      ElMessage.success(res.data.msg || '保存成功')
+      return 查询代理时长价格()
+    })
+    .catch(显示错误)
+    .finally(() => {
+      代理时长价格框.保存中 = false
+    })
 }
 const 保存代理 = function () {
   if (代理编辑框.password) {
@@ -583,6 +807,21 @@ h3 {
 }
 .价格标题 {
   margin-bottom: 12px;
+}
+.代理价格标题 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.代理价格提示 {
+  margin-bottom: 12px;
+}
+.价格单位 {
+  margin-left: 8px;
+  color: #9099a8;
+  font-size: 12px;
 }
 .价格说明 {
   margin-left: 10px;

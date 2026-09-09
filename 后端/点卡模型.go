@@ -7,40 +7,40 @@ const (
 	点数事件_扣点 = "debit"
 	点数事件_补点 = "credit"
 
-	默认登录周期分钟   = int64(60)
+	默认点卡授权周期分钟 = int64(60)
 	默认心跳周期秒    = int64(300)
-	最小计费周期分钟   = int64(5)
+	最小点卡计费周期分钟 = int64(5)
 	默认自动离线时间分钟 = int64(60)
 	最小自动离线时间分钟 = int64(5)
-	最大计费周期分钟   = int64(3 * 24 * 60)
+	最大点卡计费周期分钟 = int64(3 * 24 * 60)
 	最大心跳周期秒    = int64(24 * 60 * 60)
 	最大自动离线时间分钟 = int64(3 * 24 * 60)
 	最大卡密设备数    = int64(1000)
 	最大单次点数     = int64(1000000000)
-	最大单次生成卡密数量 = 500
+	最大单次生成点卡数量 = 500
 	最大卡密配置字符数  = 200
 	默认设备详情每页数量 = 50
 	最大设备详情每页数量 = 100
 )
 
-// 数据库和计费核心按秒保存授权时长；接口边界按分钟换算。allowZero=true 供登录等
+// 点卡数据库和计费核心按秒保存授权时长；接口边界按分钟换算。allowZero=true 供登录等
 // “省略时长”参数使用，其余场景必须落在 5 分钟至 3 天范围内。
-func 授权时长秒有效(periodSeconds int64, allowZero bool) bool {
+func 点卡授权时长秒有效(periodSeconds int64, allowZero bool) bool {
 	if periodSeconds == 0 {
 		return allowZero
 	}
 	if periodSeconds%60 != 0 {
 		return false
 	}
-	return 授权时长分钟有效(periodSeconds/60, false)
+	return 点卡授权时长分钟有效(periodSeconds/60, false)
 }
 
 // 管理端和公开接口使用分钟，数据库和计费核心继续使用秒；这两个转换函数集中维护单位边界。
-func 授权时长分钟有效(periodMinutes int64, allowZero bool) bool {
+func 点卡授权时长分钟有效(periodMinutes int64, allowZero bool) bool {
 	if periodMinutes == 0 {
 		return allowZero
 	}
-	return periodMinutes >= 最小计费周期分钟 && periodMinutes <= 最大计费周期分钟
+	return periodMinutes >= 最小点卡计费周期分钟 && periodMinutes <= 最大点卡计费周期分钟
 }
 
 func 分钟转秒(periodMinutes int64) int64 { return periodMinutes * 60 }
@@ -109,7 +109,7 @@ type 点卡扣费结果 struct {
 }
 
 type 点卡登录结果 struct {
-	Card             卡密表样式  `json:"-"`
+	Card             点卡表样式  `json:"-"`
 	Session          点卡设备会话 `json:"-"`
 	Charge           点卡扣费结果 `json:"-"`
 	PeriodSeconds    int64  `json:"period_seconds"`

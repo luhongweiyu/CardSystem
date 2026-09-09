@@ -59,7 +59,7 @@ func 创建点卡周期价格(tx *gorm.DB, price *点卡周期价格) error {
 	).First(price).Error
 }
 
-func 管理员名称和软件(ctx *gin.Context, softwareID int) (string, error) {
+func 管理员名称和点卡软件(ctx *gin.Context, softwareID int) (string, error) {
 	account, ok := 管理员_取账号信息(ctx)
 	if !ok || account.Name == "" {
 		return "", fmt.Errorf("登录状态错误")
@@ -78,13 +78,13 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, "数据错误")
 		return
 	}
-	admin, err := 管理员名称和软件(ctx, request.Software)
+	admin, err := 管理员名称和点卡软件(ctx, request.Software)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	if !授权时长分钟有效(request.PeriodMinutes, false) {
-		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在%d至%d分钟之间", 最小计费周期分钟, 最大计费周期分钟))
+	if !点卡授权时长分钟有效(request.PeriodMinutes, false) {
+		失败提示管理端(ctx, fmt.Sprintf("授权时长必须在%d至%d分钟之间", 最小点卡计费周期分钟, 最大点卡计费周期分钟))
 		return
 	}
 	periodSeconds := 分钟转秒(request.PeriodMinutes)
@@ -156,7 +156,7 @@ func 管理员_保存点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	清除软件计费配置缓存(admin, request.Software)
+	清除点卡计费配置缓存(admin, request.Software)
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "data": gin.H{"id": saved.ID, "software": saved.Software, "period_minutes": 秒转分钟(saved.PeriodSeconds), "cost": saved.Cost, "is_default": saved.IsDefault, "enabled": saved.Enabled}})
 }
 
@@ -192,21 +192,21 @@ type 点卡公开周期价格 struct {
 	IsDefault     bool  `json:"is_default"`
 }
 
-// 卡端_查询周期价格使用卡密所属软件作为默认软件，也接受客户端显式传入
+// 点卡端_查询周期价格使用点卡所属软件作为默认软件，也接受客户端显式传入
 // software 做一致性校验。它是只读接口，不改变余额和设备会话。
-func 卡端_查询周期价格(ctx *gin.Context) {
+func 点卡端_查询周期价格(ctx *gin.Context) {
 	value, ok := ctx.Get("card")
 	cardContext, valid := value.(卡密请求上下文)
 	if !ok || !valid {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	tableName, err := 卡密数据表名(cardContext.Name)
+	tableName, err := 点卡数据表名(cardContext.Name)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
 	}
-	var card 卡密表样式
+	var card 点卡表样式
 	query := db.Table(tableName).Where("card = ?", cardContext.Card).First(&card)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 		失败提示(ctx, "卡密不存在")
@@ -290,7 +290,7 @@ func 管理员_删除点卡周期价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	清除软件计费配置缓存(account.Name, hint.Software)
+	清除点卡计费配置缓存(account.Name, hint.Software)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功"})
 }
 
@@ -331,7 +331,7 @@ type 点数流水展示 struct {
 	CreatedAt     string `json:"created_at"`
 }
 
-func 点数流水展示列表(rows []点数流水, includeAdmin bool) []点数流水展示 {
+func 点卡流水展示列表(rows []点数流水, includeAdmin bool) []点数流水展示 {
 	result := make([]点数流水展示, 0, len(rows))
 	for _, row := range rows {
 		item := 点数流水展示{ID: row.ID, Card: row.Card, Software: row.Software, EventType: row.EventType, Change: row.Change, BalanceBefore: row.BalanceBefore, BalanceAfter: row.BalanceAfter, Remark: row.Remark, CreatedAt: row.CreatedAt.Format(timeLayout)}
@@ -360,7 +360,7 @@ func 规范化流水分页(page int, pageSize int) (int, int) {
 }
 
 // 读取流水的通用分页逻辑。调用方已经限制了管理员或当前卡密范围。
-func 查询点数流水记录(query *gorm.DB, page int, pageSize int) ([]点数流水, int64, error) {
+func 查询点卡流水记录(query *gorm.DB, page int, pageSize int) ([]点数流水, int64, error) {
 	page, pageSize = 规范化流水分页(page, pageSize)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -373,8 +373,8 @@ func 查询点数流水记录(query *gorm.DB, page int, pageSize int) ([]点数�
 	return rows, total, nil
 }
 
-// 管理员_查询点数流水仅提供余额变化所需字段，设备信息从 remark 读取。
-func 管理员_查询点数流水(ctx *gin.Context) {
+// 管理员_查询点卡流水仅提供余额变化所需字段，设备信息从 remark 读取。
+func 管理员_查询点卡流水(ctx *gin.Context) {
 	account, ok := 管理员_取账号信息(ctx)
 	if !ok {
 		失败提示管理端(ctx, "登录状态错误")
@@ -403,12 +403,12 @@ func 管理员_查询点数流水(ctx *gin.Context) {
 		}
 		query = query.Where("event_type = ?", eventType)
 	}
-	rows, total, err := 查询点数流水记录(query, page, pageSize)
+	rows, total, err := 查询点卡流水记录(query, page, pageSize)
 	if err != nil {
 		失败提示管理端(ctx, "查询点数流水失败")
 		return
 	}
-	成功提示管理端(ctx, gin.H{"data": 点数流水展示列表(rows, true), "num": total, "page": page, "page_size": pageSize})
+	成功提示管理端(ctx, gin.H{"data": 点卡流水展示列表(rows, true), "num": total, "page": page, "page_size": pageSize})
 }
 
 func 转义Like文本(value string) string {

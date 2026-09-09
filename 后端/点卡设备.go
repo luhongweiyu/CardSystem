@@ -157,8 +157,8 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 	if err != nil {
 		return 点卡周期价格{}, settings, 0, err
 	}
-	if requested == 0 && existing != nil && 授权时长秒有效(existing.RenewalPeriodSeconds, false) {
-		price, _, priceErr := 查询周期价格(tx, admin, softwareID, existing.RenewalPeriodSeconds)
+	if requested == 0 && existing != nil && 点卡授权时长秒有效(existing.RenewalPeriodSeconds, false) {
+		price, _, priceErr := 查询点卡周期价格(tx, admin, softwareID, existing.RenewalPeriodSeconds)
 		if priceErr == nil {
 			return price, settings, price.PeriodSeconds, nil
 		}
@@ -166,7 +166,7 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 		// 由调用方再次查询可扣费方案并明确报错，不静默切换到软件默认授权时长。
 		return 点卡周期价格{PeriodSeconds: existing.RenewalPeriodSeconds}, settings, existing.RenewalPeriodSeconds, nil
 	}
-	price, settings, err := 查询周期价格(tx, admin, softwareID, requested)
+	price, settings, err := 查询点卡周期价格(tx, admin, softwareID, requested)
 	if err != nil {
 		return 点卡周期价格{}, settings, 0, err
 	}
@@ -180,10 +180,10 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
-	if !授权时长秒有效(periodSeconds, true) {
-		return 点卡登录结果{}, fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小计费周期分钟, 最大计费周期分钟)
+	if !点卡授权时长秒有效(periodSeconds, true) {
+		return 点卡登录结果{}, fmt.Errorf("授权时长必须为0或%d至%d分钟，0表示使用默认授权时长", 最小点卡计费周期分钟, 最大点卡计费周期分钟)
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return 点卡登录结果{}, err
 	}
@@ -194,7 +194,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 	}
 	var result 点卡登录结果
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var cardRow 卡密表样式
+		var cardRow 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("点卡不存在")
@@ -240,7 +240,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			// 只更新下一次续费时长，当前授权截止时间不变。
 			if periodSeconds == 0 {
 				period = session.RenewalPeriodSeconds
-				if !授权时长秒有效(period, false) {
+				if !点卡授权时长秒有效(period, false) {
 					period = settings.DefaultPeriodSeconds
 				}
 			}
@@ -258,7 +258,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		// 过期会话必须使用可扣费的实际方案；活跃会话才允许使用停用时长对应的
 		// 临时占位价格。这样不会在过期时绕过管理员的停用设置。
 		if price.Cost <= 0 {
-			price, _, err = 查询周期价格(tx, admin, softwareID, period)
+			price, _, err = 查询点卡周期价格(tx, admin, softwareID, period)
 			if err != nil {
 				return err
 			}
@@ -318,7 +318,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		return result, fmt.Errorf("device_id格式不正确")
 	}
 	now := time.Now()
-	if cached, handled, cacheErr := 尝试记录缓存心跳(admin, card, deviceID, needle, now); handled {
+	if cached, handled, cacheErr := 尝试记录点卡缓存心跳(admin, card, deviceID, needle, now); handled {
 		return cached, cacheErr
 	}
 	// 缓存存在但授权已经到期时，必须先把到期前最后一次真实心跳写入数据库，
@@ -326,12 +326,13 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if err := 同步并删除点卡心跳缓存(admin, card, deviceID, needle); err != nil {
 		return result, err
 	}
-	tableName, err := 卡密数据表名(admin)
+	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return result, err
 	}
+	var terminalErr error
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var cardRow 卡密表样式
+		var cardRow 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("点卡不存在")
@@ -359,21 +360,32 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 			return err
 		}
 		period := session.RenewalPeriodSeconds
-		if !授权时长秒有效(period, false) {
+		if !点卡授权时长秒有效(period, false) {
 			period = settings.DefaultPeriodSeconds
 		}
 		charge := 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: session.AuthorizedUntil}
 		if !session.AuthorizedUntil.After(now) {
-			price, _, priceErr := 查询周期价格(tx, admin, cardRow.Software, period)
+			price, _, priceErr := 查询点卡周期价格(tx, admin, cardRow.Software, period)
 			if priceErr != nil {
-				// 保留会话，让客户端可以通过下一次登录明确提交新的有效授权时长；
-				// 这里不能在返回错误的同一事务里删除，否则删除会随事务回滚。
+				if errors.Is(priceErr, 错误_周期价格不可用) {
+					if deleteErr := tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error; deleteErr != nil {
+						return fmt.Errorf("删除不可续费会话失败")
+					}
+					terminalErr = priceErr
+					return nil
+				}
 				return priceErr
 			}
 			params := 点卡扣费参数{Admin: admin, Card: card, Software: cardRow.Software, PeriodSeconds: period, DeviceID: session.DeviceID, DeviceAlias: session.DeviceAlias, RemarkPrefix: "心跳续费"}
 			charge, err = 扣除点数事务(tx, tableName, &cardRow, params, price, period, now)
 			if err != nil {
-				// 和登录保持一致，余额不足时保留会话，补点后可继续重试。
+				if errors.Is(err, 错误_点卡余额不足) {
+					if deleteErr := tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error; deleteErr != nil {
+						return fmt.Errorf("删除余额不足会话失败")
+					}
+					terminalErr = err
+					return nil
+				}
 				return err
 			}
 			until := 计算续费起点(session, settings.OnlineGraceMinutes, now).Add(time.Duration(period) * time.Second)
@@ -391,6 +403,9 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	})
 	if err != nil {
 		return 点卡心跳结果{}, err
+	}
+	if terminalErr != nil {
+		return 点卡心跳结果{}, terminalErr
 	}
 	// 续费已经改变授权状态，按统一规则保持缓存为空；普通未到期心跳则缓存
 	// 已经提交的数据库结果，后续心跳无需再次读取或更新数据库。
@@ -512,12 +527,12 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 	if err := 同步并删除点卡心跳缓存(hint.Admin, hint.Card, hint.DeviceID, hint.Needle); err != nil {
 		return err
 	}
-	tableName, err := 卡密数据表名(hint.Admin)
+	tableName, err := 点卡数据表名(hint.Admin)
 	if err != nil {
 		return err
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var card 卡密表样式
+		var card 点卡表样式
 		cardQuery := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", hint.Card).First(&card)
 		if errors.Is(cardQuery.Error, gorm.ErrRecordNotFound) {
 			return tx.Table("point_device_session").Where("id = ?", sessionID).Delete(&点卡设备会话{}).Error
@@ -549,10 +564,10 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 			return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
 		}
 		period := session.RenewalPeriodSeconds
-		if !授权时长秒有效(period, false) {
+		if !点卡授权时长秒有效(period, false) {
 			period = settings.DefaultPeriodSeconds
 		}
-		price, _, err := 查询周期价格(tx, session.Admin, session.Software, period)
+		price, _, err := 查询点卡周期价格(tx, session.Admin, session.Software, period)
 		if err != nil {
 			// 后台清理没有客户端可以返回错误。价格方案停用或不存在时直接删除
 			// 已过期会话，避免每分钟重复读取和结算；恢复配置后由客户端重新登录。

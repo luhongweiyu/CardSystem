@@ -31,13 +31,13 @@ var 全局点卡配置缓存 = struct {
 	数据 map[点卡配置缓存键]点卡配置缓存条目
 }{数据: make(map[点卡配置缓存键]点卡配置缓存条目)}
 
-// 读取软件计费配置采用简单的“读取命中、未命中查库”模式。首次查询会一次性
+// 读取点卡计费配置采用简单的“读取命中、未命中查库”模式。首次查询会一次性
 // 读取软件的全部启用方案，后续登录、心跳和后台续费可直接按授权时长取价。
 //
 // 配置加载期间若管理端完成了修改，全局版本会变化，本次旧快照不会重新写回
 // 缓存；这可避免并发加载覆盖刚刚执行的失效操作。即使数据库被外部直接修改，
 // 缓存也会在三十分钟内自然过期并重新读取。
-func 读取软件计费配置(tx *gorm.DB, admin string, softwareID int) (点卡配置缓存条目, error) {
+func 读取点卡计费配置(tx *gorm.DB, admin string, softwareID int) (点卡配置缓存条目, error) {
 	if tx == nil {
 		return 点卡配置缓存条目{}, fmt.Errorf("数据库尚未初始化")
 	}
@@ -61,7 +61,7 @@ func 读取软件计费配置(tx *gorm.DB, admin string, softwareID int) (点卡
 	if query.Error != nil {
 		return 点卡配置缓存条目{}, fmt.Errorf("读取软件设置失败")
 	}
-	if !授权时长秒有效(settings.DefaultPeriodSeconds, false) {
+	if !点卡授权时长秒有效(settings.DefaultPeriodSeconds, false) {
 		return 点卡配置缓存条目{}, fmt.Errorf("软件默认授权时长配置不正确")
 	}
 	if settings.HeartbeatIntervalSeconds <= 0 || settings.HeartbeatIntervalSeconds > 最大心跳周期秒 {
@@ -97,9 +97,9 @@ func 读取软件计费配置(tx *gorm.DB, admin string, softwareID int) (点卡
 	return loaded, nil
 }
 
-// 清除软件计费配置缓存必须在软件或计费方案事务成功后调用。它只删除只读快照，
+// 清除点卡计费配置缓存必须在软件或计费方案事务成功后调用。它只删除只读快照，
 // 不触发数据库查询或写入，因此配置管理接口不存在“先同步缓存再修改”的分支。
-func 清除软件计费配置缓存(admin string, softwareID int) {
+func 清除点卡计费配置缓存(admin string, softwareID int) {
 	key := 点卡配置缓存键{管理员: strings.TrimSpace(admin), 软件: softwareID}
 	全局点卡配置缓存.Lock()
 	全局点卡配置缓存.版本++

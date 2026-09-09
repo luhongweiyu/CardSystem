@@ -171,7 +171,7 @@ func Test卡密配置字符限制(t *testing.T) {
 	}
 }
 
-func Test卡密列表排序规则(t *testing.T) {
+func Test点卡卡密列表排序规则(t *testing.T) {
 	db, err := gorm.Open(mysql.New(mysql.Config{
 		DSN:                       "root:password@tcp(127.0.0.1:3306)/gocard?charset=utf8mb4&parseTime=True&loc=Local",
 		SkipInitializeWithVersion: true,
@@ -179,9 +179,9 @@ func Test卡密列表排序规则(t *testing.T) {
 	if err != nil {
 		t.Fatalf("初始化排序测试数据库失败: %v", err)
 	}
-	makeSQL := func(sorting 卡密列表排序参数) string {
-		var rows []卡密表样式
-		query := 应用卡密列表排序(db.Table("card_demo"), "card_demo", sorting, "admin", time.Now())
+	makeSQL := func(sorting 点卡卡密列表排序参数) string {
+		var rows []点卡表样式
+		query := 应用点卡卡密列表排序(db.Table("card_demo"), "card_demo", sorting, "admin", time.Now())
 		executed := query.Limit(20).Find(&rows)
 		return strings.ToLower(executed.Statement.SQL.String())
 	}
@@ -190,19 +190,19 @@ func Test卡密列表排序规则(t *testing.T) {
 	var total int64
 	base := db.Table("card_demo")
 	base.Session(&gorm.Session{}).Count(&total)
-	var countedRows []卡密表样式
-	counted := 应用卡密列表排序(base, "card_demo", 卡密列表排序参数{字段: "create_time", 方向: "desc", 卡密方向: "asc"}, "admin", time.Now())
+	var countedRows []点卡表样式
+	counted := 应用点卡卡密列表排序(base, "card_demo", 点卡卡密列表排序参数{字段: "create_time", 方向: "desc", 卡密方向: "asc"}, "admin", time.Now())
 	countedExecuted := counted.Limit(20).Find(&countedRows)
 	if sql := strings.ToLower(countedExecuted.Statement.SQL.String()); !strings.Contains(sql, "order by `create_time` desc, `card` asc") || strings.Contains(sql, "point_device_session") {
 		t.Fatalf("不支持的授权设备排序应回退默认排序: %s", sql)
 	}
-	if sql := makeSQL(卡密列表排序参数{字段: "card", 方向: "desc", 卡密方向: "asc"}); !strings.Contains(sql, "order by `card` desc") || strings.Contains(sql, "card asc") {
+	if sql := makeSQL(点卡卡密列表排序参数{字段: "card", 方向: "desc", 卡密方向: "asc"}); !strings.Contains(sql, "order by `card` desc") || strings.Contains(sql, "card asc") {
 		t.Fatalf("单独卡密排序不应追加第二个卡密排序: %s", sql)
 	}
-	if sql := makeSQL(卡密列表排序参数{字段: "point_balance", 方向: "desc", 卡密方向: "desc"}); !strings.Contains(sql, "point_balance` desc, `card` desc") {
+	if sql := makeSQL(点卡卡密列表排序参数{字段: "point_balance", 方向: "desc", 卡密方向: "desc"}); !strings.Contains(sql, "point_balance` desc, `card` desc") {
 		t.Fatalf("其他字段排序应把卡密作为第二排序: %s", sql)
 	}
-	if sql := makeSQL(卡密列表排序参数{字段: "create_time", 方向: "desc", 卡密方向: "asc"}); strings.Contains(sql, "point_device_session") || !strings.Contains(sql, "order by `create_time` desc") {
+	if sql := makeSQL(点卡卡密列表排序参数{字段: "create_time", 方向: "desc", 卡密方向: "asc"}); strings.Contains(sql, "point_device_session") || !strings.Contains(sql, "order by `create_time` desc") {
 		t.Fatalf("卡密列表排序不应生成设备数量子查询: %s", sql)
 	}
 }
