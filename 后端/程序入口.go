@@ -62,6 +62,11 @@ func main() {
 	if err := 初始化(); err != nil {
 		log.Fatal(err)
 	}
+	// 迁移函数内部还会检查配置开关；只有明确设置迁移: true，且旧表存在、
+	// 目标表不存在时，才会写入并改名。
+	if err := 迁移旧时长卡数据(); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println("开始运行:")
 	if err := 连接数据库(); err != nil {
 		log.Fatal(err)
