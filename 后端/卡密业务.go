@@ -125,6 +125,12 @@ func 卡端读取用户设置(ctx *gin.Context) {
 	ctx.Next()
 }
 
+const (
+	// 只有旧 /card/card_login 和 /card/card_ping 路由设置该标记，
+	// 其他新接口始终使用当前签名协议。
+	卡密旧签名标记 = "card_legacy_signature"
+)
+
 // 计算卡密接口签名直接对“安全密码 + 实际请求或响应字节”计算 MD5。
 // JSON 模式使用原始正文；查询参数模式使用去除 sign 后的原始查询字符串。
 func 计算卡密接口签名(apiPassword string, rawContent []byte) string {
@@ -134,10 +140,51 @@ func 计算卡密接口签名(apiPassword string, rawContent []byte) string {
 	return fmt.Sprintf("%x", hash.Sum(nil))
 }
 
+// 计算旧卡密请求签名保留旧客户端协议：只签客户端提交的时间戳，
+// 不签卡密、设备 ID 或其他业务参数。
+func 计算旧卡密请求签名(timestamp, apiPassword string) string {
+	hash := md5.Sum([]byte(timestamp + apiPassword))
+	return fmt.Sprintf("%x", hash)
+}
+
+// 计算旧卡密响应签名保留旧客户端协议：签返回时间戳、接口口令和 code。
+func 计算旧卡密响应签名(timestamp, apiPassword string, code int) string {
+	hash := md5.Sum([]byte(timestamp + apiPassword + strconv.Itoa(code)))
+	return fmt.Sprintf("%x", hash)
+}
+
 // 写入卡密响应先把顶层 sign 置空并序列化，再对这份原始 JSON 计算签名。
 // 客户端收到响应后，只需在原始响应文本中把顶层 sign 还原为空即可校验，
 // 不依赖响应头，也不能先解析后重新序列化，以免字段顺序或转义方式变化。
 func 写入卡密响应(ctx *gin.Context, data gin.H) {
+	if value, exists := ctx.Get(卡密旧签名标记); exists && value == true {
+		// 旧客户端校验的是“客户端 timestamp + 10”，不能改成服务端当前时间。
+		timestamp, err := strconv.ParseInt(input(ctx, "timestamp"), 10, 64)
+		if err != nil {
+			timestamp = time.Now().Unix()
+		}
+		timestamp += 10
+		timestampText := strconv.FormatInt(timestamp, 10)
+		data["timestamp"] = timestamp
+		delete(data, "nonce")
+
+		apiPassword := ""
+		if value, exists := ctx.Get("card"); exists {
+			if cardContext, ok := value.(卡密请求上下文); ok {
+				apiPassword = cardContext.Api_password
+			}
+		}
+		code, _ := data["code"].(int)
+		data["sign"] = 计算旧卡密响应签名(timestampText, apiPassword, code)
+		signedJSON, err := json.Marshal(data)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"state": false, "code": 0, "msg": "响应编码失败", "sign": ""})
+			return
+		}
+		ctx.Data(http.StatusOK, "application/json; charset=utf-8", signedJSON)
+		return
+	}
+
 	data["timestamp"] = time.Now().Unix()
 	if nonce := input(ctx, "nonce"); nonce != "" {
 		data["nonce"] = nonce
@@ -178,6 +225,12 @@ func 成功提示(ctx *gin.Context, data interface{}) {
 	}
 	result["state"], result["code"] = true, 1
 	写入卡密响应(ctx, result)
+}
+
+// 标记旧卡密签名在读取管理员设置前执行，保证旧兼容接口的成功和失败响应
+// 都使用旧协议；真正的验签仍由后面的卡密md5验证完成。
+func 标记旧卡密签名(ctx *gin.Context) {
+	ctx.Set(卡密旧签名标记, true)
 }
 
 var 查询签名参数规则 = regexp.MustCompile(`(^|&)sign=[^&]*`)
@@ -241,6 +294,25 @@ func 卡密md5验证(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
 	if !ok || !cardContext.Api_safe {
+		return
+	}
+	if value, legacy := ctx.Get(卡密旧签名标记); legacy && value == true {
+		timestampText := input(ctx, "timestamp")
+		timestamp, err := strconv.ParseInt(timestampText, 10, 64)
+		now := time.Now().Unix()
+		if err != nil || timestamp < now-10*60 || timestamp > now+10*60 {
+			失败提示(ctx, "时间不正确")
+			拒绝日志(ctx)
+			ctx.Abort()
+			return
+		}
+		expected := 计算旧卡密请求签名(timestampText, cardContext.Api_password)
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(input(ctx, "sign"))) == 1 {
+			return
+		}
+		失败提示(ctx, "sign错误")
+		拒绝日志(ctx)
+		ctx.Abort()
 		return
 	}
 	rawContent, sign, contentErr := 获取卡密请求签名内容(ctx)

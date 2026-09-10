@@ -2,9 +2,9 @@
 
 所有接口同时支持 JSON POST；标注“兼容 GET”的接口也接受查询参数。成功响应通常包含 `state: true, code: 1`，失败响应包含 `state: false, code: 0, msg`。
 
-卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。开启 API 安全模式后，请求需带 `timestamp`、`nonce` 和 URL 参数 `sign`。POST JSON 签原始 JSON；GET 或无 JSON 的 POST 签去掉 `sign` 后的查询字符串。
+新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。`/point_card/*` 和 `/duration_card/*` 开启 API 安全模式后，需带 `timestamp`、`nonce` 和 URL 参数 `sign`；POST JSON 签原始 JSON，GET 或无 JSON 的 POST 签去掉 `sign` 后的查询字符串。
 
-响应会返回顶层 `sign` 和相同的 `nonce`。有接口口令时，客户端按原始响应内容校验 `sign`；接口安全模式不提供传输加密。
+旧客户端只使用 `/card/card_login`、`/card/card_ping`。这两个接口按旧协议验签：请求为 `MD5(timestamp + api_password)`，返回时间戳为请求时间戳加 `10`，返回签名为 `MD5(timestamp + api_password + code)`，不要求 `nonce`。旧签名只保护时间戳，不保护卡密、设备等业务参数，仅用于兼容旧客户端。接口安全模式不提供传输加密。
 
 本版本客户端接口只使用 `/point_card/*` 和 `/duration_card/*`；旧 `/card/*`、`/duration/*` 不再注册。旧客户端应继续连接旧服务端，两个服务不要同时写入同一个数据库。
 

@@ -300,7 +300,7 @@ func 启动网络() error {
 	}
 
 	// 客户端点卡接口只使用 /point_card 前缀，避免与时长卡模式产生任何
-	// 路径歧义。登录/心跳/退出/配置可启用可选的 MD5 签名，系统支持 HTTP。
+	// 路径歧义。点卡客户端接口使用当前签名协议，系统支持 HTTP。
 	pointCard := router.Group("/point_card", 卡端读取用户设置, 卡密md5验证)
 	pointCard.Match([]string{"POST", "GET"}, "/card_login", 点卡登录)
 	pointCard.Match([]string{"POST", "GET"}, "/card_ping", 点卡心跳)
@@ -312,8 +312,8 @@ func 启动网络() error {
 	pointCardRead.Match([]string{"POST", "GET"}, "/period_prices", 点卡端_查询周期价格)
 	pointCardRead.Match([]string{"POST", "GET"}, "/point_ledger/query", 点卡端_查询点卡流水)
 
-	// 独立时长卡客户端接口。卡密和管理员的解析、签名规则与点卡一致，
-	// 但后续业务只读取 duration_card_<管理员> 表。
+	// 独立时长卡客户端接口使用当前签名协议；后续业务只读取
+	// duration_card_<管理员> 表。
 	durationCard := router.Group("/duration_card", 卡端读取用户设置, 卡密md5验证)
 	durationCard.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
 	durationCard.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
@@ -322,6 +322,11 @@ func 启动网络() error {
 	durationCard.Match([]string{"POST", "GET"}, "/bulletin", durationCardBulletin)
 	durationCard.Match([]string{"POST", "GET"}, "/config", durationCardConfig)
 	durationCard.Match([]string{"POST", "GET"}, "/recharge", durationCardRecharge)
+
+	// 旧客户端只使用这两个接口，仍映射到时长卡业务，并保留旧签名协议。
+	legacyCard := router.Group("/card", 标记旧卡密签名, 卡端读取用户设置, 卡密md5验证)
+	legacyCard.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
+	legacyCard.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
 
 	// 访客接口保留旧中文路径，同时提供含义明确的新路径；两套路径调用
 	// 同一实现，不会形成两份业务规则。

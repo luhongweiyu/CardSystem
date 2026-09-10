@@ -41,8 +41,8 @@
       </el-descriptions>
       <p class="提示">
         device_id 可省略，省略时按空字符串处理；使用非空值时应由客户端生成并持久化。device_alias
-        只是登录时设置的展示名称，不参与设备唯一性判断。开启接口安全模式后，POST JSON 签原始 JSON；GET 或无 JSON 的 POST 签去除 sign 后的原始查询字符串，
-        两种请求都通过地址传 sign，并提交 timestamp、nonce。响应 JSON 会返回相同 nonce 和顶层 sign。计费周期按分钟，心跳间隔仍按秒；签名不提供传输加密。
+        只是登录时设置的展示名称，不参与设备唯一性判断。新客户端登录和心跳按原始 JSON 或查询参数签名，并通过地址传 sign、提交 timestamp 和 nonce。
+        旧客户端专用的 /card/card_login、/card/card_ping 使用旧签名，只保护时间戳。计费周期按分钟，心跳间隔仍按秒；签名不提供传输加密。
       </p>
     </el-card>
   </section>
