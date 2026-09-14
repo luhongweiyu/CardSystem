@@ -281,6 +281,7 @@ func 启动网络() error {
 		agent.POST("/point_card/save", 代理账号_修改点卡)
 		agent.POST("/point_card/state", 代理账号_批量修改点卡状态)
 		agent.POST("/point_card/ledger", 代理账号_查询点卡流水)
+		agent.POST("/point_card/settings", 代理账号_修改点卡代扣设置)
 		agent.POST("/user_query_soft_list", 代理账号_查询软件列表)
 		agent.POST("/query_log", 代理账号_查询操作日志)
 		agent.POST("/duration_card/price/list", 代理账号_查询时长卡价格)

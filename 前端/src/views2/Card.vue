@@ -8,6 +8,28 @@
       <el-button type="primary" @click="打开生成">生成点卡卡密</el-button>
     </div>
 
+    <el-card v-if="是代理账号" shadow="never" class="代理代扣卡片" v-loading="代理代扣.加载中">
+      <div class="代理代扣内容">
+        <div>
+          <strong>点卡余额不足时扣代理余额</strong>
+          <p>不足部分按该软件的代理每点价格折算扣款，费用向上取整；每张卡可单独设置是否跟随此开关。</p>
+        </div>
+        <el-switch
+          v-model="代理代扣.point_card_auto_deduct"
+          active-text="已开启"
+          inactive-text="已关闭"
+          :loading="代理代扣.保存中"
+          :disabled="代理代扣.加载中"
+          @change="切换代理代扣"
+        />
+      </div>
+      <div class="代理代扣状态">
+        <span>当前代理余额：{{ 账号信息.balance ?? 0 }} 点</span>
+        <span>管理员欠费权限：{{ 代理代扣.allow_point_debt ? '已允许' : '未允许' }}</span>
+        <span>最大欠费额度：{{ 代理代扣.point_debt_limit }} 点</span>
+      </div>
+    </el-card>
+
     <el-card shadow="never" class="筛选卡片">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="软件">
@@ -269,6 +291,14 @@
         <el-form-item label="配置">
           <el-input v-model="编辑框.config_content" type="textarea" :rows="3" maxlength="200" show-word-limit />
         </el-form-item>
+        <el-form-item v-if="是代理账号" label="余额不足时">
+          <el-select v-model="编辑框.point_card_auto_deduct_mode" style="width: 230px">
+            <el-option label="跟随代理总开关" value="inherit" />
+            <el-option label="允许扣代理余额" value="allow" />
+            <el-option label="禁止扣代理余额" value="deny" />
+          </el-select>
+          <div class="字段说明">“允许 / 禁止”优先于总开关；“跟随”使用总开关设置</div>
+        </el-form-item>
         <template v-if="!是代理账号">
           <el-divider content-position="left">调整余额</el-divider>
           <el-form-item label="当前余额">
@@ -340,6 +370,13 @@ const post = stores.post
 const 是代理账号 = computed(() => stores.是代理账号)
 const 账号信息 = stores.账号信息
 const 加载中 = ref(false)
+const 代理代扣 = reactive({
+  加载中: false,
+  保存中: false,
+  point_card_auto_deduct: false,
+  allow_point_debt: false,
+  point_debt_limit: 0
+})
 const 点卡卡密表格 = ref(null)
 const 软件列表 = ref([])
 const 点卡卡密列表 = ref([])
@@ -369,7 +406,8 @@ const 编辑框 = reactive({
   card_state: 2,
   point_balance: 0,
   notes: '',
-  config_content: ''
+  config_content: '',
+  point_card_auto_deduct_mode: 'inherit'
 })
 const 调整 = reactive({ amount: 0, reason: '' })
 const 流水框 = reactive({
@@ -419,18 +457,58 @@ const 软件名称 = (id) => 软件列表.value.find((item) => Number(item.ID) =
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 
+const 同步代理代扣设置 = function (data = {}) {
+  if (data.point_card_auto_deduct !== undefined) {
+    代理代扣.point_card_auto_deduct = Boolean(data.point_card_auto_deduct)
+  }
+  if (data.allow_point_debt !== undefined) {
+    代理代扣.allow_point_debt = Boolean(data.allow_point_debt)
+  }
+  if (data.point_debt_limit !== undefined) {
+    代理代扣.point_debt_limit = Math.max(0, Number(data.point_debt_limit) || 0)
+  }
+  if (data.balance !== undefined) {
+    账号信息.balance = Number(data.balance) || 0
+  }
+}
+
+const 切换代理代扣 = function (value) {
+  const previous = !Boolean(value)
+  代理代扣.保存中 = true
+  return post('/point_card/settings', { point_card_auto_deduct: Boolean(value) })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存点卡设置失败')
+      同步代理代扣设置(res.data)
+      ElMessage.success('点卡代扣设置已保存')
+    })
+    .catch((error) => {
+      代理代扣.point_card_auto_deduct = previous
+      显示错误(error)
+    })
+    .finally(() => {
+      代理代扣.保存中 = false
+    })
+}
+
 const 查询软件 = function () {
-  return post('/user_query_soft_list', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
-    软件列表.value = res.data.data || []
-    if (是代理账号.value) {
-      账号信息.balance = Number(res.data.balance || 0)
-      账号信息.prices = res.data.prices || {}
-    }
-    if (!可发卡软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
-      生成框.software = 可发卡软件列表.value[0]?.ID || 0
-    }
-  })
+  代理代扣.加载中 = 是代理账号.value
+  return post('/user_query_soft_list', {})
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
+      软件列表.value = res.data.data || []
+      if (是代理账号.value) {
+        // 软件列表已同时返回最新余额和开关，无需额外发一次设置查询。
+        同步代理代扣设置(res.data)
+        账号信息.prices = res.data.prices || {}
+      }
+      if (!可发卡软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
+        生成框.software = 可发卡软件列表.value[0]?.ID || 0
+      }
+    })
+    .catch(显示错误)
+    .finally(() => {
+      代理代扣.加载中 = false
+    })
 }
 
 const 查询点卡卡密 = function (resetPage = false) {
@@ -534,7 +612,10 @@ const 打开编辑 = function (row) {
     card_state: row.card_state,
     point_balance: Number(row.point_balance || 0),
     notes: row.notes || '',
-    config_content: row.config_content || ''
+    config_content: row.config_content || '',
+    point_card_auto_deduct_mode: ['inherit', 'allow', 'deny'].includes(row.point_card_auto_deduct_mode)
+      ? row.point_card_auto_deduct_mode
+      : 'inherit'
   })
   Object.assign(调整, { amount: 0, reason: '' })
 }
@@ -544,7 +625,8 @@ const 保存编辑 = function () {
     card: 编辑框.card,
     card_state: 编辑框.card_state,
     notes: 编辑框.notes,
-    config_content: 编辑框.config_content
+    config_content: 编辑框.config_content,
+    ...(是代理账号.value ? { point_card_auto_deduct_mode: 编辑框.point_card_auto_deduct_mode } : {})
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存失败')
@@ -747,6 +829,31 @@ h2 {
 }
 .筛选卡片 {
   margin-bottom: 12px;
+}
+.代理代扣卡片 {
+  margin-bottom: 12px;
+}
+.代理代扣内容 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.代理代扣内容 strong {
+  color: #e6eaf2;
+}
+.代理代扣内容 p {
+  margin: 6px 0 0;
+  color: #9099a8;
+  font-size: 13px;
+}
+.代理代扣状态 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 12px;
+  color: #aeb6c3;
+  font-size: 13px;
 }
 .批量操作 {
   display: flex;

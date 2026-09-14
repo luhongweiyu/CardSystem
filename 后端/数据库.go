@@ -36,6 +36,9 @@ type 点卡表样式 struct {
 	Notes          string `gorm:"column:notes;size:500" json:"notes"`
 	Config_content string `gorm:"column:config_content;type:longtext" json:"config_content"`
 	AgentID        int    `gorm:"column:agent_id;not null;default:0;index" json:"agent_id"`
+	// AgentDeductionMode 控制卡内点数不足时是否允许从所属代理余额补足：
+	// inherit 跟随代理总开关，allow 始终允许，deny 始终禁止。
+	AgentDeductionMode string `gorm:"column:point_card_auto_deduct_mode;size:8;not null;default:inherit" json:"point_card_auto_deduct_mode"`
 }
 
 // software 保存客户端默认授权时长和心跳判定所需的间隔。

@@ -204,6 +204,20 @@
           />
           <span class="价格说明">0 表示不授权该软件</span>
         </el-form-item>
+        <el-form-item label="允许点卡代扣欠费">
+          <el-switch v-model="代理编辑框.allow_point_debt" />
+          <span class="价格说明">允许代理点卡代扣时将代理余额扣到负数</span>
+        </el-form-item>
+        <el-form-item label="最大欠费额度">
+          <el-input-number
+            v-model="代理编辑框.point_debt_limit"
+            :min="0"
+            :max="最大代理欠费额度"
+            :precision="0"
+            controls-position="right"
+          />
+          <span class="价格说明">点；0 表示不允许欠费</span>
+        </el-form-item>
         <el-form-item label="新密码（可选）">
           <el-input v-model="代理编辑框.password" type="password" show-password placeholder="留空表示不修改" />
         </el-form-item>
@@ -309,6 +323,7 @@ const 最大计费周期分钟 = 3 * 24 * 60
 const 最小时长分钟 = 5
 const 最大时长分钟 = 36500 * 24 * 60
 const 最大代理价格 = 1000000000
+const 最大代理欠费额度 = 1000000000
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -338,7 +353,16 @@ const 价格编辑框 = reactive({
   is_default: false
 })
 const 代理框 = reactive({ 显示: false, name: '', password: '' })
-const 代理编辑框 = reactive({ 显示: false, id: 0, name: '', balance: 0, prices: {}, password: '' })
+const 代理编辑框 = reactive({
+  显示: false,
+  id: 0,
+  name: '',
+  balance: 0,
+  prices: {},
+  password: '',
+  allow_point_debt: false,
+  point_debt_limit: 0
+})
 const 代理时长价格框 = reactive({
   显示: false,
   加载中: false,
@@ -595,7 +619,9 @@ const 编辑代理 = function (row) {
     name: row.name,
     balance: row.balance,
     prices: normalized,
-    password: ''
+    password: '',
+    allow_point_debt: Boolean(row.allow_point_debt),
+    point_debt_limit: Math.max(0, Number(row.point_debt_limit) || 0)
   })
 }
 
@@ -722,6 +748,14 @@ const 保存代理 = function () {
       return
     }
   }
+  if (
+    !Number.isInteger(代理编辑框.point_debt_limit) ||
+    代理编辑框.point_debt_limit < 0 ||
+    代理编辑框.point_debt_limit > 最大代理欠费额度
+  ) {
+    ElMessage.warning(`最大欠费额度必须为0至${最大代理欠费额度}点`)
+    return
+  }
   // 价格为 0 的软件不写入映射，缺少映射即表示代理无权为该软件发卡。
   const prices = {}
   Object.keys(代理编辑框.prices).forEach((key) => {
@@ -729,7 +763,13 @@ const 保存代理 = function () {
     if (Number.isFinite(value) && value > 0) prices[key] = value
   })
   post('/设置代理账号', {
-    data: { id: 代理编辑框.id, password: 代理编辑框.password, prices: JSON.stringify(prices) }
+    data: {
+      id: 代理编辑框.id,
+      password: 代理编辑框.password,
+      prices: JSON.stringify(prices),
+      allow_point_debt: Boolean(代理编辑框.allow_point_debt),
+      point_debt_limit: 代理编辑框.point_debt_limit
+    }
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存渠道合伙人失败')

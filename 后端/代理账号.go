@@ -21,10 +21,11 @@ const (
 	代理账号表名      = "agent_account"
 	最大代理价格配置字节数 = 4096
 	最大代理价格软件数量  = 100
+	最大代理欠费额度    = int64(1000000000)
 )
 
-// 代理账号记录只保存代理身份、可用余额和软件价格映射。代理余额是在生成
-// 卡密时消耗的独立额度，不等同于代理生成出来的卡密余额。
+// 代理账号记录保存代理身份、独立余额和价格配置。代理余额用于发卡和
+// 主动开启的点卡余额不足代扣，不等同于已生成卡密的点数余额。
 type 代理账号记录 struct {
 	ID    int    `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
 	Admin string `json:"admin" gorm:"column:admin;size:32;not null;index:idx_agent_admin"`
@@ -37,6 +38,12 @@ type 代理账号记录 struct {
 	PasswordHash string `json:"-" gorm:"column:password_hash;size:255;default:''"`
 	Balance      int64  `json:"balance" gorm:"column:balance;not null;default:0"`
 	Prices       string `json:"prices" gorm:"column:prices;type:text;not null"`
+	// PointCardAutoDeduct 由代理自己控制，决定卡内点数不足时是否尝试
+	// 使用自己的代理余额补足；管理员只控制欠费权限和额度。
+	PointCardAutoDeduct bool `json:"point_card_auto_deduct" gorm:"column:point_card_auto_deduct;not null;default:false"`
+	// AllowPointDebt 和 PointDebtLimit 由管理员控制；额度为0时不允许欠费。
+	AllowPointDebt bool  `json:"allow_point_debt" gorm:"column:allow_point_debt;not null;default:false"`
+	PointDebtLimit int64 `json:"point_debt_limit" gorm:"column:point_debt_limit;not null;default:0"`
 }
 
 // TableName 固定代理账号模型的物理表名。业务查询即使没有显式调用 Table，
@@ -46,14 +53,20 @@ func (代理账号记录) TableName() string {
 }
 
 type 代理账号列表项 struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	Balance int64  `json:"balance"`
-	Prices  string `json:"prices"`
+	ID                  int    `json:"id"`
+	Name                string `json:"name"`
+	Balance             int64  `json:"balance"`
+	Prices              string `json:"prices"`
+	PointCardAutoDeduct bool   `json:"point_card_auto_deduct"`
+	AllowPointDebt      bool   `json:"allow_point_debt"`
+	PointDebtLimit      int64  `json:"point_debt_limit"`
 }
 
 func 代理账号列表项转换(account 代理账号记录) 代理账号列表项 {
-	return 代理账号列表项{ID: account.ID, Name: account.Name, Balance: account.Balance, Prices: account.Prices}
+	return 代理账号列表项{
+		ID: account.ID, Name: account.Name, Balance: account.Balance, Prices: account.Prices,
+		PointCardAutoDeduct: account.PointCardAutoDeduct, AllowPointDebt: account.AllowPointDebt, PointDebtLimit: account.PointDebtLimit,
+	}
 }
 
 func 代理账号登录(ctx *gin.Context) {
@@ -74,7 +87,7 @@ func 代理账号登录(ctx *gin.Context) {
 		return
 	}
 	session := 全局_登录会话.创建会话(account.Name, true)
-	成功提示管理端(ctx, gin.H{"msg": "登录成功", "id": account.ID, "admin": account.Admin, "center_id": parent.ID, "name": account.Name, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "token": session.Token, "expires_at": session.ExpiresAt})
+	成功提示管理端(ctx, gin.H{"msg": "登录成功", "id": account.ID, "admin": account.Admin, "center_id": parent.ID, "name": account.Name, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit, "token": session.Token, "expires_at": session.ExpiresAt})
 }
 
 func 管理员_创建代理账号(ctx *gin.Context) {
@@ -389,17 +402,18 @@ func 代理账号_删除点卡卡密(ctx *gin.Context) {
 
 func 代理账号_修改点卡(ctx *gin.Context) {
 	var request struct {
-		Card      string  `json:"card"`
-		Notes     *string `json:"notes"`
-		Config    *string `json:"config_content"`
-		CardState int     `json:"card_state"`
+		Card               string  `json:"card"`
+		Notes              *string `json:"notes"`
+		Config             *string `json:"config_content"`
+		CardState          int     `json:"card_state"`
+		AgentDeductionMode *string `json:"point_card_auto_deduct_mode"`
 	}
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
 		失败提示管理端(ctx, "数据错误")
 		return
 	}
 	account := 代理账号_取账号信息(ctx)
-	if err := 修改点卡记录(account.Admin, account.ID, request.Card, request.Notes, request.Config, request.CardState); err != nil {
+	if err := 修改点卡记录(account.Admin, account.ID, request.Card, request.Notes, request.Config, request.CardState, request.AgentDeductionMode); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
@@ -425,6 +439,7 @@ func 代理账号_批量修改点卡状态(ctx *gin.Context) {
 }
 
 func 代理账号_查询软件列表(ctx *gin.Context) {
+	// 认证中间件每次请求都会读取账号，此处直接使用当前请求的数据。
 	account := 代理账号_取账号信息(ctx)
 	rows, err := 读取软件列表(account.Admin)
 	if err != nil {
@@ -433,7 +448,36 @@ func 代理账号_查询软件列表(ctx *gin.Context) {
 	}
 	// 代理每次进入点卡页都会查询软件；顺带返回数据库中的最新余额和价格，
 	// 让管理员刚完成的充值或改价无需代理退出重登即可显示在页面上。
-	成功提示管理端(ctx, gin.H{"data": rows, "balance": account.Balance, "prices": 解析代理价格(account.Prices)})
+	成功提示管理端(ctx, gin.H{"data": rows, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit})
+}
+
+// 代理账号_修改点卡代扣设置只允许代理修改自己的总开关；欠费权限和额度
+// 由管理员设置，不能通过代理接口自行放开。
+func 代理账号_修改点卡代扣设置(ctx *gin.Context) {
+	var request struct {
+		Enabled *bool `json:"point_card_auto_deduct"`
+	}
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.Enabled == nil {
+		失败提示管理端(ctx, "点卡代扣开关参数不正确")
+		return
+	}
+	account := 代理账号_取账号信息(ctx)
+	if account.ID <= 0 || account.Admin == "" {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	result := db.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, account.Admin).Update("point_card_auto_deduct", *request.Enabled)
+	if result.Error != nil {
+		失败提示管理端(ctx, "保存点卡代扣开关失败")
+		return
+	}
+	// 相同开关值在 MySQL 中可能返回零条变更；重新读取确认账号仍存在，
+	// 同时返回当前余额和欠费设置，重复保存也能正常成功。
+	if err := db.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&account).Error; err != nil {
+		失败提示管理端(ctx, "读取渠道合伙人设置失败")
+		return
+	}
+	成功提示管理端(ctx, gin.H{"msg": "保存成功", "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit, "balance": account.Balance})
 }
 
 func 代理账号_查询操作日志(ctx *gin.Context) {
@@ -448,13 +492,15 @@ func 代理账号_查询操作日志(ctx *gin.Context) {
 	ctx.String(http.StatusOK, read(time.Now())+"\n"+read(time.Now().AddDate(0, -1, 0)))
 }
 
-// 设置代理账号保存代理账号密码和每个软件的点数价格。
+// 设置代理账号保存密码、软件价格和点卡代扣欠费额度，不修改代理自己的代扣开关。
 func 设置代理账号(ctx *gin.Context) {
 	var request struct {
 		Data struct {
-			ID       int    `json:"id"`
-			Password string `json:"password"`
-			Prices   string `json:"prices"`
+			ID             int     `json:"id"`
+			Password       string  `json:"password"`
+			Prices         *string `json:"prices"`
+			AllowPointDebt *bool   `json:"allow_point_debt"`
+			PointDebtLimit *int64  `json:"point_debt_limit"`
 		} `json:"data"`
 	}
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
@@ -466,12 +512,17 @@ func 设置代理账号(ctx *gin.Context) {
 		失败提示管理端(ctx, "参数不正确")
 		return
 	}
-	if request.Data.Prices == "" {
-		request.Data.Prices = "{}"
-	}
-	if err := 校验代理价格配置(request.Data.Prices); err != nil {
-		失败提示管理端(ctx, err.Error())
-		return
+	var configuredPrices map[int]float64
+	// 未提交价格时保留原配置，避免仅调整欠费额度却清空软件价格。
+	if request.Data.Prices != nil {
+		if *request.Data.Prices == "" {
+			*request.Data.Prices = "{}"
+		}
+		if err := 校验代理价格配置(*request.Data.Prices); err != nil {
+			失败提示管理端(ctx, err.Error())
+			return
+		}
+		configuredPrices = 解析代理价格(*request.Data.Prices)
 	}
 	if request.Data.Password != "" {
 		if err := 校验新密码(request.Data.Password); err != nil {
@@ -479,7 +530,10 @@ func 设置代理账号(ctx *gin.Context) {
 			return
 		}
 	}
-	configuredPrices := 解析代理价格(request.Data.Prices)
+	if request.Data.PointDebtLimit != nil && (*request.Data.PointDebtLimit < 0 || *request.Data.PointDebtLimit > 最大代理欠费额度) {
+		失败提示管理端(ctx, fmt.Sprintf("最大欠费额度必须在0至%d之间", 最大代理欠费额度))
+		return
+	}
 	var agentName string
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var account 代理账号记录
@@ -501,8 +555,18 @@ func 设置代理账号(ctx *gin.Context) {
 				return fmt.Errorf("价格配置中包含不存在或不属于当前管理员的软件")
 			}
 		}
-		if err := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.Data.ID, parent.Name).Update("prices", request.Data.Prices).Error; err != nil {
-			return fmt.Errorf("保存价格失败")
+		updates := map[string]interface{}{}
+		if request.Data.Prices != nil {
+			updates["prices"] = *request.Data.Prices
+		}
+		if request.Data.AllowPointDebt != nil {
+			updates["allow_point_debt"] = *request.Data.AllowPointDebt
+		}
+		if request.Data.PointDebtLimit != nil {
+			updates["point_debt_limit"] = *request.Data.PointDebtLimit
+		}
+		if err := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.Data.ID, parent.Name).Updates(updates).Error; err != nil {
+			return fmt.Errorf("保存代理配置失败")
 		}
 		return 保存代理账号密码(tx, request.Data.ID, parent.Name, request.Data.Password)
 	})

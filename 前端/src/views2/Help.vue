@@ -1,54 +1,130 @@
 <template>
   <section class="页面">
     <h2>接入帮助</h2>
-    <p class="说明">点卡和时长卡都按“登录 → 按心跳间隔发送心跳 → 退出”接入，但使用不同接口前缀。</p>
+    <p class="说明">下面只列出客户接入和管理员自动化会用到的接口；展开接口即可查看参数和返回值。</p>
+
     <el-card shadow="never" class="说明卡片">
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="登录">
-          GET/POST /point_card/card_login，提交 card；可选 device_id、period_minutes 和 device_alias，软件由卡密自动确定。
-        </el-descriptions-item>
-        <el-descriptions-item label="心跳">
-          GET/POST /point_card/card_ping，提交登录返回的 needle，device_id 必须与登录时保持一致；不提交 device_alias。
-        </el-descriptions-item>
-        <el-descriptions-item label="退出">
-          GET/POST /point_card/card_logout，提交 card；device_id 可省略或传空值，软件由卡密和设备会话自动确定；可同时提交 needle
-          做附加校验，退出后立即释放设备会话。
-        </el-descriptions-item>
-        <el-descriptions-item label="点卡计费方案">
-          GET/POST /point_card/period_prices，可读取当前软件启用的授权时长和扣点数。
-        </el-descriptions-item>
-        <el-descriptions-item label="流水查询">
-          GET/POST /point_card/point_ledger/query，只能查询当前卡密自己的点数流水。
-        </el-descriptions-item>
-        <el-descriptions-item label="时长卡登录">
-          GET/POST /duration_card/card_login，提交 card；软件从时长卡记录读取，首次登录会激活固定时长。
-        </el-descriptions-item>
-        <el-descriptions-item label="时长卡心跳">
-          GET/POST /duration_card/card_ping，提交登录返回的 needle；时长卡模式同一时间只保留最后一次登录的 needle。
-        </el-descriptions-item>
-        <el-descriptions-item label="时长卡退出">
-          GET/POST /duration_card/card_logout，提交 card 和 needle；退出只清除当前在线校验，不改变剩余时长。
-        </el-descriptions-item>
-        <el-descriptions-item label="时长卡充值">
-          GET/POST /duration_card/recharge，当前卡提交 source_card，使用另一张同软件未激活时长卡充值；暂停卡会累加暂停剩余分钟。
-        </el-descriptions-item>
-        <el-descriptions-item label="独立充值卡">
-          POST /visitor/duration_recharge_card/query 查询充值卡；POST /visitor/duration_recharge_card/redeem 提交 recharge_card 和 cards，给已激活或暂停中的同软件时长卡充值。
-        </el-descriptions-item>
-        <el-descriptions-item label="暂停与恢复">
-          POST /visitor/duration_card/pause 或 /visitor/duration_card/resume，提交 center_id 和 card；暂停费用由软件设置决定。
-        </el-descriptions-item>
-      </el-descriptions>
-      <p class="提示">
-        device_id 可省略，省略时按空字符串处理；使用非空值时应由客户端生成并持久化。device_alias
-        只是登录时设置的展示名称，不参与设备唯一性判断。新客户端登录和心跳按原始 JSON 或查询参数签名，并通过地址传 sign、提交 timestamp 和 nonce。
-        旧客户端专用的 /card/card_login、/card/card_ping 使用旧签名，只保护时间戳。计费周期按分钟，心跳间隔仍按秒；签名不提供传输加密。
-      </p>
+      <h3>通用返回与签名</h3>
+      <p class="接口文字">成功响应包含 <code>state: true</code>、<code>code: 1</code> 和业务字段；失败响应包含 <code>state: false</code>、<code>code: 0</code>、<code>msg</code>。</p>
+      <p class="接口文字">新客户端接口支持 GET 和 JSON POST。安全模式开启时，<code>sign</code> 放在 URL 参数中：JSON POST 使用 <code>MD5(api_password + 原始JSON)</code>；GET 或无 JSON 的 POST 使用去掉 <code>sign</code> 后的原始查询字符串计算。响应签名放在 JSON 的 <code>sign</code> 字段。</p>
+    </el-card>
+
+    <el-card shadow="never" class="说明卡片">
+      <h3>点卡客户端接口</h3>
+      <details class="接口项">
+        <summary>登录 · GET/POST <code>/point_card/card_login</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>device_id</code>、<code>device_alias</code>、<code>period_minutes</code>。</p>
+          <p><strong>说明：</strong><code>software</code> 由卡密记录自动确定；省略 <code>device_id</code> 按空字符串处理，后续心跳必须保持一致；<code>period_minutes</code> 为 0 或省略时使用默认周期。</p>
+          <p><strong>成功返回：</strong><code>needle</code>、<code>authorized_until</code>、<code>heartbeat_interval_seconds</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>心跳 · GET/POST <code>/point_card/card_ping</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>、<code>needle</code>、<code>device_id</code>。</p>
+          <p><strong>说明：</strong><code>device_id</code> 必须与登录时一致，不提交 <code>device_alias</code>。</p>
+          <p><strong>成功返回：</strong><code>needle</code>、<code>authorized_until</code>、<code>heartbeat_interval_seconds</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>退出 · GET/POST <code>/point_card/card_logout</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>device_id</code>、<code>needle</code>。</p>
+          <p><strong>成功返回：</strong><code>msg</code>；退出后立即释放对应设备会话。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>计费方案 · GET/POST <code>/point_card/period_prices</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>software</code>。</p>
+          <p><strong>成功返回：</strong><code>data</code>（含 <code>period_minutes</code>、<code>cost</code>、<code>is_default</code>）、<code>software</code>、<code>default_period_minutes</code>、<code>heartbeat_interval_seconds</code>、<code>online_grace_minutes</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>流水查询 · GET/POST <code>/point_card/point_ledger/query</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>software</code>、<code>page</code>、<code>page_size</code>。</p>
+          <p><strong>成功返回：</strong><code>data</code>、<code>num</code>、<code>page</code>、<code>page_size</code>、<code>balance</code>。</p>
+        </div>
+      </details>
+    </el-card>
+
+    <el-card shadow="never" class="说明卡片">
+      <h3>时长卡客户端接口</h3>
+      <details class="接口项">
+        <summary>登录 · GET/POST <code>/duration_card/card_login</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>。</p>
+          <p><strong>说明：</strong>软件和固定时长由时长卡记录确定，首次登录会激活卡密。</p>
+          <p><strong>成功返回：</strong><code>needle</code>、<code>authorized_until</code>、<code>software</code>、<code>heartbeat_interval_seconds</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>心跳 · GET/POST <code>/duration_card/card_ping</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>、<code>needle</code>。</p>
+          <p><strong>成功返回：</strong><code>needle</code>、<code>authorized_until</code>、<code>heartbeat_interval_seconds</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>退出 · GET/POST <code>/duration_card/card_logout</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>needle</code>。</p>
+          <p><strong>成功返回：</strong><code>msg</code>；只清除在线校验，不改变剩余时长。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>卡密互充 · GET/POST <code>/duration_card/recharge</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、当前目标 <code>card</code>、来源 <code>source_card</code>（旧参数名 <code>card2</code> 也可用）。</p>
+          <p><strong>成功返回：</strong><code>msg</code>、<code>added_minutes</code>、<code>authorized_until</code>；暂停卡的 <code>authorized_until</code> 为 null。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>独立充值卡 · POST <code>/visitor/duration_recharge_card/query</code> / <code>/visitor/duration_recharge_card/redeem</code></summary>
+        <div class="接口内容">
+          <p><strong>查询参数：</strong><code>center_id</code>、充值卡 <code>card</code>。成功返回充值卡软件、分钟数、剩余次数、有效期和状态。</p>
+          <p><strong>使用参数：</strong><code>center_id</code>、<code>recharge_card</code>（旧字段 <code>Rechargeable_card</code> 也可用）、目标卡数组 <code>cards</code>。</p>
+          <p><strong>使用成功返回：</strong><code>success</code>、<code>paused</code>、<code>failed</code>、<code>remaining_uses</code>。</p>
+        </div>
+      </details>
+      <details class="接口项">
+        <summary>暂停与恢复 · POST <code>/visitor/duration_card/pause</code> / <code>/visitor/duration_card/resume</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>center_id</code>、<code>card</code>。</p>
+          <p><strong>成功返回：</strong>暂停返回 <code>remaining_minutes</code>；恢复返回 <code>authorized_until</code>。</p>
+        </div>
+      </details>
+      <details v-if="!是代理账号" class="接口项">
+        <summary>旧客户端兼容 · GET/POST <code>/card/card_login</code> / <code>/card/card_ping</code></summary>
+        <div class="接口内容">
+          <p><strong>说明：</strong>仅供旧时长卡客户端使用。请求签名为 <code>MD5(timestamp + api_password)</code>，响应时间戳为请求时间戳加 10。</p>
+          <p><strong>返回：</strong>沿用旧客户端响应字段和旧签名格式。</p>
+        </div>
+      </details>
+    </el-card>
+
+    <el-card v-if="!是代理账号" shadow="never" class="说明卡片">
+      <h3>管理员自动化接口</h3>
+      <details class="接口项">
+        <summary>代理余额充值 · POST <code>/admin/代理账号充值</code></summary>
+        <div class="接口内容">
+          <p><strong>参数：</strong><code>id</code>（代理账号编号，必填）、<code>amount</code>（充值点数，1 至 10 亿，必填）、<code>note</code>（可选备注，最多 200 个字符）。</p>
+          <p><strong>成功返回：</strong><code>msg</code>、充值后的 <code>balance</code>。</p>
+        </div>
+      </details>
     </el-card>
   </section>
 </template>
 
 <script setup>
+import { storeToRefs } from 'pinia'
+import { use登录状态Store } from '../stores/登录状态.js'
+
+const stores = use登录状态Store()
+const { 是代理账号 } = storeToRefs(stores)
+
 // 帮助页直接展示当前实现的接口，不依赖外部文档站点，避免链接失效。
 </script>
 
@@ -60,15 +136,44 @@
 h2 {
   margin-top: 0;
 }
+h3 {
+  margin: 0 0 14px;
+}
 .说明 {
   color: #aeb6c3;
 }
 .说明卡片 {
   max-width: 980px;
+  margin-bottom: 16px;
 }
-.提示 {
-  margin: 18px 0 0;
+.接口文字,
+.接口内容 {
   color: #aeb6c3;
   line-height: 1.8;
+}
+.接口文字 {
+  margin: 8px 0;
+}
+.接口项 {
+  border-top: 1px solid #364052;
+  padding: 12px 0;
+}
+.接口项:last-child {
+  padding-bottom: 0;
+}
+.接口项 summary {
+  cursor: pointer;
+  color: #e6eaf2;
+  font-weight: 600;
+}
+.接口内容 {
+  padding: 8px 4px 0;
+}
+.接口内容 p {
+  margin: 4px 0;
+}
+code {
+  color: #8ec5ff;
+  font-family: Consolas, 'Courier New', monospace;
 }
 </style>

@@ -2,11 +2,11 @@
 
 所有接口同时支持 JSON POST；标注“兼容 GET”的接口也接受查询参数。成功响应通常包含 `state: true, code: 1`，失败响应包含 `state: false, code: 0, msg`。
 
-新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。`/point_card/*` 和 `/duration_card/*` 开启 API 安全模式后，需带 `timestamp`、`nonce` 和 URL 参数 `sign`；POST JSON 签原始 JSON，GET 或无 JSON 的 POST 签去掉 `sign` 后的查询字符串。
+新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。开启 API 安全模式的客户端接口需带 `timestamp`、`nonce` 和 URL 参数 `sign`：JSON POST 计算 `MD5(api_password + 原始JSON)`；GET 或无 JSON 的 POST 计算 `MD5(api_password + 去掉 sign 后的原始查询字符串)`。响应把 `sign` 放在 JSON 内，客户端将其临时替换为空字符串后按同一规则校验；关闭安全模式时请求可不验签，但设置了接口安全密码仍会返回响应签名。
 
 旧客户端只使用 `/card/card_login`、`/card/card_ping`。这两个接口按旧协议验签：请求为 `MD5(timestamp + api_password)`，返回时间戳为请求时间戳加 `10`，返回签名为 `MD5(timestamp + api_password + code)`，不要求 `nonce`。旧签名只保护时间戳，不保护卡密、设备等业务参数，仅用于兼容旧客户端。接口安全模式不提供传输加密。
 
-本版本客户端接口只使用 `/point_card/*` 和 `/duration_card/*`；旧 `/card/*`、`/duration/*` 不再注册。旧客户端应继续连接旧服务端，两个服务不要同时写入同一个数据库。
+新客户端使用 `/point_card/*` 和 `/duration_card/*`；除上述两个旧时长卡兼容接口外，其他旧 `/card/*`、`/duration/*` 不再注册。新旧服务不要同时写入同一个数据库。
 
 ## 1. 查询可用点卡计费方案
 
@@ -116,6 +116,16 @@
 代理端也可调用 `/agent/point_card/ledger` 查看自己生成的卡密流水；该接口不会返回其他代理的记录。
 
 代理价格是扁平 JSON：键为软件 ID，值为每生成 1 点卡点数需要消耗的代理余额，例如 `{"1": 0.25}`。未出现在映射中的软件不授权代理发卡；价格必须大于 0 且最多两位小数，配置最多 100 个软件且不超过 4096 字节，一批点卡的总费用最终按整数点向上取整。
+
+点卡余额不足代扣：
+
+- 代理使用 `POST /agent/point_card/settings` 提交 `point_card_auto_deduct: true/false`，只修改自己的总开关，默认关闭。当前设置随 `/agent/user_query_soft_list` 返回，保存接口也返回 `point_card_auto_deduct`、`allow_point_debt`、`point_debt_limit` 和 `balance`。
+- 代理使用 `/agent/point_card/save` 提交 `card` 和 `point_card_auto_deduct_mode`：`inherit` 跟随总开关（默认）、`allow` 允许、`deny` 禁止。只允许修改自己的卡，卡密设置优先于总开关；卡密列表返回该字段。
+- 管理员在 `/admin/设置代理账号` 的 `data` 中提交代理 `id`、`allow_point_debt` 和 `point_debt_limit`（整数，0 至 10 亿点）；未提交 `prices` 时保留原价格。默认禁止欠费；允许且额度大于 0 时，点卡代扣后的代理余额最低可到负额度。代理不能修改这两个字段。
+
+登录、心跳续费和后台续费均先扣卡内点数，不足部分按所属代理当前软件单价折算，每次代扣费用按整数点向上取整。代扣未允许、价格不可用或超出可扣额度时，本次不扣任何余额。代理扣款、卡内扣点和设备续费在同一事务中完成；管理员名下或没有有效所属代理的卡不会代扣。欠费额度只用于点卡代扣，不用于生成卡密或时长卡业务。
+
+点数流水仍只记录卡内真实余额变化；代理代扣在事务提交后写入代理操作日志。修改开关不会撤销已付费授权，下一次需要扣费时读取最新设置。
 
 时长卡代理价格与点卡价格分开保存。管理员使用 `/admin/duration_card/agent_price/list|save|delete` 按代理和软件维护时长价格锚点；每个锚点的 `duration_minutes` 为卡面时长，`price` 为该时长的代理总价。保存请求示例：
 

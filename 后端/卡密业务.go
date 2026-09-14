@@ -754,7 +754,7 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 		remark += fmt.Sprintf("；渠道合伙人ID=%d", agentID)
 	}
 	for _, card := range cards {
-		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID})
+		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID, AgentDeductionMode: 点卡代扣模式_跟随总开关})
 		// 初始余额也作为一条补点流水保存，便于审计同名卡重新生成后的新旧记录。
 		ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, EventType: 点数事件_补点, Change: points, BalanceBefore: 0, BalanceAfter: points, Remark: remark, CreatedAt: now})
 	}
@@ -839,6 +839,7 @@ type 点卡卡密列表项 struct {
 	Notes                 string     `json:"notes"`
 	ConfigContent         string     `json:"config_content"`
 	AgentID               int        `json:"agent_id"`
+	AgentDeductionMode    string     `json:"point_card_auto_deduct_mode"`
 	AuthorizedDeviceCount int64      `json:"authorized_device_count"`
 }
 
@@ -970,7 +971,8 @@ func 查询点卡卡密列表(ctx *gin.Context, admin string, agentID int) {
 	}
 	data := make([]点卡卡密列表项, 0, len(rows))
 	for _, row := range rows {
-		data = append(data, 点卡卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AuthorizedDeviceCount: counts[row.Card]})
+		mode, _ := 规范化点卡代扣模式(row.AgentDeductionMode)
+		data = append(data, 点卡卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AgentDeductionMode: mode, AuthorizedDeviceCount: counts[row.Card]})
 	}
 	成功提示管理端(ctx, gin.H{"data": data, "num": total, "page": page, "page_size": pageSize})
 }
@@ -1106,7 +1108,7 @@ func 管理员_删除点卡卡密(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
-func 修改点卡记录(admin string, agentID int, cardValue string, notes *string, config *string, state int) error {
+func 修改点卡记录(admin string, agentID int, cardValue string, notes *string, config *string, state int, agentDeductionMode *string) error {
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) {
 		return fmt.Errorf("管理员名称格式不正确")
@@ -1130,6 +1132,16 @@ func 修改点卡记录(admin string, agentID int, cardValue string, notes *stri
 			return err
 		}
 	}
+	if agentDeductionMode != nil {
+		if agentID <= 0 {
+			return fmt.Errorf("点卡代扣开关只能由所属渠道合伙人设置")
+		}
+		mode, err := 规范化点卡代扣模式(*agentDeductionMode)
+		if err != nil {
+			return err
+		}
+		*agentDeductionMode = mode
+	}
 	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return err
@@ -1143,6 +1155,9 @@ func 修改点卡记录(admin string, agentID int, cardValue string, notes *stri
 	}
 	if state != 0 {
 		updates["card_state"] = state
+	}
+	if agentDeductionMode != nil {
+		updates["point_card_auto_deduct_mode"] = *agentDeductionMode
 	}
 	if len(updates) == 0 {
 		return fmt.Errorf("没有需要修改的内容")
@@ -1203,7 +1218,7 @@ func 管理员_修改点卡(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	if err := 修改点卡记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState); err != nil {
+	if err := 修改点卡记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState, nil); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
@@ -1219,7 +1234,7 @@ func 修改点卡_批量(admin string, agentID int, cards []string, state int) (
 	}
 	success, failed := []string{}, []string{}
 	for _, card := range cards {
-		if err := 修改点卡记录(admin, agentID, card, nil, nil, state); err != nil {
+		if err := 修改点卡记录(admin, agentID, card, nil, nil, state, nil); err != nil {
 			failed = append(failed, card)
 		} else {
 			success = append(success, card)
