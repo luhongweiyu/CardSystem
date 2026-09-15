@@ -419,50 +419,43 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 	if err != nil {
 		return result, err
 	}
-	baseQuery := db_point_device_session.Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID)
-	if err := baseQuery.Count(&result.DeviceTotal).Error; err != nil {
-		return result, fmt.Errorf("统计设备会话数量失败")
-	}
 	result.DevicePage = page
 	result.DevicePageSize = pageSize
-	countRows, err := baseQuery.Select("admin", "card", "software", "device_id", "needle", "authorized_until", "last_heartbeat_at").Rows()
-	if err != nil {
-		return result, fmt.Errorf("统计设备会话状态失败")
-	}
-	defer countRows.Close()
-	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
-	for countRows.Next() {
-		var row 点卡设备会话
-		if err := baseQuery.ScanRows(countRows, &row); err != nil {
-			return result, fmt.Errorf("统计设备会话状态失败")
-		}
-		// 计数也合并尚未到同步期限的心跳缓存，避免分页后授权设备和在线设备
-		// 只统计当前明细页而不是整张卡密的真实数量。
-		合并点卡心跳缓存(&row)
-		if row.AuthorizedUntil.After(now) {
-			result.AuthorizedCount++
-		}
-		if row.LastHeartbeatAt.After(在线截止) {
-			result.OnlineCount++
-		}
-	}
-	if err := countRows.Err(); err != nil {
-		return result, fmt.Errorf("统计设备会话状态失败")
-	}
 	var rows []点卡设备会话
-	query := baseQuery.Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
+	query := db_point_device_session.Session(&gorm.Session{}).
+		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
+		Select("admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
 		Order("authorized_until DESC, device_id ASC").
-		Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows)
+		Find(&rows)
 	if query.Error != nil {
 		return result, fmt.Errorf("查询设备会话失败")
 	}
-	result.Devices = make([]点卡设备详情, 0, len(rows))
-	for _, row := range rows {
-		// 普通心跳可能尚未达到数据库同步期限；详情查询只合并内存快照，
-		// 不强制落库也能返回当前真实在线状态。
+	result.DeviceTotal = int64(len(rows))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(rows) {
+		start = len(rows)
+	}
+	if end > len(rows) {
+		end = len(rows)
+	}
+	result.Devices = make([]点卡设备详情, 0, end-start)
+	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
+	for index, row := range rows {
+		// 一次查询全部设备后统一合并尚未落库的心跳缓存，保证统计和当前页
+		// 明细使用同一份最新状态，同时避免复用 GORM 查询对象造成状态污染。
 		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
 		online := row.LastHeartbeatAt.After(在线截止)
+		if authorized {
+			result.AuthorizedCount++
+		}
+		if online {
+			result.OnlineCount++
+		}
+		if index < start || index >= end {
+			continue
+		}
 		result.Devices = append(result.Devices, 点卡设备详情{
 			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
 			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online,
