@@ -38,11 +38,10 @@ func 参数转字符串(value interface{}) string {
 	}
 }
 
-// input 对 JSON 请求优先读取正文，其他请求按表单、查询参数读取，兼容客户端的
+// input 对 JSON 请求只读取正文，其他请求按表单、查询参数读取，兼容客户端的
 // POST JSON 和旧版 GET 调用。ShouldBindBodyWith 会缓存 body，后续中间件仍可读取。
 func input(ctx *gin.Context, key string) string {
-	// JSON 接口优先使用请求正文。尤其在卡密安全模式下，签名覆盖的是原始 JSON；
-	// 如果查询参数可以覆盖正文，攻击者就能保留合法签名却替换实际执行业务的参数。
+	// JSON 缺字段、值为 null 或解析失败时都不回退，避免读取未受正文签名保护的参数。
 	if strings.Contains(strings.ToLower(ctx.GetHeader("Content-Type")), "application/json") {
 		var body map[string]interface{}
 		if err := ctx.ShouldBindBodyWith(&body, binding.JSON); err == nil {
@@ -50,6 +49,7 @@ func input(ctx *gin.Context, key string) string {
 				return 参数转字符串(value)
 			}
 		}
+		return ""
 	}
 	if value, ok := ctx.GetPostForm(key); ok {
 		return value
@@ -237,6 +237,7 @@ func 启动网络() error {
 		admin.POST("/point_card/delete", 管理员_删除点卡卡密)
 		admin.POST("/point_card/save", 管理员_修改点卡)
 		admin.POST("/point_card/state", 管理员_批量修改点卡状态)
+		admin.POST("/point_card/device/offline", 管理员_下线点卡设备)
 		admin.POST("/query_log", 查询操作日志)
 		admin.POST("/user_query_soft_list", user_query_soft_list)
 		admin.POST("/user_add_soft", user_add_soft)
@@ -280,6 +281,7 @@ func 启动网络() error {
 		agent.POST("/point_card/delete", 代理账号_删除点卡卡密)
 		agent.POST("/point_card/save", 代理账号_修改点卡)
 		agent.POST("/point_card/state", 代理账号_批量修改点卡状态)
+		agent.POST("/point_card/device/offline", 代理账号_下线点卡设备)
 		agent.POST("/point_card/ledger", 代理账号_查询点卡流水)
 		agent.POST("/point_card/settings", 代理账号_修改点卡代扣设置)
 		agent.POST("/user_query_soft_list", 代理账号_查询软件列表)

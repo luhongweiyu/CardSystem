@@ -2,6 +2,8 @@
 
 所有接口同时支持 JSON POST；标注“兼容 GET”的接口也接受查询参数。成功响应通常包含 `state: true, code: 1`，失败响应包含 `state: false, code: 0, msg`。
 
+JSON 请求的业务参数只从正文读取，缺字段时不回退到 URL 或表单。
+
 新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。开启 API 安全模式的客户端接口需带 `timestamp`、`nonce` 和 URL 参数 `sign`：JSON POST 计算 `MD5(api_password + 原始JSON)`；GET 或无 JSON 的 POST 计算 `MD5(api_password + 去掉 sign 后的原始查询字符串)`。响应把 `sign` 放在 JSON 内，客户端将其临时替换为空字符串后按同一规则校验；关闭安全模式时请求可不验签，但设置了接口安全密码仍会返回响应签名。
 
 旧客户端只使用 `/card/card_login`、`/card/card_ping`。这两个接口按旧协议验签：请求为 `MD5(timestamp + api_password)`，返回时间戳为请求时间戳加 `10`，返回签名为 `MD5(timestamp + api_password + code)`，不要求 `nonce`。旧签名只保护时间戳，不保护卡密、设备等业务参数，仅用于兼容旧客户端。接口安全模式不提供传输加密。
@@ -43,13 +45,16 @@
 
 - `software` 无需提交，服务端始终使用卡密记录中绑定的软件编号。
 - `device_id` 可选；省略时统一按空字符串处理。使用非空设备 ID 时应由客户端生成并持久化，不能使用 IP。
-- 每张卡最多保留 1000 台设备会话；达到上限后新设备登录会失败，已有设备不受影响。
+- 每张卡最多保留 1000 台设备会话；达到上限后不能增加新会话，已有设备和不增加数量的授权复用不受影响。
 - `device_alias` 仅登录时可选，最长 64 个字符，不参与唯一性，也不要求不重复。
 - `period_minutes` 可选，含义是授权时长分钟数。有效值为 0 或 5 至 4320 分钟；省略或为 0 时，新会话使用软件默认授权时长；已有会话沿用上次续费时长。显式提交的授权时长必须已经配置对应的点卡计费方案且处于启用状态。
+- `prefer_reuse` 可选，默认 `false`，接受 `true/false` 或 `1/0`。只有软件的 `point_card_reuse_enabled` 也开启时，才尝试跨设备复用；任一未开启就跳过，不因此报错。
 
 成功响应业务字段：`needle`、`authorized_until`、`heartbeat_interval_seconds`；顶层还会返回本次请求的 `nonce`。
 
 同一管理员、卡密和设备 ID 只有一条会话。多个客户端都省略 `device_id` 时会共用空设备 ID 对应的同一条会话。当前授权未到期时重复登录不扣点；如果本次明确选择了另一个有效授权时长，只更新会话的下一次续费时长，不改变当前截止时间。
+
+跨设备复用优先接手同卡已离线、未到期且最后心跳最早的授权；在线判断包含尚未落库的心跳。保留原到期时间，不扣任何余额、不写余额流水，旧设备凭证失效。新设备的下一次续费时长仍按本次登录规则决定，不继承被接手设备的设置；没有候选则正常扣费。复用不增加会话数量，达到设备上限时仍可接手。
 
 ## 3. 心跳续费
 
@@ -83,7 +88,7 @@
 ## 5. 查询卡密和流水
 
 - `GET/POST /point_card/query`：查询当前卡密余额、状态、授权设备数 `authorized_device_count`、在线设备数 `online_device_count` 和分页设备列表 `devices`。可提交 `page`、`page_size`（默认 50，最大 100），响应返回 `device_total`、`device_page`、`device_page_size`。查询只读，不扣点、不续费。
-- `devices` 中每项包含 `device_id`、`device_alias`、`needle`、`authorized_until`、`authorized` 和 `online`；`needle` 是服务端心跳令牌，设备 ID 仍由 `device_id` 标识。
+- `devices` 中每项包含 `device_id`、`device_alias`、`needle`、`authorized_until`、`authorized`、`online` 和 `forced_offline`（管理端主动下线）；已下线设备不计入在线数，未到期时仍计入授权数。`needle` 是服务端心跳令牌，设备 ID 仍由 `device_id` 标识。
 - `GET/POST /point_card/point_ledger/query`：只查询当前卡密自己的流水，支持 `page`、`page_size`；可选 `software` 仅校验当前卡密归属。流水只保留最近 30 天，删除卡密后重用同名卡密时，保留期内的新旧流水可能混合显示。
 - `GET/POST /point_card/bulletin`：读取卡密所属软件公告。
 - `GET/POST /point_card/config`：读取或写入卡密配置，配置最多 200 个字符（写入受可选签名保护）。
@@ -105,8 +110,10 @@
 管理员接口统一位于 `/admin`，代理接口统一位于 `/agent`；下面未重复书写前缀的路径，按所在小节补上对应前缀：
 
 - `/user_add_soft`、`/user_modify_bulletin`、`/user_del_soft`：软件及默认授权时长、心跳间隔、自动离线时间、时长卡暂停扣除分钟数设置。
+- 软件设置中的 `point_card_reuse_enabled` 仅管理员可修改，默认关闭；编辑时省略则保留原值，软件列表返回该字段。
 - `/point_card/price/list|save|delete`：点卡计费方案管理。
 - `/point_card/create`、`/point_card/list`、`/point_card/save`、`/point_card/delete`、`/point_card/state`：点卡管理。
+- `POST /point_card/device/offline`：管理员或代理提交 `card`、`device_id`（可为空）、详情中的 `needle`。只能操作自己有权限的卡；成功返回 `msg`。下线保留未到期授权并停止后台续费，原凭证失效，到期后清理；设备仍可重新登录。与客户端 `card_logout` 直接删除会话不同。
 - 管理员和代理单次最多生成 500 张卡密；卡密文本解析、随机生成和重复预检查在事务外完成，最终写入遇到重复或其他错误直接结束，不自动重试。
 - `/point_card/adjust`：管理员手工补点或扣回，金额为有符号整数。
 - `/point_card/ledger`：管理员分页查看流水。

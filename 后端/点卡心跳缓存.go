@@ -58,23 +58,74 @@ func 查找点卡心跳缓存(key 点卡心跳缓存键) *点卡心跳缓存条�
 	return entry
 }
 
-// 写入点卡心跳缓存只在数据库已经返回有效会话后执行。并发请求已经建立同键
-// 缓存时保留现有条目，避免用较早的数据库快照覆盖刚收到的新心跳。
-func 写入点卡心跳缓存(session 点卡设备会话, heartbeatSeconds int64) {
-	if session.ID == 0 || session.Admin == "" || session.Card == "" || session.Needle == "" || heartbeatSeconds <= 0 {
+// 数据库加载前预留一个空条目。失效操作会移除这个条目，迟到的加载结果
+// 只有仍持有同一个位置才能发布，避免下线/转移后旧会话重新进入缓存。
+func 预留点卡心跳缓存(key 点卡心跳缓存键) *点卡心跳缓存条目 {
+	全局点卡心跳缓存.Lock()
+	defer 全局点卡心跳缓存.Unlock()
+	entry := 全局点卡心跳缓存.数据[key]
+	if entry == nil {
+		entry = &点卡心跳缓存条目{}
+		全局点卡心跳缓存.数据[key] = entry
+	}
+	return entry
+}
+
+func 清除点卡心跳缓存占位(key 点卡心跳缓存键, entry *点卡心跳缓存条目) {
+	entry.Lock()
+	defer entry.Unlock()
+	if entry.会话.ID == 0 {
+		entry.已失效 = true
+		从点卡心跳缓存删除(key, entry)
+	}
+}
+
+func 写入点卡心跳缓存(entry *点卡心跳缓存条目, session 点卡设备会话, heartbeatSeconds int64) {
+	if session.ID == 0 || session.Admin == "" || session.Card == "" || session.Needle == "" || session.ForcedOffline || heartbeatSeconds <= 0 {
 		return
 	}
 	key := 生成点卡心跳缓存键(session.Admin, session.Card, session.DeviceID)
-	entry := &点卡心跳缓存条目{
-		会话:     session,
-		心跳间隔秒:  heartbeatSeconds,
-		上次同步时间: time.Now(),
+	entry.Lock()
+	defer entry.Unlock()
+	全局点卡心跳缓存.RLock()
+	current := 全局点卡心跳缓存.数据[key] == entry
+	全局点卡心跳缓存.RUnlock()
+	if !current || entry.已失效 || entry.会话.ID != 0 {
+		return
 	}
-	全局点卡心跳缓存.Lock()
-	if _, exists := 全局点卡心跳缓存.数据[key]; !exists {
-		全局点卡心跳缓存.数据[key] = entry
+	entry.会话 = session
+	entry.心跳间隔秒 = heartbeatSeconds
+	entry.上次同步时间 = time.Now()
+}
+
+// 只锁定本设备，且在任何会话行锁/更新之前调用，避免和持有条目锁的
+// 心跳落库互相等待。全局 map 锁不跨越数据库操作。调用方负责解锁。
+func 锁定点卡心跳缓存(key 点卡心跳缓存键) *点卡心跳缓存条目 {
+	for {
+		entry := 预留点卡心跳缓存(key)
+		entry.Lock()
+		全局点卡心跳缓存.RLock()
+		current := 全局点卡心跳缓存.数据[key] == entry
+		全局点卡心跳缓存.RUnlock()
+		if current {
+			return entry
+		}
+		entry.Unlock()
 	}
-	全局点卡心跳缓存.Unlock()
+}
+
+// 在转移/下线事务结束后调用，阻止等待中的旧心跳继续使用该快照。
+func 结束点卡心跳缓存变更(key 点卡心跳缓存键, entry *点卡心跳缓存条目, committed bool) {
+	// 成功时最新心跳已随状态更新一起提交。失败时在事务释放连接后同步，
+	// 避免丢失已有心跳，也避免事务内申请第二条连接造成连接池互相等待。
+	if !committed {
+		if err := 同步点卡心跳缓存条目(entry); err != nil {
+			日志("log/启动记录.txt", "设备操作回滚后同步心跳失败:"+err.Error())
+		}
+	}
+	entry.已失效 = true
+	从点卡心跳缓存删除(key, entry)
+	entry.Unlock()
 }
 
 // 尝试记录点卡缓存心跳只处理仍在授权期内的普通心跳。授权已经到期时不能先把
@@ -89,10 +140,10 @@ func 尝试记录点卡缓存心跳(admin string, card string, deviceID string, 
 
 	entry.Lock()
 	defer entry.Unlock()
-	if entry.已失效 {
+	if entry.已失效 || entry.会话.ID == 0 {
 		return 点卡心跳结果{}, false, nil
 	}
-	if entry.会话.Admin != key.管理员 || entry.会话.Card != key.卡密 || entry.会话.DeviceID != key.设备ID || entry.会话.Needle != needle {
+	if entry.会话.ForcedOffline || entry.会话.Admin != key.管理员 || entry.会话.Card != key.卡密 || entry.会话.DeviceID != key.设备ID || entry.会话.Needle != needle {
 		return 点卡心跳结果{}, true, fmt.Errorf("登录会话不存在或已失效")
 	}
 	if !entry.会话.AuthorizedUntil.After(now) {
@@ -166,18 +217,18 @@ func 同步并删除点卡心跳缓存(admin string, card string, deviceID strin
 
 	entry.Lock()
 	if entry.已失效 {
-		entry.Unlock()
 		从点卡心跳缓存删除(key, entry)
+		entry.Unlock()
 		return nil
 	}
-	if expectedNeedle != "" && entry.会话.Needle != expectedNeedle {
+	if entry.会话.ID != 0 && expectedNeedle != "" && entry.会话.Needle != expectedNeedle {
 		entry.Unlock()
 		return fmt.Errorf("登录令牌与设备会话不匹配")
 	}
 	syncErr := 同步点卡心跳缓存条目(entry)
 	entry.已失效 = true
-	entry.Unlock()
 	从点卡心跳缓存删除(key, entry)
+	entry.Unlock()
 	return syncErr
 }
 

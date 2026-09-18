@@ -14,9 +14,10 @@
       <details class="接口项">
         <summary>登录 · GET/POST <code>/point_card/card_login</code></summary>
         <div class="接口内容">
-          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>device_id</code>、<code>device_alias</code>、<code>period_minutes</code>。</p>
-          <p><strong>说明：</strong><code>software</code> 由卡密记录自动确定；省略 <code>device_id</code> 按空字符串处理，后续心跳必须保持一致；<code>period_minutes</code> 为 0 或省略时使用默认周期。</p>
+          <p><strong>参数：</strong><code>center_id</code> 或 <code>name</code>、<code>card</code>；可选 <code>device_id</code>、<code>device_alias</code>、<code>period_minutes</code>、<code>prefer_reuse</code>。</p>
+          <p><strong>说明：</strong><code>software</code> 由卡密记录自动确定；省略 <code>device_id</code> 按空字符串处理，后续心跳必须保持一致；<code>period_minutes</code> 为 0 或省略时，已有设备沿用上次周期，新设备使用软件默认周期。</p>
           <p><strong>成功返回：</strong><code>needle</code>、<code>authorized_until</code>、<code>heartbeat_interval_seconds</code>。</p>
+          <p><strong>授权复用：</strong>只有软件允许且提交 <code>prefer_reuse=true</code>（也支持 1），才优先接手同卡离线最久的未到期授权，不扣点、不延长截止时间；没有可用授权则正常扣费。软件未开启或参数未传时保持原行为。</p>
         </div>
       </details>
       <details class="接口项">

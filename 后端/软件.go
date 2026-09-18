@@ -24,6 +24,7 @@ type 软件请求 struct {
 	HeartbeatIntervalSeconds int64  `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       *int64 `json:"online_grace_minutes"`
 	PauseDeductMinutes       *int64 `json:"pause_deduct_minutes"`
+	PointCardReuseEnabled    *bool  `json:"point_card_reuse_enabled"`
 }
 
 // 软件列表项是管理端和代理账号共用的轻量返回结构。
@@ -35,6 +36,7 @@ type 软件列表项 struct {
 	HeartbeatIntervalSeconds int64     `json:"heartbeat_interval_seconds"`
 	OnlineGraceMinutes       int64     `json:"online_grace_minutes"`
 	PauseDeductMinutes       int64     `json:"pause_deduct_minutes"`
+	PointCardReuseEnabled    bool      `json:"point_card_reuse_enabled"`
 	CreatedAt                time.Time `json:"created_at"`
 }
 
@@ -51,7 +53,7 @@ func 读取软件列表(admin string) ([]软件列表项, error) {
 	for _, row := range rows {
 		result = append(result, 软件列表项{ID: row.ID, Software: row.Software, Bulletin: row.Bulletin,
 			DefaultPeriodMinutes: 秒转分钟(row.DefaultPeriodSeconds), HeartbeatIntervalSeconds: row.HeartbeatIntervalSeconds,
-			OnlineGraceMinutes: row.OnlineGraceMinutes, PauseDeductMinutes: row.PauseDeductMinutes, CreatedAt: row.CreatedAt})
+			OnlineGraceMinutes: row.OnlineGraceMinutes, PauseDeductMinutes: row.PauseDeductMinutes, PointCardReuseEnabled: row.PointCardReuseEnabled, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
 }
@@ -107,6 +109,10 @@ func 解析软件设置(request 软件请求, requireName bool) (软件请求, e
 	if *request.PauseDeductMinutes < 0 || *request.PauseDeductMinutes > 时长卡永久分钟 {
 		return request, fmt.Errorf("暂停扣除时长必须为0至%d天", 时长卡永久分钟/1440)
 	}
+	if request.PointCardReuseEnabled == nil {
+		默认值 := false
+		request.PointCardReuseEnabled = &默认值
+	}
 	return request, nil
 }
 
@@ -136,7 +142,7 @@ func user_add_soft(ctx *gin.Context) {
 		created = 软件{Name: admin, Software: request.Software, Bulletin: request.Bulletin,
 			CreatedAt: time.Now(), DefaultPeriodSeconds: request.DefaultPeriodSeconds,
 			HeartbeatIntervalSeconds: request.HeartbeatIntervalSeconds, OnlineGraceMinutes: *request.OnlineGraceMinutes,
-			PauseDeductMinutes: *request.PauseDeductMinutes}
+			PauseDeductMinutes: *request.PauseDeductMinutes, PointCardReuseEnabled: *request.PointCardReuseEnabled}
 		if err := tx.Table("software").Create(&created).Error; err != nil {
 			return fmt.Errorf("创建软件失败")
 		}
@@ -152,7 +158,7 @@ func user_add_soft(ctx *gin.Context) {
 		return
 	}
 	清除点卡计费配置缓存(admin, created.ID)
-	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodMinutes: 秒转分钟(created.DefaultPeriodSeconds), HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, PauseDeductMinutes: created.PauseDeductMinutes, CreatedAt: created.CreatedAt}})
+	成功提示管理端(ctx, gin.H{"msg": "创建成功", "data": 软件列表项{ID: created.ID, Software: created.Software, Bulletin: created.Bulletin, DefaultPeriodMinutes: 秒转分钟(created.DefaultPeriodSeconds), HeartbeatIntervalSeconds: created.HeartbeatIntervalSeconds, OnlineGraceMinutes: created.OnlineGraceMinutes, PauseDeductMinutes: created.PauseDeductMinutes, PointCardReuseEnabled: created.PointCardReuseEnabled, CreatedAt: created.CreatedAt}})
 }
 
 func user_del_soft(ctx *gin.Context) {
@@ -292,6 +298,10 @@ func user_modify_bulletin(ctx *gin.Context) {
 			当前值 := current.PauseDeductMinutes
 			request.PauseDeductMinutes = &当前值
 		}
+		if request.PointCardReuseEnabled == nil {
+			当前值 := current.PointCardReuseEnabled
+			request.PointCardReuseEnabled = &当前值
+		}
 		var parseErr error
 		request, parseErr = 解析软件设置(request, true)
 		if parseErr != nil {
@@ -315,6 +325,7 @@ func user_modify_bulletin(ctx *gin.Context) {
 			}
 		}
 		updates := map[string]interface{}{"software": request.Software, "bulletin": request.Bulletin, "default_period_seconds": request.DefaultPeriodSeconds, "heartbeat_interval_seconds": request.HeartbeatIntervalSeconds, "online_grace_minutes": *request.OnlineGraceMinutes, "pause_deduct_minutes": *request.PauseDeductMinutes}
+		updates["point_card_reuse_enabled"] = *request.PointCardReuseEnabled
 		if result := tx.Table("software").Where("id = ? AND name = ?", request.ID, admin).Updates(updates); result.Error != nil {
 			return fmt.Errorf("修改软件失败")
 		}

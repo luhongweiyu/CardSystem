@@ -318,6 +318,41 @@ func 管理员_调整点卡余额(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "调整成功", "balance": balance})
 }
 
+func 管理员_下线点卡设备(ctx *gin.Context) {
+	account, ok := 管理员_取账号信息(ctx)
+	if !ok || account.Name == "" {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	处理点卡设备下线(ctx, account.Name, 0)
+}
+
+func 代理账号_下线点卡设备(ctx *gin.Context) {
+	account := 代理账号_取账号信息(ctx)
+	if account.ID <= 0 || account.Admin == "" {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	处理点卡设备下线(ctx, account.Admin, account.ID)
+}
+
+func 处理点卡设备下线(ctx *gin.Context, admin string, agentID int) {
+	var request struct {
+		Card     string `json:"card"`
+		DeviceID string `json:"device_id"`
+		Needle   string `json:"needle"`
+	}
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
+		失败提示管理端(ctx, "数据错误")
+		return
+	}
+	if err := 下线点卡设备(admin, agentID, request.Card, request.DeviceID, request.Needle); err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	成功提示管理端(ctx, gin.H{"msg": "设备已下线，未到期授权仍保留"})
+}
+
 type 点数流水展示 struct {
 	ID            uint64 `json:"id"`
 	Admin         string `json:"admin,omitempty"`

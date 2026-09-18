@@ -374,6 +374,7 @@ type 点卡设备详情 struct {
 	AuthorizedUntil time.Time `json:"authorized_until"`
 	Authorized      bool      `json:"authorized"`
 	Online          bool      `json:"online"`
+	ForcedOffline   bool      `json:"forced_offline"`
 }
 
 type 点卡设备统计 struct {
@@ -412,7 +413,7 @@ func 读取点卡设备分页参数(ctx *gin.Context) (int, int) {
 
 // 查询点卡设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
 // 在线状态严格按计费规则使用最后心跳推断窗口，needle 按业务要求随设备明细返回。
-// 设备明细按页查询，避免异常设备数量导致响应过大。
+// 一次查询并合并缓存后统计、分页，避免按设备逐条查询。
 func 查询点卡设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int) (点卡设备统计, error) {
 	var result 点卡设备统计
 	settings, err := 读取软件设置(db, admin, softwareID)
@@ -424,7 +425,7 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 	var rows []点卡设备会话
 	query := db_point_device_session.Session(&gorm.Session{}).
 		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
-		Select("admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at").
+		Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at", "forced_offline").
 		Order("authorized_until DESC, device_id ASC").
 		Find(&rows)
 	if query.Error != nil {
@@ -440,13 +441,12 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 		end = len(rows)
 	}
 	result.Devices = make([]点卡设备详情, 0, end-start)
-	在线截止 := now.Add(-time.Duration(settings.OnlineGraceMinutes) * time.Minute)
 	for index, row := range rows {
 		// 一次查询全部设备后统一合并尚未落库的心跳缓存，保证统计和当前页
 		// 明细使用同一份最新状态，同时避免复用 GORM 查询对象造成状态污染。
 		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
-		online := row.LastHeartbeatAt.After(在线截止)
+		online := 点卡设备在线(row, settings.OnlineGraceMinutes, now)
 		if authorized {
 			result.AuthorizedCount++
 		}
@@ -458,7 +458,7 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 		}
 		result.Devices = append(result.Devices, 点卡设备详情{
 			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
-			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online,
+			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online, ForcedOffline: row.ForcedOffline,
 		})
 	}
 	return result, nil
@@ -522,7 +522,16 @@ func 点卡登录(ctx *gin.Context) {
 		失败提示(ctx, "卡密上下文错误")
 		return
 	}
-	result, err := 点卡登录并扣费(cardContext.Name, cardContext.Card, input(ctx, "device_id"), input(ctx, "device_alias"), period)
+	preferReuse := false
+	if value := strings.TrimSpace(input(ctx, "prefer_reuse")); value != "" {
+		var err error
+		preferReuse, err = strconv.ParseBool(value)
+		if err != nil {
+			失败提示(ctx, "prefer_reuse参数必须为true/false或1/0")
+			return
+		}
+	}
+	result, err := 点卡登录并扣费(cardContext.Name, cardContext.Card, input(ctx, "device_id"), input(ctx, "device_alias"), period, preferReuse)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return

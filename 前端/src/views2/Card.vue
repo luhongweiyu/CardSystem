@@ -207,11 +207,22 @@
         <el-table-column label="在线状态" width="90">
           <template #default="scope">
             <el-tag :type="scope.row.online ? 'success' : 'info'">
-              {{ scope.row.online ? '在线' : '离线' }}
+              {{ scope.row.forced_offline ? '已下线' : scope.row.online ? '在线' : '离线' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="scope">
+            <el-button
+              link
+              type="danger"
+              :disabled="scope.row.forced_offline || !!详情框.下线中"
+              :loading="详情框.下线中 === scope.row.needle"
+              @click="下线设备(scope.row)"
+            >下线</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination
         v-if="详情框.total > 0"
@@ -424,6 +435,7 @@ const 流水框 = reactive({
 const 详情框 = reactive({
   显示: false,
   加载中: false,
+  下线中: '',
   card: '',
   software: 0,
   authorized_device_count: 0,
@@ -726,6 +738,26 @@ const 查询详情 = function (resetPage = false) {
     .catch(显示错误)
     .finally(() => {
       详情框.加载中 = false
+    })
+}
+const 下线设备 = function (row) {
+  const card = 详情框.card
+  const device = row.device_alias || row.device_id || '默认设备'
+  ElMessageBox.confirm(`确定下线“${device}”？未到期授权仍保留，设备下次心跳将失效；这不是封禁，设备仍可重新登录。`, '下线设备', {
+    type: 'warning'
+  })
+    .then(async () => {
+      详情框.下线中 = row.needle
+      const res = await post('/point_card/device/offline', { card, device_id: row.device_id, needle: row.needle })
+      if (!res.data?.state) throw new Error(res.data?.msg || '下线失败')
+      ElMessage.success(res.data.msg || '设备已下线')
+      if (详情框.显示 && 详情框.card === card) await 查询详情(false)
+    })
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+    .finally(() => {
+      详情框.下线中 = ''
     })
 }
 const 批量删除 = function () {

@@ -91,6 +91,8 @@ type 点卡设备会话 struct {
 	Needle               string    `gorm:"column:needle;size:64;not null;uniqueIndex:uk_device_needle" json:"-"`
 	RenewalPeriodSeconds int64     `gorm:"column:renewal_period_seconds;not null" json:"renewal_period_seconds"`
 	AuthorizedUntil      time.Time `gorm:"column:authorized_until;not null;index" json:"authorized_until"`
+	// 管理端下线保留剩余授权，但禁止心跳和后台续费；主动登录后才恢复。
+	ForcedOffline bool `gorm:"column:forced_offline;not null;default:false" json:"forced_offline"`
 	// last_heartbeat_at 每次心跳都会更新，仅参与已锁定单行的计费判断，
 	// 没有按该字段扫描的查询，因此不建立高写入成本的索引。
 	LastHeartbeatAt time.Time `gorm:"column:last_heartbeat_at;not null" json:"last_heartbeat_at"`

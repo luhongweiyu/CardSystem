@@ -20,6 +20,13 @@
       <el-table-column label="自动离线时间" width="140">
         <template #default="scope">{{ scope.row.online_grace_minutes || 60 }} 分钟</template>
       </el-table-column>
+      <el-table-column label="点卡授权复用" width="120">
+        <template #default="scope">
+          <el-tag :type="scope.row.point_card_reuse_enabled ? 'success' : 'info'">
+            {{ scope.row.point_card_reuse_enabled ? '允许' : '关闭' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="暂停扣除" width="120">
         <template #default="scope">{{ scope.row.pause_deduct_minutes || 0 }} 分钟</template>
       </el-table-column>
@@ -100,6 +107,10 @@
             controls-position="right"
           />
           <div class="字段说明">0 表示不启用时长卡暂停；暂停时从剩余时长中扣除</div>
+        </el-form-item>
+        <el-form-item label="点卡授权复用">
+          <el-switch v-model="软件框.point_card_reuse_enabled" />
+          <div class="字段说明">允许客户端主动请求接手同卡离线设备的未到期授权；未请求时仍按原规则计费。</div>
         </el-form-item>
         <el-form-item label="公告">
           <el-input v-model="软件框.bulletin" type="textarea" :rows="4" maxlength="5000" show-word-limit />
@@ -340,6 +351,7 @@ const 软件框 = reactive({
   default_period_minutes: 60,
   heartbeat_interval_seconds: 300,
   online_grace_minutes: 60,
+  point_card_reuse_enabled: false,
   pause_deduct_minutes: 0
 })
 const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', heartbeatSeconds: 300, rows: [] })
@@ -413,6 +425,7 @@ const 打开软件编辑 = function () {
     default_period_minutes: 60,
     heartbeat_interval_seconds: 300,
     online_grace_minutes: 60,
+    point_card_reuse_enabled: false,
     pause_deduct_minutes: 0
   })
 }
@@ -425,6 +438,7 @@ const 编辑软件 = function (row) {
     default_period_minutes: Number(row.default_period_minutes || 60),
     heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300),
     online_grace_minutes: Number(row.online_grace_minutes || 60),
+    point_card_reuse_enabled: Boolean(row.point_card_reuse_enabled),
     pause_deduct_minutes: Number(row.pause_deduct_minutes || 0)
   })
 }
@@ -474,6 +488,7 @@ const 保存软件 = function () {
     default_period_minutes: 软件框.default_period_minutes,
     heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds,
     online_grace_minutes: 软件框.online_grace_minutes,
+    point_card_reuse_enabled: 软件框.point_card_reuse_enabled,
     pause_deduct_minutes: 软件框.pause_deduct_minutes
   })
     .then((res) => {

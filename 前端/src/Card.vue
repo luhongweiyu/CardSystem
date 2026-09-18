@@ -47,7 +47,7 @@
         <el-table-column label="在线状态" width="90">
           <template #default="scope">
             <el-tag :type="scope.row.online ? 'success' : 'info'">
-              {{ scope.row.online ? '在线' : '离线' }}
+              {{ scope.row.forced_offline ? '已下线' : scope.row.online ? '在线' : '离线' }}
             </el-tag>
           </template>
         </el-table-column>

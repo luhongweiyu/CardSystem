@@ -74,7 +74,7 @@ func 查询点卡设备会话按设备(tx *gorm.DB, admin string, card string, d
 // 从而在设备重新启动时从旧到期点连续补扣一大段时间。后台清理、登录和心跳
 // 都必须使用同一个判断函数，保证三条路径的计费起点一致。
 func 会话仍可能在线(session 点卡设备会话, graceMinutes int64, now time.Time) bool {
-	if session.AuthorizedUntil.IsZero() || session.LastHeartbeatAt.IsZero() {
+	if session.ForcedOffline || session.AuthorizedUntil.IsZero() || session.LastHeartbeatAt.IsZero() {
 		return false
 	}
 	// 只有已经到达授权截止时间才需要推断是否漏报心跳；未到期会话
@@ -108,6 +108,8 @@ func 保存点卡设备会话(tx *gorm.DB, session *点卡设备会话, alias st
 		"authorized_until":       session.AuthorizedUntil,
 		"last_heartbeat_at":      now,
 		"renewal_period_seconds": renewalPeriod,
+		"forced_offline":         session.ForcedOffline,
+		"needle":                 session.Needle,
 	}
 	if alias != "" {
 		updates["device_alias"] = alias
@@ -138,16 +140,21 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	if deviceCount >= 最大卡密设备数 {
 		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
 	}
+	session, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, alias, renewalPeriod)
+	return session, false, err
+}
+
+func 创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64) (点卡设备会话, error) {
 	now := time.Now()
-	session = 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
+	session := 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
 		DeviceAlias: alias, Needle: GetRandomString(32, "a"), RenewalPeriodSeconds: renewalPeriod,
 		AuthorizedUntil: now, LastHeartbeatAt: now}
 	if err := tx.Table("point_device_session").Create(&session).Error; err != nil {
 		// 登录事务已先锁定卡密行，正常登录路径不会并发创建同一卡密设备；
 		// 其他数据库错误也不应通过重复写入来掩盖，直接交由事务回滚。
-		return 点卡设备会话{}, false, fmt.Errorf("创建设备会话失败")
+		return 点卡设备会话{}, fmt.Errorf("创建设备会话失败")
 	}
-	return session, false, nil
+	return session, nil
 }
 
 // 登录授权时长选择规则：显式 period_seconds 必须存在且启用；不显式指定时，
@@ -175,7 +182,7 @@ func 选择登录周期(tx *gorm.DB, admin string, softwareID int, requested int
 
 // 点卡登录并扣费把卡密锁、会话锁、余额更新、流水和授权截止时间放在同一事务中。
 // 软件编号必须从事务内锁定的卡密行读取，客户端不能选择或覆盖卡密所属软件。
-func 点卡登录并扣费(admin string, card string, deviceID string, deviceAlias string, periodSeconds int64) (点卡登录结果, error) {
+func 点卡登录并扣费(admin string, card string, deviceID string, deviceAlias string, periodSeconds int64, 请求优先复用 bool) (点卡登录结果, error) {
 	admin, card, deviceID, err := 规范化点卡设备参数(admin, card, deviceID, deviceAlias)
 	if err != nil {
 		return 点卡登录结果{}, err
@@ -193,6 +200,13 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		return 点卡登录结果{}, err
 	}
 	var result 点卡登录结果
+	// 被接手设备的缓存锁必须保持到事务提交/回滚以后，不能在 SQL 更新后提前释放。
+	var 完成复用缓存变更 func(bool)
+	defer func() {
+		if 完成复用缓存变更 != nil {
+			完成复用缓存变更(false)
+		}
+	}()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var cardRow 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
@@ -213,47 +227,99 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if err := 规范化点卡扣费参数(&params); err != nil {
 			return err
 		}
-		session, found, err := 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0)
+		// 1. 准备会话：客户端请求复用，且软件允许复用时，才读取整张卡的设备列表。
+		允许复用 := false
+		if 请求优先复用 {
+			settings, err := 读取软件设置(tx, admin, softwareID)
+			if err != nil {
+				return err
+			}
+			允许复用 = settings.PointCardReuseEnabled
+		}
+		var 当前会话 点卡设备会话
+		var 登录前已有会话 bool // 本次新建的会话不算已有会话，不能沿用其续费周期和起点。
+		var 卡密设备列表 []点卡设备会话
+		if 允许复用 {
+			// 一次读取当前会话、复用候选和数量上限所需字段，不逐台查询。
+			卡密设备列表, err = 查询点卡登录设备(tx, admin, card)
+			for _, 设备会话 := range 卡密设备列表 {
+				if 设备会话.DeviceID == deviceID {
+					当前会话, 登录前已有会话 = 设备会话, true
+					break
+				}
+			}
+		} else {
+			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0)
+		}
 		if err != nil {
 			return err
 		}
-		// 卡密行和设备会话行都已锁定后再取时间，避免排队等待锁的旧请求
+		// 卡密行已锁定后再取时间，避免排队等待锁的旧请求
 		// 用较早时间覆盖已经完成的新心跳，导致在线推断窗口意外缩短。
 		now := time.Now()
-		price, settings, period, err := 选择登录周期(tx, admin, softwareID, periodSeconds, func() *点卡设备会话 {
-			if found {
-				return &session
-			}
-			return nil
-		}())
+		var 周期参考会话 *点卡设备会话
+		if 登录前已有会话 {
+			周期参考会话 = &当前会话
+		}
+		price, settings, period, err := 选择登录周期(tx, admin, softwareID, periodSeconds, 周期参考会话)
 		if err != nil {
 			return err
 		}
-		if found && params.DeviceAlias == "" {
+		if 登录前已有会话 && params.DeviceAlias == "" {
 			// 本次未重新提交别名时，扣点流水仍应记录会话中已有的
 			// 别名快照，避免同一设备后续扣点变成“无别名”。
-			params.DeviceAlias = session.DeviceAlias
+			params.DeviceAlias = 当前会话.DeviceAlias
 		}
 
-		if found && session.AuthorizedUntil.After(now) {
+		// 2. 自己的授权未到期，直接使用，不尝试接手其他设备。
+		if 登录前已有会话 && 当前会话.AuthorizedUntil.After(now) {
 			// 当前授权时长尚未结束：不扣点。若客户端明确提出新时长，
 			// 只更新下一次续费时长，当前授权截止时间不变。
 			if periodSeconds == 0 {
-				period = session.RenewalPeriodSeconds
+				period = 当前会话.RenewalPeriodSeconds
 				if !点卡授权时长秒有效(period, false) {
 					period = settings.DefaultPeriodSeconds
 				}
 			}
-			if err := 保存点卡设备会话(tx, &session, params.DeviceAlias, period, now); err != nil {
+			if 当前会话.ForcedOffline {
+				当前会话.ForcedOffline = false
+				当前会话.Needle = GetRandomString(32, "a")
+			}
+			if err := 保存点卡设备会话(tx, &当前会话, params.DeviceAlias, period, now); err != nil {
 				return err
 			}
-			result = 点卡登录结果{Card: cardRow, Session: session, Charge: 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: session.AuthorizedUntil}, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
+			result = 点卡登录结果{Card: cardRow, Session: 当前会话, Charge: 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: 当前会话.AuthorizedUntil}, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
 			return nil
 		}
 
+		// 3. 尝试接手离线设备的剩余授权；成功就返回，不扣点。
+		if 允许复用 {
+			var 复用成功 bool
+			var 接手会话 点卡设备会话
+			接手会话, 复用成功, 完成复用缓存变更, err = 尝试复用点卡授权(tx, 卡密设备列表, 当前会话, deviceID, params.DeviceAlias, period, softwareID, settings.OnlineGraceMinutes)
+			if err != nil {
+				return err
+			}
+			if 复用成功 {
+				result = 点卡登录结果{Card: cardRow, Session: 接手会话, Charge: 点卡扣费结果{Balance: cardRow.Point_balance, AuthorizedUntil: 接手会话.AuthorizedUntil}, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
+				return nil
+			}
+		}
+
+		// 4. 没有可用授权，正常扣费。复用路径未提前建会话，在这里按需补建。
+		if 允许复用 && !登录前已有会话 {
+			if int64(len(卡密设备列表)) >= 最大卡密设备数 {
+				return fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
+			}
+			当前会话, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, period)
+			if err != nil {
+				return err
+			}
+		}
+		now = time.Now()
 		start := now
-		if found {
-			start = 计算续费起点(session, settings.OnlineGraceMinutes, now)
+		if 登录前已有会话 {
+			start = 计算续费起点(当前会话, settings.OnlineGraceMinutes, now)
 		}
 		// 过期会话必须使用可扣费的实际方案；活跃会话才允许使用停用时长对应的
 		// 临时占位价格。这样不会在过期时绕过管理员的停用设置。
@@ -273,24 +339,34 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if !until.After(now) {
 			until = now.Add(time.Duration(period) * time.Second)
 		}
-		session.AuthorizedUntil = until
-		session.RenewalPeriodSeconds = period
-		session.LastHeartbeatAt = now
+		当前会话.AuthorizedUntil = until
+		当前会话.RenewalPeriodSeconds = period
+		当前会话.LastHeartbeatAt = now
 		updates := map[string]interface{}{"authorized_until": until, "renewal_period_seconds": period, "last_heartbeat_at": now}
+		if 当前会话.ForcedOffline {
+			当前会话.ForcedOffline = false
+			当前会话.Needle = GetRandomString(32, "a")
+			updates["forced_offline"] = false
+			updates["needle"] = 当前会话.Needle
+		}
 		if params.DeviceAlias != "" {
 			updates["device_alias"] = params.DeviceAlias
-			session.DeviceAlias = params.DeviceAlias
+			当前会话.DeviceAlias = params.DeviceAlias
 		}
-		if result := tx.Table("point_device_session").Where("id = ?", session.ID).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
+		if result := tx.Table("point_device_session").Where("id = ?", 当前会话.ID).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("保存授权时长失败")
 		}
 		charge.AuthorizedUntil = until
 		cardRow.Point_balance = charge.Balance
-		result = 点卡登录结果{Card: cardRow, Session: session, Charge: charge, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
+		result = 点卡登录结果{Card: cardRow, Session: 当前会话, Charge: charge, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
 		return nil
 	})
 	if err != nil {
 		return 点卡登录结果{}, err
+	}
+	if 完成复用缓存变更 != nil {
+		完成复用缓存变更(true)
+		完成复用缓存变更 = nil
 	}
 	记录点卡代扣日志(result.Charge, result.Session)
 	// 初次失效与事务之间可能有并发心跳重新建立缓存；事务提交后再清理一次，
@@ -327,6 +403,9 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if err := 同步并删除点卡心跳缓存(admin, card, deviceID, needle); err != nil {
 		return result, err
 	}
+	cacheKey := 生成点卡心跳缓存键(admin, card, deviceID)
+	cacheEntry := 预留点卡心跳缓存(cacheKey)
+	defer 清除点卡心跳缓存占位(cacheKey, cacheEntry)
 	tableName, err := 点卡数据表名(admin)
 	if err != nil {
 		return result, err
@@ -351,7 +430,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if err != nil {
 			return err
 		}
-		if !found || session.DeviceID != deviceID || session.Needle != needle || session.Software != cardRow.Software {
+		if !found || session.ForcedOffline || session.DeviceID != deviceID || session.Needle != needle || session.Software != cardRow.Software {
 			return fmt.Errorf("登录会话不存在或已失效")
 		}
 		// 会话行已经锁定，此时生成的时间不会被更早进入但仍在等待锁的请求倒写。
@@ -412,7 +491,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	// 续费已经改变授权状态，按统一规则保持缓存为空；普通未到期心跳则缓存
 	// 已经提交的数据库结果，后续心跳无需再次读取或更新数据库。
 	if !result.Charge.Charged {
-		写入点卡心跳缓存(result.Session, result.HeartbeatSeconds)
+		写入点卡心跳缓存(cacheEntry, result.Session, result.HeartbeatSeconds)
 	} else if cacheErr := 同步并删除点卡心跳缓存(admin, card, deviceID, needle); cacheErr != nil {
 		// 续费事务已经提交，缓存同步错误不能把成功扣点伪装成失败；缓存本身
 		// 已经强制失效，记录错误后继续返回新的授权结果。
@@ -443,10 +522,21 @@ func 退出点卡设备会话(admin string, card string, deviceID string, needle
 		}
 		normalizedNeedle = normalized
 	}
+	tableName, err := 点卡数据表名(admin)
+	if err != nil {
+		return err
+	}
 	if err := 同步并删除点卡心跳缓存(admin, card, normalizedDeviceID, normalizedNeedle); err != nil {
 		return err
 	}
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
+		// 和登录、复用、下线保持“卡密 -> 会话”的顺序，防止候选读取后
+		// 被退出请求删掉；卡密已删除时仍允许幂等清理残留会话。
+		var cardRow 点卡表样式
+		cardErr := tx.Table(tableName).Select("card").Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).Take(&cardRow).Error
+		if cardErr != nil && !errors.Is(cardErr, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("读取点卡失败")
+		}
 		session, found, err := 查询点卡设备会话按设备(tx, admin, card, normalizedDeviceID, true)
 		if err != nil {
 			return err
@@ -554,6 +644,9 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		}
 		if session.Admin != hint.Admin || session.Card != hint.Card || session.AuthorizedUntil.After(now) {
 			return nil
+		}
+		if session.ForcedOffline {
+			return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
 		}
 		if err := 校验点卡状态(card, session.Software); err != nil {
 			return tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{}).Error
