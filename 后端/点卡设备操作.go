@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -32,64 +31,99 @@ func 查询点卡登录设备(tx *gorm.DB, admin string, card string) ([]点卡�
 	return rows, nil
 }
 
-// 候选只在内存中筛选；拿到目标缓存锁后再次检查最新心跳。成功选中后返回
-// 清理函数，由外层在事务结束后释放，确保转移与旧设备心跳不会交错生效。
-func 尝试复用点卡授权(tx *gorm.DB, rows []点卡设备会话, current 点卡设备会话, deviceID string, alias string, period int64, softwareID int, graceMinutes int64) (点卡设备会话, bool, func(bool), error) {
-	now := time.Now()
-	candidates := make([]点卡设备会话, 0)
-	for _, row := range rows {
-		if row.DeviceID == deviceID || row.Software != softwareID || !row.AuthorizedUntil.After(now) {
+// 按缓存顺序逐个检查，不预先过滤整批。候选锁和被接手设备的心跳锁都保持到
+// 事务结束；提交后才消费候选，回滚则保留，避免并发登录重复接手或丢掉剩余授权。
+func 尝试复用点卡授权(tx *gorm.DB, 参数 点卡扣费参数, 当前会话 点卡设备会话, 续费周期秒 int64, 自动离线分钟 int64) (点卡设备会话, bool, func(bool), error) {
+	候选缓存, err := 锁定点卡复用候选缓存(tx, 参数.Admin, 参数.Card)
+	if err != nil {
+		return 点卡设备会话{}, false, nil, err
+	}
+	由事务结束解锁 := false
+	defer func() {
+		if !由事务结束解锁 {
+			候选缓存.Unlock()
+		}
+	}()
+	if 自动离线分钟 <= 0 {
+		自动离线分钟 = 默认自动离线时间分钟
+	}
+	for len(候选缓存.候选) > 0 {
+		待复用会话 := 候选缓存.候选[0]
+		if 待复用会话.DeviceID == 参数.DeviceID || 待复用会话.Software != 参数.Software {
+			候选缓存.剔除首个候选()
 			continue
 		}
-		合并点卡心跳缓存(&row)
-		if !点卡设备在线(row, graceMinutes, now) {
-			candidates = append(candidates, row)
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].LastHeartbeatAt.Equal(candidates[j].LastHeartbeatAt) {
-			return candidates[i].ID < candidates[j].ID
-		}
-		return candidates[i].LastHeartbeatAt.Before(candidates[j].LastHeartbeatAt)
-	})
-	for _, candidate := range candidates {
-		key := 生成点卡心跳缓存键(candidate.Admin, candidate.Card, candidate.DeviceID)
-		entry := 锁定点卡心跳缓存(key)
-		if !entry.已失效 && entry.会话.ID == candidate.ID && entry.会话.Needle == candidate.Needle && entry.会话.LastHeartbeatAt.After(candidate.LastHeartbeatAt) {
-			candidate.LastHeartbeatAt = entry.会话.LastHeartbeatAt
-		}
-		now = time.Now()
-		if !candidate.AuthorizedUntil.After(now) || 点卡设备在线(candidate, graceMinutes, now) {
-			entry.Unlock()
-			清除点卡心跳缓存占位(key, entry)
-			continue // 只检查下一内存候选，不重查数据库、不重试扣款。
-		}
-		finish := func(committed bool) { 结束点卡心跳缓存变更(key, entry, committed) }
-		// 新设备可能已有过期行；先移除该行，再把原授权行转给新设备，
-		// 保证唯一键不冲突、会话数量不增加，任一步失败均回滚。
-		if current.ID != 0 {
-			if err := tx.Table("point_device_session").Where("id = ?", current.ID).Delete(&点卡设备会话{}).Error; err != nil {
-				return 点卡设备会话{}, false, finish, fmt.Errorf("移除旧设备会话失败")
+		心跳键 := 生成点卡心跳缓存键(待复用会话.Admin, 待复用会话.Card, 待复用会话.DeviceID)
+		心跳缓存 := 锁定点卡心跳缓存(心跳键)
+		凭证已变化 := false
+		if !心跳缓存.已失效 && 心跳缓存.会话.ID != 0 {
+			凭证已变化 = 心跳缓存.会话.ID != 待复用会话.ID || 心跳缓存.会话.Needle != 待复用会话.Needle
+			if !凭证已变化 {
+				if 心跳缓存.会话.LastHeartbeatAt.After(待复用会话.LastHeartbeatAt) {
+					待复用会话.LastHeartbeatAt = 心跳缓存.会话.LastHeartbeatAt
+				}
+				if 心跳缓存.会话.AuthorizedUntil.After(待复用会话.AuthorizedUntil) {
+					待复用会话.AuthorizedUntil = 心跳缓存.会话.AuthorizedUntil
+				}
 			}
 		}
-		newNeedle := GetRandomString(32, "a")
-		updates := map[string]interface{}{
-			"device_id": deviceID, "device_alias": alias, "needle": newNeedle,
-			"renewal_period_seconds": period, "last_heartbeat_at": now, "forced_offline": false,
+		当前时间 := time.Now()
+		if 凭证已变化 || !待复用会话.AuthorizedUntil.After(当前时间) || 点卡设备在线(待复用会话, 自动离线分钟, 当前时间) {
+			候选缓存.剔除首个候选()
+			心跳缓存.Unlock()
+			清除点卡心跳缓存占位(心跳键, 心跳缓存)
+			continue // 只取下一个内存候选；耗尽也不提前查库。
 		}
-		// 条件更新还会检查数据库的最新心跳，防止候选查询后恰好落库并删除
-		// 缓存的心跳被旧事务快照遗漏。冲突直接回滚，不转而额外扣费。
-		query := tx.Table("point_device_session").Where("id = ? AND needle = ? AND authorized_until > ?", candidate.ID, candidate.Needle, now).
-			Where("(forced_offline = ? OR last_heartbeat_at <= ?)", true, now.Add(-time.Duration(graceMinutes)*time.Minute)).Updates(updates)
-		if query.Error != nil {
-			return 点卡设备会话{}, false, finish, fmt.Errorf("转移设备授权失败")
+		完成缓存变更 := func(已提交 bool) {
+			if 已提交 {
+				候选缓存.剔除首个候选()
+			}
+			结束点卡心跳缓存变更(心跳键, 心跳缓存, 已提交)
+			候选缓存.Unlock()
 		}
-		if query.RowsAffected != 1 {
-			return 点卡设备会话{}, false, finish, fmt.Errorf("设备状态已变化，请重新登录")
+		由事务结束解锁 = true
+		新凭证 := GetRandomString(32, "a")
+		更新字段 := map[string]interface{}{
+			"device_id": 参数.DeviceID, "device_alias": 参数.DeviceAlias, "needle": 新凭证,
+			"renewal_period_seconds": 续费周期秒, "last_heartbeat_at": 当前时间, "forced_offline": false,
 		}
-		candidate.DeviceID, candidate.DeviceAlias, candidate.Needle = deviceID, alias, newNeedle
-		candidate.RenewalPeriodSeconds, candidate.LastHeartbeatAt, candidate.ForcedOffline = period, now, false
-		return candidate, true, finish, nil
+		条件更新字段 := 更新字段
+		if 当前会话.ID != 0 {
+			// 本设备已有过期行时，先只更换候选凭证，确认可接手后再删除旧行。
+			// 否则候选失效却先删了本设备，会破坏后续尝试或正常续费。
+			条件更新字段 = map[string]interface{}{"needle": 新凭证}
+		}
+		// 数据库条件更新是最终校验：不能用一分钟前的候选覆盖已经重新登录、
+		// 续费或退出的会话。零行更新只表示候选失效，不视为数据库错误。
+		更新结果 := tx.Table("point_device_session").
+			Where("id = ? AND admin = ? AND card = ? AND software = ? AND device_id = ? AND needle = ?", 待复用会话.ID, 参数.Admin, 参数.Card, 参数.Software, 待复用会话.DeviceID, 待复用会话.Needle).
+			Where("authorized_until = ? AND authorized_until > ?", 待复用会话.AuthorizedUntil, 当前时间).
+			Where("(forced_offline = ? OR last_heartbeat_at <= ?)", true, 当前时间.Add(-time.Duration(自动离线分钟)*time.Minute)).Updates(条件更新字段)
+		if 更新结果.Error != nil {
+			return 点卡设备会话{}, false, 完成缓存变更, fmt.Errorf("转移设备授权失败")
+		}
+		if 更新结果.RowsAffected != 1 {
+			// 尚未修改任何会话，直接释放本候选的心跳锁并继续；不补查、不重试它。
+			候选缓存.剔除首个候选()
+			心跳缓存.Unlock()
+			清除点卡心跳缓存占位(心跳键, 心跳缓存)
+			由事务结束解锁 = false
+			continue
+		}
+		if 当前会话.ID != 0 {
+			// 候选已锁定并更换凭证；删除本设备过期行后完成转移，避免唯一键冲突。
+			// 两步仍在同一事务，任一步失败都会恢复旧会话和候选的原凭证。
+			if err := tx.Table("point_device_session").Where("id = ?", 当前会话.ID).Delete(&点卡设备会话{}).Error; err != nil {
+				return 点卡设备会话{}, false, 完成缓存变更, fmt.Errorf("移除旧设备会话失败")
+			}
+			转移结果 := tx.Table("point_device_session").Where("id = ? AND needle = ?", 待复用会话.ID, 新凭证).Updates(更新字段)
+			if 转移结果.Error != nil || 转移结果.RowsAffected != 1 {
+				return 点卡设备会话{}, false, 完成缓存变更, fmt.Errorf("转移设备授权失败")
+			}
+		}
+		待复用会话.DeviceID, 待复用会话.DeviceAlias, 待复用会话.Needle = 参数.DeviceID, 参数.DeviceAlias, 新凭证
+		待复用会话.RenewalPeriodSeconds, 待复用会话.LastHeartbeatAt, 待复用会话.ForcedOffline = 续费周期秒, 当前时间, false
+		return 待复用会话, true, 完成缓存变更, nil
 	}
 	return 点卡设备会话{}, false, nil, nil
 }

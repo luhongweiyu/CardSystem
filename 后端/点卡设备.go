@@ -227,7 +227,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if err := 规范化点卡扣费参数(&params); err != nil {
 			return err
 		}
-		// 1. 准备会话：客户端请求复用，且软件允许复用时，才读取整张卡的设备列表。
+		// 1. 先读取本设备；只有自身授权不可用且双方开启复用，才会取其他候选。
 		允许复用 := false
 		if 请求优先复用 {
 			settings, err := 读取软件设置(tx, admin, softwareID)
@@ -238,16 +238,9 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		}
 		var 当前会话 点卡设备会话
 		var 登录前已有会话 bool // 本次新建的会话不算已有会话，不能沿用其续费周期和起点。
-		var 卡密设备列表 []点卡设备会话
 		if 允许复用 {
-			// 一次读取当前会话、复用候选和数量上限所需字段，不逐台查询。
-			卡密设备列表, err = 查询点卡登录设备(tx, admin, card)
-			for _, 设备会话 := range 卡密设备列表 {
-				if 设备会话.DeviceID == deviceID {
-					当前会话, 登录前已有会话 = 设备会话, true
-					break
-				}
-			}
+			// 已有卡密行锁，不提前锁会话行，保持“候选缓存 -> 心跳缓存 -> 会话行”的顺序。
+			当前会话, 登录前已有会话, err = 查询点卡设备会话按设备(tx, admin, card, deviceID, false)
 		} else {
 			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0)
 		}
@@ -296,7 +289,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if 允许复用 {
 			var 复用成功 bool
 			var 接手会话 点卡设备会话
-			接手会话, 复用成功, 完成复用缓存变更, err = 尝试复用点卡授权(tx, 卡密设备列表, 当前会话, deviceID, params.DeviceAlias, period, softwareID, settings.OnlineGraceMinutes)
+			接手会话, 复用成功, 完成复用缓存变更, err = 尝试复用点卡授权(tx, params, 当前会话, period, settings.OnlineGraceMinutes)
 			if err != nil {
 				return err
 			}
@@ -308,7 +301,11 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 
 		// 4. 没有可用授权，正常扣费。复用路径未提前建会话，在这里按需补建。
 		if 允许复用 && !登录前已有会话 {
-			if int64(len(卡密设备列表)) >= 最大卡密设备数 {
+			var 设备总数 int64
+			if err := tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, card).Count(&设备总数).Error; err != nil {
+				return fmt.Errorf("统计卡密设备数量失败")
+			}
+			if 设备总数 >= 最大卡密设备数 {
 				return fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
 			}
 			当前会话, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, period)

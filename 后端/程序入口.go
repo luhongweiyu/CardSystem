@@ -23,6 +23,7 @@ func 启动点卡会话清理() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
+			清理过期点卡复用候选缓存()
 			清理点卡设备会话()
 		}
 	}()
