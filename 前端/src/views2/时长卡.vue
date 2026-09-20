@@ -538,6 +538,7 @@ h2 { margin: 0 0 6px; }
 .批量操作 span { margin-right: 4px; }
 .分页 { justify-content: flex-end; margin-top: 16px; }
 .单位, .弱文本 { margin-left: 8px; color: #8c98aa; font-size: 12px; }
+.页面 :deep(.el-table .cell) { white-space: nowrap; word-break: normal; }
 .报价提示 { margin: 0 0 18px 120px; width: calc(100% - 120px); }
 .卡密文本 { color: #79b4ff; font-family: monospace; }
 .复制按钮 { margin-top: 8px; }

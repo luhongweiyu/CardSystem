@@ -924,6 +924,10 @@ h2 {
   margin-bottom: 12px;
   color: #c7ced9;
 }
+.页面 :deep(.el-table .cell) {
+  white-space: nowrap;
+  word-break: normal;
+}
 .增加 {
   color: #67c23a;
 }

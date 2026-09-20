@@ -196,8 +196,9 @@ func 写入卡密响应(ctx *gin.Context, data gin.H) {
 		return
 	}
 	if value, exists := ctx.Get("card"); exists {
-		// 响应签名只取决于是否设置接口口令；安全开关仅决定请求是否必须验签。
-		if cardContext, ok := value.(卡密请求上下文); ok && cardContext.Api_password != "" {
+		// 新协议始终返回响应签名；安全码为空时也按空字符串参与 MD5。
+		// api_safe 只控制请求是否必须验签，不控制响应签名是否生成。
+		if cardContext, ok := value.(卡密请求上下文); ok {
 			data["sign"] = 计算卡密接口签名(cardContext.Api_password, unsignedJSON)
 		}
 	}
@@ -287,13 +288,13 @@ func 获取卡密请求签名内容(ctx *gin.Context) ([]byte, string, error) {
 	return []byte(unsignedQuery), sign, nil
 }
 
-// 卡密md5验证在安全模式下校验实际传输字节。JSON POST 签正文；GET 和无 JSON
-// 正文的 POST 签去除 sign 后的原始查询字符串。服务端不保存 nonce，因此同一
-// 原始请求在时间窗口内仍可被重复发送。
+// 卡密md5验证始终校验时间戳和新协议 nonce；只有 api_safe 开启时才比较 sign。
+// JSON POST 签正文；GET 和无 JSON 正文的 POST 签去除 sign 后的原始查询字符串。
+// 服务端不保存 nonce，因此同一原始请求在时间窗口内仍可被重复发送。
 func 卡密md5验证(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
 	cardContext, ok := value.(卡密请求上下文)
-	if !ok || !cardContext.Api_safe {
+	if !ok {
 		return
 	}
 	if value, legacy := ctx.Get(卡密旧签名标记); legacy && value == true {
@@ -304,6 +305,9 @@ func 卡密md5验证(ctx *gin.Context) {
 			失败提示(ctx, "时间不正确")
 			拒绝日志(ctx)
 			ctx.Abort()
+			return
+		}
+		if !cardContext.Api_safe {
 			return
 		}
 		expected := 计算旧卡密请求签名(timestampText, cardContext.Api_password)
@@ -334,6 +338,9 @@ func 卡密md5验证(ctx *gin.Context) {
 		失败提示(ctx, "nonce格式不正确")
 		拒绝日志(ctx)
 		ctx.Abort()
+		return
+	}
+	if !cardContext.Api_safe {
 		return
 	}
 	expected := 计算卡密接口签名(cardContext.Api_password, rawContent)

@@ -37,12 +37,13 @@ func user_info_登录记录(用户名 string, ip string) {
 	})
 }
 
-// 管理员设置响应只返回接口安全密码是否已设置，不返回密码正文。
-// 安全密码会参与卡密接口签名，任何查询接口都不应把它重新暴露给浏览器。
+// 管理员设置响应返回接口安全密码，供管理员找回并继续配置旧客户端。
+// 管理员登录密码不属于此响应，避免混淆两类密码。
 type 管理员设置响应 struct {
 	Name               string `json:"name"`
 	ApiSafe            bool   `json:"api_safe"`
 	ApiPasswordSet     bool   `json:"api_password_set"`
+	ApiPassword        string `json:"api_password"`
 	ContactInformation string `json:"contact_information"`
 	Notice             string `json:"notice"`
 }
@@ -77,7 +78,7 @@ func user_get_info(ctx *gin.Context) {
 		return
 	}
 	data := 管理员设置响应{
-		Name: current.Name, ApiSafe: current.Api_safe, ApiPasswordSet: current.Api_password != "",
+		Name: current.Name, ApiSafe: current.Api_safe, ApiPasswordSet: current.Api_password != "", ApiPassword: current.Api_password,
 		ContactInformation: current.Contact_information, Notice: current.Notice,
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "data": data})

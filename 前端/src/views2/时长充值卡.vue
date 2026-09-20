@@ -341,6 +341,7 @@ h2 { margin: 0 0 6px; }
 .筛选卡片 { margin-bottom: 14px; }
 .提示行 { color: #8f9bad; font-size: 12px; }
 .分页 { justify-content: flex-end; margin-top: 16px; }
+.页面 :deep(.el-table .cell) { white-space: nowrap; word-break: normal; }
 .单位 { margin-left: 8px; color: #8c98aa; font-size: 12px; }
 .卡密文本 { color: #79b4ff; font-family: monospace; }
 .复制按钮 { margin-top: 8px; }

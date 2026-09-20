@@ -4,9 +4,9 @@
 
 JSON 请求的业务参数只从正文读取，缺字段时不回退到 URL 或表单。
 
-新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。开启 API 安全模式的客户端接口需带 `timestamp`、`nonce` 和 URL 参数 `sign`：JSON POST 计算 `MD5(api_password + 原始JSON)`；GET 或无 JSON 的 POST 计算 `MD5(api_password + 去掉 sign 后的原始查询字符串)`。响应把 `sign` 放在 JSON 内，客户端将其临时替换为空字符串后按同一规则校验；关闭安全模式时请求可不验签，但设置了接口安全密码仍会返回响应签名。
+新卡端接口通过 `center_id` 或 `name` 定位管理员，再提交 `card`。新接口始终检查 `timestamp` 和 `nonce`，请求需带 URL 参数 `sign`：JSON POST 计算 `MD5(api_password + 原始JSON)`；GET 或无 JSON 的 POST 计算 `MD5(api_password + 去掉 sign 后的原始查询字符串)`。开启 API 安全模式时比较请求 `sign`；关闭安全模式时仍检查时间戳和 nonce，仅跳过请求 `sign` 比较。响应把 `sign` 放在 JSON 内，客户端将其临时替换为空字符串后按同一规则校验；响应始终返回签名，安全密码为空时也按空字符串参与计算。
 
-旧客户端只使用 `/card/card_login`、`/card/card_ping`。这两个接口按旧协议验签：请求为 `MD5(timestamp + api_password)`，返回时间戳为请求时间戳加 `10`，返回签名为 `MD5(timestamp + api_password + code)`，不要求 `nonce`。旧签名只保护时间戳，不保护卡密、设备等业务参数，仅用于兼容旧客户端。接口安全模式不提供传输加密。
+旧客户端只使用 `/card/card_login`、`/card/card_ping`。这两个接口按旧协议处理：始终检查时间戳，开启 API 安全模式时请求为 `MD5(timestamp + api_password)`，返回时间戳为请求时间戳加 `10`，返回签名为 `MD5(timestamp + api_password + code)`，不要求 `nonce`。旧签名只保护时间戳，不保护卡密、设备等业务参数，仅用于兼容旧客户端。接口安全模式不提供传输加密。
 
 新客户端使用 `/point_card/*` 和 `/duration_card/*`；除上述两个旧时长卡兼容接口外，其他旧 `/card/*`、`/duration/*` 不再注册。新旧服务不要同时写入同一个数据库。
 

@@ -132,6 +132,10 @@ h2 {
   margin-top: 14px;
   justify-content: flex-end;
 }
+.页面 :deep(.el-table .cell) {
+  white-space: nowrap;
+  word-break: normal;
+}
 .增加 {
   color: #67c23a;
 }

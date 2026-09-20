@@ -141,8 +141,8 @@ const 获取设置 = async function () {
     Object.assign(设置, {
       contact_information: data.contact_information || '',
       notice: data.notice || '',
-      // 安全密码接口只返回是否已设置，避免把明文密码带回页面。
-      api_password: '',
+      // 管理端需要找回安全码以兼容旧客户端，因此回填当前 API 安全码。
+      api_password: data.api_password || '',
       api_password_set: Boolean(data.api_password_set),
       api_safe: Number(data.api_safe) ? 1 : 0
     })

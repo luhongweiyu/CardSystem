@@ -46,10 +46,10 @@ const { 导航开关, 账号, 是代理账号 } = storeToRefs(stores)
 
 const 管理员菜单 = [
   { path: '/index', label: '首页', icon: 'HomeFilled' },
+  { path: '/software', label: '软件管理', icon: 'Iphone' },
   { path: '/card', label: '点卡', icon: 'Postcard' },
   { path: '/duration-card', label: '时长卡', icon: 'Timer' },
   { path: '/duration-recharge-card', label: '充值卡', icon: 'CreditCard' },
-  { path: '/software', label: '软件管理', icon: 'Iphone' },
   { path: '/point-ledger', label: '点数流水', icon: 'Tickets' },
   { path: '/setting', label: '设置', icon: 'Setting' },
   { path: '/help', label: '接入帮助', icon: 'QuestionFilled' },
