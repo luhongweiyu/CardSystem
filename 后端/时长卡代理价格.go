@@ -577,7 +577,7 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 	if err != nil {
 		return 代理生成时长卡结果{}, err
 	}
-	代理账号日志(account.ID, fmt.Sprintf("生成时长卡;扣除代理余额:%d;软件:%d;时长:%d分钟;数量:%d;计价方式:%s;价格来源:%d分钟", result.Charge, normalized.Software, normalized.DurationMinutes, len(result.Cards), result.PricingMode, result.RateSourceDurationMinutes))
+	代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成时长卡", fmt.Sprintf("软件:%d", normalized.Software), fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes), fmt.Sprintf("数量:%d", len(result.Cards)), "计价方式:"+result.PricingMode, fmt.Sprintf("价格来源:%d分钟", result.RateSourceDurationMinutes))
 	return result, nil
 }
 

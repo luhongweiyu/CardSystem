@@ -201,8 +201,8 @@ func 代理每点价格有效(price float64) bool {
 	return math.Abs(price-rounded) <= 1e-9
 }
 
-func 代理账号日志(accountID int, content string) {
-	日志(fmt.Sprintf("log/代理账号%v_%v", accountID, time.Now().Format("200601")), 清理拒绝日志字段(content, 2000))
+func 代理账号日志(accountID int, fields ...string) {
+	日志(fmt.Sprintf("log/代理账号%v_%v", accountID, time.Now().Format("200601")), 业务流水文本(fields...))
 }
 
 // 计算代理点卡费用把两位小数单价转为“百分之一点”后按整数计算，避免
@@ -360,7 +360,7 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
-	代理账号日志(account.ID, fmt.Sprintf("生成卡密;扣除渠道余额:%d;软件:%d;点数:%d;数量:%d", result.Charge, request.Software, request.Points, len(result.Cards)))
+	代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成卡密", fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("点数:%d", request.Points), fmt.Sprintf("数量:%d", len(result.Cards)))
 	return result, nil
 }
 
@@ -622,7 +622,7 @@ func 代理账号充值(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	代理账号日志(request.ID, fmt.Sprintf("管理员充值渠道余额:%d;备注:%s", request.Amount, request.Note))
+	代理账号日志(request.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:+%d", request.Amount), "原因:管理员充值", "备注:"+request.Note)
 	成功提示管理端(ctx, gin.H{"msg": "充值成功", "balance": balance})
 }
 

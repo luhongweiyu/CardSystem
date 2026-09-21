@@ -103,13 +103,14 @@ type 点卡设备会话 struct {
 // 点卡扣费结果在服务层传递结算结果；客户端响应由接口层单独组织。
 // Charged=false 表示本次请求在当前授权时长内，没有发生余额变化。
 type 点卡扣费结果 struct {
-	Charged         bool      `json:"charged"`
-	Cost            int64     `json:"cost"`
-	Balance         int64     `json:"balance"`
-	AgentID         int       `json:"-"`
-	AgentCharged    int64     `json:"agent_charged,omitempty"`
-	AuthorizedUntil time.Time `json:"authorized_until"`
-	LedgerID        uint64    `json:"ledger_id,omitempty"`
+	Charged           bool      `json:"charged"`
+	Cost              int64     `json:"cost"`
+	Balance           int64     `json:"balance"`
+	AgentID           int       `json:"-"`
+	AgentCharged      int64     `json:"agent_charged,omitempty"`
+	AgentBalanceAfter int64     `json:"-"`
+	AuthorizedUntil   time.Time `json:"authorized_until"`
+	LedgerID          uint64    `json:"ledger_id,omitempty"`
 }
 
 type 点卡登录结果 struct {

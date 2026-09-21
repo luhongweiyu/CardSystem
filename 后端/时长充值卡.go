@@ -228,7 +228,7 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	代理账号日志(account.ID, fmt.Sprintf("生成时长充值卡;扣除代理余额:%d;软件:%d;时长:%d分钟;每张次数:%d;数量:%d", result.Charge, normalized.Software, normalized.DurationMinutes, normalized.Uses, len(result.Cards)))
+	代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成时长充值卡", fmt.Sprintf("软件:%d", normalized.Software), fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes), fmt.Sprintf("每张次数:%d", normalized.Uses), fmt.Sprintf("数量:%d", len(result.Cards)))
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张时长充值卡", len(result.Cards)), "data": strings.Join(result.Cards, "\n"), "charge": result.Charge, "balance": result.Balance})
 }
 

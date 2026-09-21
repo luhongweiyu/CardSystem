@@ -23,6 +23,9 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 		return 0, cacheErr
 	}
 	remainingMinutes := int64(0)
+	var softwareID, agentID int
+	var beforeEnd time.Time
+	var pauseDeductMinutes int64
 	err = db.Transaction(func(tx *gorm.DB) error {
 		row, err := 读取时长卡范围(tx, admin, 0, card, true)
 		if err != nil {
@@ -40,6 +43,9 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 		if settings.PauseDeductMinutes <= 0 {
 			return fmt.Errorf("该软件未开启时长卡暂停")
 		}
+		softwareID, agentID = row.Software, row.AgentID
+		beforeEnd = *row.EndTime
+		pauseDeductMinutes = settings.PauseDeductMinutes
 		remainingSeconds := row.EndTime.Sub(now).Seconds() - float64(settings.PauseDeductMinutes*60)
 		if remainingSeconds <= 0 {
 			return fmt.Errorf("扣除暂停费用后没有剩余时长")
@@ -65,6 +71,7 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "暂停时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
+	记录时长卡业务流水(admin, []int{agentID}, "原因:时长卡暂停", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:-%d分钟", pauseDeductMinutes), fmt.Sprintf("暂停剩余:%d分钟", remainingMinutes), "原授权截止:"+业务流水时间(beforeEnd))
 	return remainingMinutes, nil
 }
 
@@ -79,6 +86,8 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 		return time.Time{}, cacheErr
 	}
 	var end time.Time
+	var softwareID, agentID int
+	var beforeRemaining int64
 	err = db.Transaction(func(tx *gorm.DB) error {
 		row, err := 读取时长卡范围(tx, admin, 0, card, true)
 		if err != nil {
@@ -87,6 +96,8 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 		if row.CardState != 时长卡状态_暂停 || row.PausedRemainingMinutes <= 0 {
 			return fmt.Errorf("时长卡不在暂停状态")
 		}
+		softwareID, agentID = row.Software, row.AgentID
+		beforeRemaining = row.PausedRemainingMinutes
 		end = now.Add(time.Duration(row.PausedRemainingMinutes) * time.Minute)
 		updates := map[string]interface{}{"card_state": 卡密状态_正常, "paused_remaining_minutes": 0, "end_time": end}
 		result := tx.Table(tableName).Where("card = ?", row.Card).Updates(updates)
@@ -101,6 +112,7 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "恢复时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
+	记录时长卡业务流水(admin, []int{agentID}, "原因:时长卡恢复", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", beforeRemaining), "授权截止:"+业务流水时间(end))
 	return end, nil
 }
 
@@ -158,6 +170,9 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 	}
 	var end time.Time
 	var added int64
+	var softwareID, targetAgentID, sourceAgentID int
+	var targetBeforeEnd time.Time
+	var targetBeforePaused, targetAfterPaused int64
 	err = db.Transaction(func(tx *gorm.DB) error {
 		cards := []string{targetCard, sourceCard}
 		if cards[0] > cards[1] {
@@ -197,12 +212,18 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 		if source.DurationMinutes < 时长卡最小时长分钟 || source.DurationMinutes > 时长卡永久分钟 {
 			return fmt.Errorf("充值来源时长不正确")
 		}
+		softwareID, targetAgentID, sourceAgentID = target.Software, target.AgentID, source.AgentID
+		targetBeforePaused = target.PausedRemainingMinutes
+		if target.EndTime != nil {
+			targetBeforeEnd = *target.EndTime
+		}
 		added = source.DurationMinutes
 		if targetPaused {
 			if added > math.MaxInt64-target.PausedRemainingMinutes {
 				return fmt.Errorf("目标时长卡剩余时长溢出")
 			}
 			remaining := target.PausedRemainingMinutes + added
+			targetAfterPaused = remaining
 			if result := tx.Table(tableName).Where("card = ?", target.Card).Update("paused_remaining_minutes", remaining); result.Error != nil || result.RowsAffected != 1 {
 				return fmt.Errorf("保存目标时长卡失败")
 			}
@@ -241,6 +262,7 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 			日志("log/启动记录.txt", "时长卡充值后同步心跳缓存失败:"+cacheErr.Error())
 		}
 	}
+	记录时长卡业务流水(admin, []int{targetAgentID, sourceAgentID}, "原因:时长卡充值", "目标卡:"+targetCard, "来源卡:"+sourceCard, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", added), "原授权截止:"+业务流水时间(targetBeforeEnd), "新授权截止:"+业务流水时间(end), fmt.Sprintf("原暂停剩余:%d分钟", targetBeforePaused), fmt.Sprintf("新暂停剩余:%d分钟", targetAfterPaused))
 	return end, added, nil
 }
 

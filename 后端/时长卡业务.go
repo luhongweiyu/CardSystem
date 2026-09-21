@@ -631,6 +631,9 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			success = append(success, card)
 		}
 	}
+	if len(success) > 0 {
+		记录时长卡业务流水(管理员_用户名(ctx), nil, "原因:管理员续费时长卡", "卡密:"+strings.Join(success, ","), fmt.Sprintf("变更:+%d分钟", request.DurationMinutes), fmt.Sprintf("数量:%d", len(success)))
+	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
@@ -658,6 +661,7 @@ func durationCardLogin(ctx *gin.Context) {
 	now := time.Now()
 	var row 时长卡表样式
 	var settings 软件
+	activated := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
@@ -680,6 +684,7 @@ func durationCardLogin(ctx *gin.Context) {
 			if err := 激活时长卡_已加锁(tx, tableName, &row, now); err != nil {
 				return err
 			}
+			activated = true
 		}
 		if row.EndTime == nil || !row.EndTime.After(now) {
 			return fmt.Errorf("时长卡已到期")
@@ -703,6 +708,9 @@ func durationCardLogin(ctx *gin.Context) {
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
+	}
+	if activated {
+		记录时长卡业务流水(admin, []int{row.AgentID}, "原因:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), fmt.Sprintf("变更:+%d分钟", row.DurationMinutes), "授权截止:"+业务流水时间(*row.EndTime))
 	}
 	写入时长卡心跳缓存(admin, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "software": row.Software, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})

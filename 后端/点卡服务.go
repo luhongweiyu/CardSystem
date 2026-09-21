@@ -194,10 +194,11 @@ func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, pa
 		cardCharged = price.Cost
 	}
 	agentCharged := int64(0)
+	agentBalanceAfter := int64(0)
 	if cardCharged < price.Cost {
 		shortfall := price.Cost - cardCharged
 		var err error
-		agentCharged, err = 点卡代理余额代扣(tx, card, params.Admin, params.Software, shortfall)
+		agentCharged, agentBalanceAfter, err = 点卡代理余额代扣(tx, card, params.Admin, params.Software, shortfall)
 		if err != nil {
 			return 点卡扣费结果{}, err
 		}
@@ -222,56 +223,56 @@ func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, pa
 		}
 		ledgerID = 流水.ID
 	}
-	return 点卡扣费结果{Charged: true, Cost: price.Cost, Balance: after, AgentID: card.AgentID, AgentCharged: agentCharged, LedgerID: ledgerID}, nil
+	return 点卡扣费结果{Charged: true, Cost: price.Cost, Balance: after, AgentID: card.AgentID, AgentCharged: agentCharged, AgentBalanceAfter: agentBalanceAfter, LedgerID: ledgerID}, nil
 }
 
 // 点卡代理余额代扣只处理点卡所属代理的不足部分。卡密开关由代理自己
 // 控制，管理员只通过账号上的欠费权限和额度限制最终可扣范围。
-func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, softwareID int, shortfall int64) (int64, error) {
+func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, softwareID int, shortfall int64) (int64, int64, error) {
 	if card.AgentID <= 0 || shortfall <= 0 {
-		return 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
+		return 0, 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
 	}
 	mode, err := 规范化点卡代扣模式(card.AgentDeductionMode)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if mode == 点卡代扣模式_禁止 {
-		return 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
+		return 0, 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
 	}
 	var account 代理账号记录
 	query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", card.AgentID, admin).First(&account)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return 0, fmt.Errorf("%w：所属代理账号不存在", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：所属代理账号不存在", 错误_点卡余额不足)
 	}
 	if query.Error != nil {
-		return 0, fmt.Errorf("读取代理账号失败")
+		return 0, 0, fmt.Errorf("读取代理账号失败")
 	}
 	if mode == 点卡代扣模式_跟随总开关 && !account.PointCardAutoDeduct {
-		return 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
+		return 0, 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
 	}
 	prices := 解析代理价格(account.Prices)
 	unitPrice, exists := prices[softwareID]
 	if !exists {
-		return 0, fmt.Errorf("%w：代理未配置该软件的代扣价格", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：代理未配置该软件的代扣价格", 错误_点卡余额不足)
 	}
 	charge, err := 计算代理点卡费用(unitPrice, shortfall, 1)
 	if err != nil {
-		return 0, fmt.Errorf("%w：代理代扣金额计算失败", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：代理代扣金额计算失败", 错误_点卡余额不足)
 	}
 	if account.Balance < math.MinInt64+charge {
-		return 0, fmt.Errorf("%w：代理余额超出允许范围", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：代理余额超出允许范围", 错误_点卡余额不足)
 	}
 	after := account.Balance - charge
 	if after < 0 {
 		if !account.AllowPointDebt || account.PointDebtLimit <= 0 || after < -account.PointDebtLimit {
-			return 0, fmt.Errorf("%w：代理余额不足，需要%d点，当前%d点", 错误_点卡余额不足, charge, account.Balance)
+			return 0, 0, fmt.Errorf("%w：代理余额不足，需要%d点，当前%d点", 错误_点卡余额不足, charge, account.Balance)
 		}
 	}
 	update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, admin).UpdateColumn("balance", gorm.Expr("balance - ?", charge))
 	if update.Error != nil || update.RowsAffected != 1 {
-		return 0, fmt.Errorf("扣除代理余额失败")
+		return 0, 0, fmt.Errorf("扣除代理余额失败")
 	}
-	return charge, nil
+	return charge, after, nil
 }
 
 // 记录点卡代扣日志只能在事务提交后调用，避免回滚扣款留下虚假记录。
@@ -280,7 +281,7 @@ func 记录点卡代扣日志(charge 点卡扣费结果, session 点卡设备会
 	if charge.AgentCharged <= 0 {
 		return
 	}
-	代理账号日志(charge.AgentID, fmt.Sprintf("点卡代扣;卡密:%s;软件:%d;扣除渠道余额:%d;ID=%s;设备=%s;授权截止:%s", session.Card, session.Software, charge.AgentCharged, session.DeviceID, session.DeviceAlias, session.AuthorizedUntil.Format(time.RFC3339)))
+	代理账号日志(charge.AgentID, fmt.Sprintf("余额:%d", charge.AgentBalanceAfter), fmt.Sprintf("变更:-%d", charge.AgentCharged), "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+session.AuthorizedUntil.Format(time.RFC3339))
 }
 
 // 调整点卡余额供管理员补点或扣回点数。余额不能变成负数，且每次真实变更

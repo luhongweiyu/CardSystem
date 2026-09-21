@@ -366,7 +366,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		}
 	}
 	if len(success) > 0 {
-		代理账号日志(account.ID, fmt.Sprintf("续费时长卡;扣除代理余额:%d;时长:%d分钟;数量:%d", charge, request.DurationMinutes, len(success)))
+		代理账号日志(account.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:-%d", charge), "原因:续费时长卡", fmt.Sprintf("时长:%d分钟", request.DurationMinutes), fmt.Sprintf("数量:%d", len(success)))
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed, "charge": charge, "balance": balance})
 }
