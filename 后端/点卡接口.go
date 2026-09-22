@@ -235,6 +235,10 @@ func 点卡端_查询周期价格(ctx *gin.Context) {
 		失败提示(ctx, "软件不存在")
 		return
 	}
+	if !点卡授权时长秒有效(settings.DefaultPeriodSeconds, false) {
+		失败提示(ctx, "软件默认授权时长已超出允许范围，请联系管理员调整")
+		return
+	}
 	var prices []点卡周期价格
 	if err := db_point_period_price.Where("admin = ? AND software = ? AND enabled = ?", cardContext.Name, softwareID, true).Order("period_seconds ASC").Find(&prices).Error; err != nil {
 		失败提示(ctx, "查询点卡计费方案失败")
@@ -242,6 +246,10 @@ func 点卡端_查询周期价格(ctx *gin.Context) {
 	}
 	result := make([]点卡公开周期价格, 0, len(prices))
 	for _, price := range prices {
+		// 旧范围下创建的短周期方案仍留在管理端供调整，但不能再展示给客户端选用。
+		if !点卡授权时长秒有效(price.PeriodSeconds, false) {
+			continue
+		}
 		result = append(result, 点卡公开周期价格{PeriodMinutes: 秒转分钟(price.PeriodSeconds), Cost: price.Cost, IsDefault: price.PeriodSeconds == settings.DefaultPeriodSeconds})
 	}
 	成功提示(ctx, gin.H{"data": result, "software": softwareID, "default_period_minutes": 秒转分钟(settings.DefaultPeriodSeconds), "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds, "online_grace_minutes": settings.OnlineGraceMinutes})

@@ -154,11 +154,13 @@
           <el-input-number
             v-model="软件框.online_grace_minutes"
             :min="0"
-            :max="4320"
+            :max="最大自动离线时间分钟"
             :precision="0"
             controls-position="right"
           />
           <div class="字段说明">0 表示默认 60 分钟后自动离线</div>
+          <div v-if="软件框.heartbeat_interval_seconds >= (软件框.online_grace_minutes || 60) * 60" class="字段说明 风险提醒">心跳间隔不小于自动离线时间，设备可能被误判离线。</div>
+          <div v-if="(软件框.online_grace_minutes || 60) > 软件框.default_period_minutes" class="字段说明 风险提醒">自动离线时间长于默认授权周期，断线后可能连续多次续费扣点。</div>
         </el-form-item>
         <el-form-item label="暂停扣除（分钟）" required>
           <el-input-number
@@ -190,6 +192,13 @@
         <span>{{ 价格框.softwareName }}</span>
         <el-button type="primary" size="small" @click="新增价格">新增计费方案</el-button>
       </div>
+      <el-alert
+        v-if="价格框.rows.some((item) => !点卡计费周期有效(item.period_minutes))"
+        title="旧范围方案已不可用；若它是默认方案，请先新增方案并设为默认，再删除旧方案。"
+        type="warning"
+        :closable="false"
+        class="代理价格提示"
+      />
       <el-table :data="价格框.rows" border>
         <el-table-column label="授权时长" width="150">
           <template #default="scope">{{ scope.row.period_minutes }} 分钟</template>
@@ -197,7 +206,8 @@
         <el-table-column prop="cost" label="扣点" width="90" />
         <el-table-column label="状态" width="100">
           <template #default="scope">
-            <el-tag :type="scope.row.enabled ? 'success' : 'info'">
+            <el-tag v-if="!点卡计费周期有效(scope.row.period_minutes)" type="warning">范围外</el-tag>
+            <el-tag v-else :type="scope.row.enabled ? 'success' : 'info'">
               {{ scope.row.enabled ? '启用' : '停用' }}
             </el-tag>
           </template>
@@ -207,7 +217,7 @@
         </el-table-column>
         <el-table-column label="操作" min-width="150">
           <template #default="scope">
-            <el-button link type="primary" @click="编辑价格(scope.row)">编辑</el-button>
+            <el-button link type="primary" :disabled="!点卡计费周期有效(scope.row.period_minutes)" @click="编辑价格(scope.row)">编辑</el-button>
             <el-button link type="danger" @click="删除价格(scope.row)">删除</el-button>
           </template>
         </el-table-column>
@@ -231,6 +241,7 @@
             controls-position="right"
             :disabled="!!价格编辑框.id"
           />
+          <div v-if="价格编辑框.period_minutes < 价格框.onlineGraceMinutes" class="字段说明 风险提醒">自动离线时间长于此周期，断线后可能连续多次续费扣点。</div>
         </el-form-item>
         <el-form-item label="扣点数">
           <el-input-number
@@ -448,6 +459,9 @@ import {
 
 const 最大代理价格 = 1000000000
 const 最大代理欠费额度 = 1000000000
+// 自动离线时间仍独立允许 5 分钟至 3 天，不能随点卡计费周期一起扩到 30 天。
+const 最小自动离线时间分钟 = 5
+const 最大自动离线时间分钟 = 3 * 24 * 60
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -475,7 +489,7 @@ const 软件框 = reactive({
   point_card_reuse_enabled: false,
   pause_deduct_minutes: 0
 })
-const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', heartbeatSeconds: 300, rows: [] })
+const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', onlineGraceMinutes: 60, rows: [] })
 const 价格编辑框 = reactive({
   显示: false,
   id: 0,
@@ -519,6 +533,7 @@ const 当前代理价格 = computed(() => {
 })
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
+const 点卡计费周期有效 = (minutes) => Number.isInteger(minutes) && minutes >= 最小计费周期分钟 && minutes <= 最大计费周期分钟
 const 周期文本 = function (seconds) {
   const value = Number(seconds || 0)
   if (!value) return '-'
@@ -634,18 +649,14 @@ const 保存软件 = function () {
     ElMessage.warning('请输入软件名称')
     return
   }
-  if (
-    !Number.isInteger(软件框.default_period_minutes) ||
-    软件框.default_period_minutes < 最小计费周期分钟 ||
-    软件框.default_period_minutes > 最大计费周期分钟
-  ) {
-    ElMessage.warning('默认授权时长必须在5至4320分钟之间')
+  if (!点卡计费周期有效(软件框.default_period_minutes)) {
+    ElMessage.warning('默认授权时长必须在15至43200分钟之间')
     return
   }
   if (
     !Number.isInteger(软件框.online_grace_minutes) ||
-    (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 最小计费周期分钟) ||
-    软件框.online_grace_minutes > 最大计费周期分钟
+    (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 最小自动离线时间分钟) ||
+    软件框.online_grace_minutes > 最大自动离线时间分钟
   ) {
     ElMessage.warning('自动离线时间必须为0或5至4320分钟，0表示默认60分钟')
     return
@@ -709,7 +720,7 @@ const 打开价格 = function (row) {
     显示: true,
     software: row.ID,
     softwareName: row.Software,
-    heartbeatSeconds: Number(row.heartbeat_interval_seconds || 300),
+    onlineGraceMinutes: Number(row.online_grace_minutes || 60),
     rows: []
   })
   查询价格()
@@ -745,12 +756,8 @@ const 编辑价格 = function (row) {
   })
 }
 const 保存价格 = function () {
-  if (
-    !Number.isInteger(价格编辑框.period_minutes) ||
-    价格编辑框.period_minutes < 最小计费周期分钟 ||
-    价格编辑框.period_minutes > 最大计费周期分钟
-  ) {
-    ElMessage.warning('授权时长必须在5至4320分钟之间')
+  if (!点卡计费周期有效(价格编辑框.period_minutes)) {
+    ElMessage.warning('授权时长必须在15至43200分钟之间')
     return
   }
   post('/point_card/price/save', {
@@ -1196,5 +1203,8 @@ h3 {
   margin-left: 10px;
   color: #9099a8;
   font-size: 12px;
+}
+.风险提醒 {
+  color: #d97706;
 }
 </style>

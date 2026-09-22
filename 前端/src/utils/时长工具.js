@@ -1,7 +1,7 @@
 // 时长页面共用的纯展示函数和固定选项。接口请求、代理列表和软件列表
 // 仍由各页面维护，避免工具函数绑定具体页面状态。
-export const 最小计费周期分钟 = 5
-export const 最大计费周期分钟 = 3 * 24 * 60
+export const 最小计费周期分钟 = 15
+export const 最大计费周期分钟 = 30 * 24 * 60
 export const 最小时长分钟 = 5
 export const 永久时长分钟 = 36500 * 24 * 60
 export const 最大时长分钟 = 永久时长分钟
