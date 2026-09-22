@@ -208,8 +208,12 @@ func 代理账号日志(accountID int, fields ...string) {
 // 计算代理点卡费用把两位小数单价转为“百分之一点”后按整数计算，避免
 // 大批量发卡时 float64 丢失整数精度。最终不足 1 点的部分统一向上取整。
 func 计算代理点卡费用(unitPrice float64, pointsPerCard int64, cardCount int) (int64, error) {
-	if !代理每点价格有效(unitPrice) || pointsPerCard <= 0 || cardCount <= 0 {
+	if !代理每点价格有效(unitPrice) || pointsPerCard < 0 || cardCount <= 0 {
 		return 0, fmt.Errorf("渠道发卡计费参数不正确")
+	}
+	// 零点卡不收发卡费用，但仍需有效单价来确认该软件的发卡权限。
+	if pointsPerCard == 0 {
+		return 0, nil
 	}
 	count := int64(cardCount)
 	if pointsPerCard > math.MaxInt64/count {
@@ -295,13 +299,14 @@ func 代理账号_查询点卡流水(ctx *gin.Context) {
 }
 
 type 代理生成点卡卡密请求 struct {
-	Software      int    `json:"software"`
-	Points        int64  `json:"points"`
-	Num           int    `json:"num"`
-	Cards         string `json:"cards"`
-	Random        bool   `json:"random"`
-	Notes         string `json:"notes"`
-	ConfigContent string `json:"config_content"`
+	Software           int    `json:"software"`
+	Points             int64  `json:"points"`
+	Num                int    `json:"num"`
+	Cards              string `json:"cards"`
+	Random             bool   `json:"random"`
+	Notes              string `json:"notes"`
+	ConfigContent      string `json:"config_content"`
+	AgentDeductionMode string `json:"point_card_auto_deduct_mode"`
 }
 
 // 代理生成点卡卡密结果把生成的点卡卡密和扣款后的渠道余额一起返回，便于页面立即刷新显示。
@@ -318,6 +323,10 @@ type 代理生成点卡卡密结果 struct {
 func 代理生成点卡卡密(account 代理账号记录, request 代理生成点卡卡密请求) (代理生成点卡卡密结果, error) {
 	if account.ID <= 0 || !验证管理员名称(account.Admin) {
 		return 代理生成点卡卡密结果{}, fmt.Errorf("渠道合伙人状态错误")
+	}
+	mode, err := 规范化点卡代扣模式(request.AgentDeductionMode)
+	if err != nil {
+		return 代理生成点卡卡密结果{}, err
 	}
 	tableName, cards, err := 准备生成点卡卡密(account.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
 	if err != nil {
@@ -342,15 +351,15 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 		if err := 锁定发卡软件(tx, current.Admin, request.Software); err != nil {
 			return err
 		}
-		if current.Balance < charge {
-			return fmt.Errorf("渠道余额不足，需要%d点，当前%d点", charge, current.Balance)
-		}
 		if charge > 0 {
+			if current.Balance < charge {
+				return fmt.Errorf("账户余额不足，需要%d点，当前%d点", charge, current.Balance)
+			}
 			if update := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, charge).UpdateColumn("balance", gorm.Expr("balance - ?", charge)); update.Error != nil || update.RowsAffected != 1 {
 				return fmt.Errorf("扣除渠道余额失败")
 			}
 		}
-		if err := 创建点卡并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, time.Now()); err != nil {
+		if err := 创建点卡并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, mode, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		balance := current.Balance - charge
@@ -360,7 +369,9 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
-	代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成卡密", fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("点数:%d", request.Points), fmt.Sprintf("数量:%d", len(result.Cards)))
+	if result.Charge > 0 {
+		代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成卡密", fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("点数:%d", request.Points), fmt.Sprintf("数量:%d", len(result.Cards)))
+	}
 	return result, nil
 }
 
@@ -371,7 +382,7 @@ func 代理账号_添加点卡卡密(ctx *gin.Context) {
 		return
 	}
 	account := 代理账号_取账号信息(ctx)
-	if request.Software <= 0 || request.Points <= 0 || request.Points > 最大单次点数 || request.Num <= 0 || request.Num > 最大单次生成点卡数量 {
+	if request.Software <= 0 || request.Points < 0 || request.Points > 最大单次点数 || request.Num <= 0 || request.Num > 最大单次生成点卡数量 {
 		失败提示管理端(ctx, "软件、点数或生成数量不正确")
 		return
 	}
@@ -436,6 +447,24 @@ func 代理账号_批量修改点卡状态(ctx *gin.Context) {
 		return
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
+}
+
+func 代理账号_批量修改点卡代扣模式(ctx *gin.Context) {
+	var request struct {
+		Cards []string `json:"cards"`
+		Mode  string   `json:"point_card_auto_deduct_mode"`
+	}
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
+		失败提示管理端(ctx, "数据错误")
+		return
+	}
+	account := 代理账号_取账号信息(ctx)
+	count, err := 批量修改点卡代扣模式(account.Admin, account.ID, request.Cards, request.Mode)
+	if err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("已设置%d张点卡的代扣方式", count), "count": count})
 }
 
 func 代理账号_查询软件列表(ctx *gin.Context) {

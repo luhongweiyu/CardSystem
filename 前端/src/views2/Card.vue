@@ -65,6 +65,7 @@
           解冻
         </el-button>
         <el-button size="small" type="danger" :disabled="!已选点卡卡密.length" @click="批量删除">删除</el-button>
+        <el-button v-if="是代理账号" size="small" :disabled="!已选点卡卡密.length" @click="打开批量代扣">设置账户代扣</el-button>
         <el-button size="small" :disabled="!点卡卡密列表.length" @click="导出当前页">导出当前页</el-button>
       </div>
     </el-card>
@@ -97,7 +98,7 @@
       >
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
-      <el-table-column v-if="!是代理账号" label="归属代理" width="140">
+      <el-table-column v-if="!是代理账号" label="归属小伙伴" width="140">
         <template #default="scope">{{ 代理名称(scope.row.agent_id) }}</template>
       </el-table-column>
       <el-table-column
@@ -109,6 +110,9 @@
         :sort-orders="['ascending', 'descending']"
       >
         <template #default="scope">{{ scope.row.point_balance }} 点</template>
+      </el-table-column>
+      <el-table-column label="账户代扣" width="170">
+        <template #default="scope">{{ scope.row.agent_id > 0 ? 代扣模式文本(scope.row.point_card_auto_deduct_mode) : '—' }}</template>
       </el-table-column>
       <el-table-column
         prop="card_state"
@@ -227,16 +231,22 @@
         <el-form-item label="每张点数" required>
           <el-input-number
             v-model="生成框.points"
-            :min="1"
+            :min="0"
             :max="1000000000"
             :precision="0"
             controls-position="right"
           />
           <span class="单位">点</span>
         </el-form-item>
+        <el-form-item v-if="是代理账号" label="余额不足时">
+          <el-select v-model="生成框.point_card_auto_deduct_mode" style="width: 230px">
+            <el-option v-for="item in 代扣模式选项" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <div class="字段说明">整批使用同一设置；先扣卡内点数，不足部分再按此设置处理。</div>
+        </el-form-item>
         <el-form-item label="生成数量" required>
           <el-input-number v-model="生成框.num" :min="1" :max="500" :precision="0" controls-position="right" />
-          <span v-if="是代理账号" class="费用提示">预计消耗合伙人余额 {{ 预计代理费用 }} 点</span>
+          <span v-if="是代理账号" class="费用提示">预计消耗账户余额 {{ 预计代理费用 }} 点</span>
         </el-form-item>
         <el-form-item label="生成方式">
           <el-radio-group v-model="生成框.random">
@@ -264,6 +274,30 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="批量代扣框.显示"
+      title="批量设置账户代扣"
+      width="480px"
+      :close-on-click-modal="!批量代扣框.加载中"
+      :close-on-press-escape="!批量代扣框.加载中"
+      :show-close="!批量代扣框.加载中"
+      destroy-on-close
+    >
+      <p>将设置已选的 {{ 批量代扣框.cards.length }} 张点卡。</p>
+      <el-form label-width="100px" :disabled="批量代扣框.加载中">
+        <el-form-item label="余额不足时">
+          <el-select v-model="批量代扣框.point_card_auto_deduct_mode" style="width: 230px">
+            <el-option v-for="item in 代扣模式选项" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div class="字段说明">“允许 / 禁止”优先于总开关；已付费的授权不受影响，下次扣费时生效。</div>
+      <template #footer>
+        <el-button :disabled="批量代扣框.加载中" @click="批量代扣框.显示 = false">取消</el-button>
+        <el-button type="primary" :loading="批量代扣框.加载中" @click="保存批量代扣">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑点卡及管理员补扣点 -->
     <el-dialog v-model="编辑框.显示" title="编辑点卡" width="520px" destroy-on-close>
       <el-form label-width="100px" v-loading="编辑框.加载中">
@@ -285,9 +319,7 @@
         </el-form-item>
         <el-form-item v-if="是代理账号" label="余额不足时">
           <el-select v-model="编辑框.point_card_auto_deduct_mode" style="width: 230px">
-            <el-option label="跟随代理总开关" value="inherit" />
-            <el-option label="允许扣代理余额" value="allow" />
-            <el-option label="禁止扣代理余额" value="deny" />
+            <el-option v-for="item in 代扣模式选项" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
           <div class="字段说明">“允许 / 禁止”优先于总开关；“跟随”使用总开关设置</div>
         </el-form-item>
@@ -373,18 +405,30 @@ const 筛选 = reactive({ software: '', card_state: '', card: '', notes: '' })
 // 卡密是特殊排序键：单独点击卡密时只按卡密；点击其他字段时，卡密作为
 // 第二排序键。card_order 独立保存，保证用户切换主排序后卡密方向不丢失。
 const 排序 = reactive({ sort_by: '', sort_order: '', card_order: 'asc' })
+const 代扣模式选项 = [
+  { value: 'inherit', label: '跟随总开关' },
+  { value: 'allow', label: '允许扣账户余额' },
+  { value: 'deny', label: '禁止扣账户余额' }
+]
 const 生成框 = reactive({
   显示: false,
   加载中: false,
   software: 0,
-  points: 100,
+  points: 0,
   num: 1,
   random: true,
   cards: '',
   notes: '',
-  config_content: ''
+  config_content: '',
+  point_card_auto_deduct_mode: 'inherit'
 })
 const 生成框结果 = ref('')
+const 批量代扣框 = reactive({
+  显示: false,
+  加载中: false,
+  cards: [],
+  point_card_auto_deduct_mode: 'inherit'
+})
 const 编辑框 = reactive({
   显示: false,
   加载中: false,
@@ -438,6 +482,7 @@ const 可发卡软件列表 = computed(() => {
 
 const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
 const 代理名称 = (id) => 格式化代理归属(id, 代理列表.value)
+const 代扣模式文本 = (mode) => 代扣模式选项.find((item) => item.value === mode)?.label || '跟随总开关'
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 
@@ -498,24 +543,25 @@ const 选择变化 = (rows) => {
 
 const 打开生成 = function () {
   if (!可发卡软件列表.value.length) {
-    ElMessage.warning(是代理账号.value ? '管理员尚未为该渠道合伙人配置可发卡软件' : '请先创建软件')
+    ElMessage.warning(是代理账号.value ? '管理员尚未为当前账号配置可发卡软件' : '请先创建软件')
     return
   }
   Object.assign(生成框, {
     显示: true,
     software: 生成框.software || 可发卡软件列表.value[0].ID,
-    points: 100,
+    points: 0,
     num: 1,
     random: true,
     cards: '',
     notes: '',
-    config_content: ''
+    config_content: '',
+    point_card_auto_deduct_mode: 'inherit'
   })
   生成框结果.value = ''
 }
 const 生成点卡卡密 = function () {
   if (生成框.加载中) return
-  if (!生成框.software || !Number.isInteger(生成框.points) || 生成框.points < 1 || 生成框.points > 1000000000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
+  if (!生成框.software || !Number.isInteger(生成框.points) || 生成框.points < 0 || 生成框.points > 1000000000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
     ElMessage.warning('请选择软件并填写有效的点数和数量')
     return
   }
@@ -531,7 +577,8 @@ const 生成点卡卡密 = function () {
     cards: 生成框.cards,
     random: 生成框.random,
     notes: 生成框.notes,
-    config_content: 生成框.config_content
+    config_content: 生成框.config_content,
+    ...(是代理账号.value ? { point_card_auto_deduct_mode: 生成框.point_card_auto_deduct_mode } : {})
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '生成失败')
@@ -620,6 +667,33 @@ const 批量修改状态 = function (state) {
       查询点卡卡密(false)
     })
     .catch(显示错误)
+}
+const 打开批量代扣 = function () {
+  if (!是代理账号.value || !已选点卡卡密.value.length) return
+  // 保存打开对话框时的选择，避免列表刷新后提交到不同的一批卡密。
+  Object.assign(批量代扣框, {
+    显示: true,
+    cards: [...已选点卡卡密.value],
+    point_card_auto_deduct_mode: 'inherit'
+  })
+}
+const 保存批量代扣 = async function () {
+  if (批量代扣框.加载中 || !批量代扣框.cards.length) return
+  批量代扣框.加载中 = true
+  try {
+    const res = await post('/point_card/auto_deduct', {
+      cards: 批量代扣框.cards,
+      point_card_auto_deduct_mode: 批量代扣框.point_card_auto_deduct_mode
+    })
+    if (!res.data?.state) throw new Error(res.data?.msg || '设置账户代扣失败')
+    ElMessage.success(res.data.msg || '设置成功')
+    批量代扣框.显示 = false
+    await 查询点卡卡密(false)
+  } catch (error) {
+    显示错误(error)
+  } finally {
+    批量代扣框.加载中 = false
+  }
 }
 const 删除单张 = function (row) {
   ElMessageBox.confirm(`确定删除点卡卡密 ${row.card}？删除后同名卡密可以再次生成，流水仅保留最近30天。`, '确认删除', {

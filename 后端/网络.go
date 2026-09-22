@@ -281,6 +281,7 @@ func 启动网络() error {
 		agent.POST("/point_card/delete", 代理账号_删除点卡卡密)
 		agent.POST("/point_card/save", 代理账号_修改点卡)
 		agent.POST("/point_card/state", 代理账号_批量修改点卡状态)
+		agent.POST("/point_card/auto_deduct", 代理账号_批量修改点卡代扣模式)
 		agent.POST("/point_card/device/offline", 代理账号_下线点卡设备)
 		agent.POST("/point_card/ledger", 代理账号_查询点卡流水)
 		agent.POST("/point_card/settings", 代理账号_修改点卡代扣设置)

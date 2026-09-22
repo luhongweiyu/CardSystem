@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -676,8 +677,8 @@ func 准备生成点卡卡密(admin string, softwareID int, points int64, count 
 	if !验证管理员名称(admin) || softwareID <= 0 {
 		return "", nil, fmt.Errorf("管理员或软件参数错误")
 	}
-	if points <= 0 || points > 最大单次点数 || count <= 0 || count > 最大单次生成点卡数量 {
-		return "", nil, fmt.Errorf("点数必须在1至%d之间，数量必须在1至%d之间", 最大单次点数, 最大单次生成点卡数量)
+	if points < 0 || points > 最大单次点数 || count <= 0 || count > 最大单次生成点卡数量 {
+		return "", nil, fmt.Errorf("点数必须在0至%d之间，数量必须在1至%d之间", 最大单次点数, 最大单次生成点卡数量)
 	}
 	if _, valid := 规范化可显示文本(notes, 500); !valid {
 		return "", nil, fmt.Errorf("卡密备注不能包含控制字符且不能超过500个字符")
@@ -749,12 +750,19 @@ func 锁定发卡软件(tx *gorm.DB, admin string, softwareID int) error {
 
 // 创建点卡并记录初始流水只负责持久化已经校验过的点卡。调用方应把它放在自己的
 // 事务中，保证卡密和对应的初始流水同时成功或失败。
-func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, now time.Time) error {
+func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, agentDeductionMode string, now time.Time) error {
 	// 准备阶段已经完成校验；这里再次去除首尾空格，确保管理员入口和
 	// 代理入口无论调用路径如何，落库内容保持一致。
 	var valid bool
 	if notes, valid = 规范化可显示文本(notes, 500); !valid {
 		return fmt.Errorf("卡密备注格式不正确")
+	}
+	mode, err := 规范化点卡代扣模式(agentDeductionMode)
+	if err != nil {
+		return err
+	}
+	if agentID <= 0 {
+		mode = 点卡代扣模式_跟随总开关
 	}
 	rows := make([]点卡表样式, 0, len(cards))
 	ledgers := make([]点数流水, 0, len(cards))
@@ -763,8 +771,8 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 		remark += fmt.Sprintf("；渠道合伙人ID=%d", agentID)
 	}
 	for _, card := range cards {
-		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID, AgentDeductionMode: 点卡代扣模式_跟随总开关})
-		// 初始余额也作为一条补点流水保存，便于审计同名卡重新生成后的新旧记录。
+		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID, AgentDeductionMode: mode})
+		// 生成是流水起点，初始点数为 0 也保存一条补点记录；日常扣费仍只记录真实变动。
 		ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, EventType: 点数事件_补点, Change: points, BalanceBefore: 0, BalanceAfter: points, Remark: remark, CreatedAt: now})
 	}
 	// 按估算行大小控制每条 INSERT，既减少上千次数据库往返，也避免大配置
@@ -788,7 +796,7 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 // 生成并保存点卡卡密采用全量事务：任意卡密重复或数据库错误都会全部回滚，
 // 避免管理员得到数量不确定的半成功结果。代理生成点卡时会复用同一
 // 套准备/创建函数，并把渠道余额扣减放进同一事务。
-func 生成并保存点卡卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) ([]string, error) {
+func 生成并保存点卡卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string, agentDeductionMode string) ([]string, error) {
 	tableName, cards, err := 准备生成点卡卡密(admin, softwareID, points, count, customCards, random, notes, config)
 	if err != nil {
 		return nil, err
@@ -797,7 +805,7 @@ func 生成并保存点卡卡密(admin string, agentID int, softwareID int, poin
 		if err := 锁定发卡软件(tx, admin, softwareID); err != nil {
 			return err
 		}
-		if err := 创建点卡并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, time.Now()); err != nil {
+		if err := 创建点卡并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, agentDeductionMode, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		return nil
@@ -829,7 +837,7 @@ func 管理员_添加点卡卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	cards, err := 生成并保存点卡卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+	cards, err := 生成并保存点卡卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent, 点卡代扣模式_跟随总开关)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -1250,6 +1258,77 @@ func 修改点卡_批量(admin string, agentID int, cards []string, state int) (
 		}
 	}
 	return success, failed, nil
+}
+
+// 批量修改点卡代扣模式只接受当前账号自己的卡；整批一起提交，避免界面显示
+// 同一设置时实际只有部分生效。缓存同步放在事务外，不持有卡行锁等待心跳锁。
+func 批量修改点卡代扣模式(admin string, agentID int, cards []string, mode string) (int, error) {
+	if agentID <= 0 {
+		return 0, fmt.Errorf("只能设置自己名下的点卡")
+	}
+	tableName, err := 点卡数据表名(admin)
+	if err != nil {
+		return 0, err
+	}
+	if len(cards) == 0 || len(cards) > 1000 {
+		return 0, fmt.Errorf("单次操作卡密数量必须在1至1000之间")
+	}
+	if strings.TrimSpace(mode) == "" {
+		return 0, fmt.Errorf("请选择代扣方式")
+	}
+	mode, err = 规范化点卡代扣模式(mode)
+	if err != nil {
+		return 0, err
+	}
+	unique := make([]string, 0, len(cards))
+	seen := make(map[string]struct{}, len(cards))
+	for _, raw := range cards {
+		card := strings.ToLower(strings.TrimSpace(raw))
+		if !卡密格式规则.MatchString(card) {
+			return 0, fmt.Errorf("卡密格式不正确")
+		}
+		if _, exists := seen[card]; !exists {
+			seen[card] = struct{}{}
+			unique = append(unique, card)
+		}
+	}
+	sort.Strings(unique)
+	// 先确认整批归属，再同步缓存，越权请求不会触碰其他账号的会话。
+	var count int64
+	if err := db.Table(tableName).Where("agent_id = ? AND card IN ?", agentID, unique).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("检查卡密权限失败")
+	}
+	if count != int64(len(unique)) {
+		return 0, fmt.Errorf("选中的卡密不存在或不属于当前账号，请刷新列表")
+	}
+	if err := 批量同步并删除点卡心跳缓存(admin, unique); err != nil {
+		return 0, err
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var rows []点卡表样式
+		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("card").Where("agent_id = ? AND card IN ?", agentID, unique).Order("card ASC").Find(&rows)
+		if query.Error != nil {
+			return fmt.Errorf("读取点卡失败")
+		}
+		// 锁内复查，防止预检查后卡密被并发删除或归属发生变化。
+		if len(rows) != len(unique) {
+			return fmt.Errorf("选中的卡密已变化，请刷新列表")
+		}
+		// 重复设置相同模式也视为成功，不以数据库实际变更行数判断结果。
+		if err := tx.Table(tableName).Where("agent_id = ? AND card IN ?", agentID, unique).
+			Update("point_card_auto_deduct_mode", mode).Error; err != nil {
+			return fmt.Errorf("保存代扣方式失败")
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := 批量同步并删除点卡心跳缓存(admin, unique); err != nil {
+		日志("log/启动记录.txt", "批量设置点卡代扣后同步心跳缓存失败:"+err.Error())
+	}
+	return len(unique), nil
 }
 
 func 管理员_批量修改点卡状态(ctx *gin.Context) {
