@@ -57,6 +57,7 @@ const 管理员菜单 = [
   { path: '/about', label: '关于', icon: 'InfoFilled' }
 ]
 const 代理菜单 = [
+  { path: '/software', label: '软件设置', icon: 'Iphone' },
   { path: '/card', label: '点卡', icon: 'Postcard' },
   { path: '/duration-card', label: '时长卡', icon: 'Timer' },
   { path: '/duration-recharge-card', label: '充值卡', icon: 'CreditCard' },

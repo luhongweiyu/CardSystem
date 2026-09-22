@@ -7,33 +7,34 @@
         <p>{{ 注册界面 ? '创建管理员账号' : '请选择账号类型登录' }}</p>
       </div>
 
-      <el-form label-position="top" @submit.prevent>
+      <el-form label-position="top" @submit.prevent="提交登录">
         <el-form-item label="账号">
-          <el-input v-model="账号" maxlength="32" autocomplete="username" @keyup.enter="提交登录" />
+          <el-input v-model="账号" name="username" maxlength="32" autocomplete="username" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input
             v-model="密码"
             type="password"
+            name="password"
             show-password
             maxlength="72"
-            autocomplete="current-password"
-            @keyup.enter="提交登录"
+            :autocomplete="注册界面 ? 'new-password' : 'current-password'"
           />
         </el-form-item>
         <el-form-item v-if="注册界面" label="确认密码">
-          <el-input v-model="确认密码" type="password" show-password maxlength="72" @keyup.enter="提交注册" />
+          <el-input v-model="确认密码" name="confirm-password" type="password" autocomplete="new-password" show-password maxlength="72" />
         </el-form-item>
 
         <div class="按钮行" v-if="!注册界面">
-          <el-button type="primary" @click="登录(false)">管理员登录</el-button>
-          <el-button type="success" @click="登录(true)">小伙伴登录</el-button>
+          <el-button type="primary" :class="{ 默认登录: !当前登录类型是代理 }" :plain="当前登录类型是代理" @click="登录(false)">管理员登录</el-button>
+          <el-button type="success" :class="{ 默认登录: 当前登录类型是代理 }" :plain="!当前登录类型是代理" @click="登录(true)">小伙伴登录</el-button>
         </div>
         <div class="按钮行" v-else>
-          <el-button type="primary" @click="提交注册">确认注册</el-button>
+          <el-button type="primary" native-type="submit">确认注册</el-button>
           <el-button @click="切换注册">返回登录</el-button>
         </div>
         <el-button v-if="!注册界面" link class="注册链接" @click="切换注册">注册管理员账号</el-button>
+        <button v-if="!注册界面" type="submit" hidden>登录</button>
       </el-form>
     </el-card>
   </div>
@@ -54,16 +55,11 @@ const { 账号, 密码, 登录状态, token, 用户id, api次数, 是代理账�
 const 加载中 = ref(false)
 const 注册界面 = ref(false)
 const 确认密码 = ref('')
-// 记住最近一次选择的账号类型，让回车提交和按钮提交保持一致。
-const 当前登录类型是代理 = ref(false)
+// 只记住成功登录的身份，输错密码或误点另一按钮不会改变默认身份。
+const 当前登录类型是代理 = ref(Cookies.get('login_role') === 'agent')
 
 const 清空账号信息 = function () {
-  Object.keys(账号信息.value).forEach((key) => delete 账号信息.value[key])
-  token.value = ''
-  登录状态.value = false
-  用户id.value = ''
-  api次数.value = 0
-  是代理账号.value = false
+  stores.清理登录状态()
 }
 
 const 切换注册 = function () {
@@ -72,14 +68,18 @@ const 切换注册 = function () {
 }
 
 const 保存登录结果 = function (data, agent) {
+  stores.清理公共缓存()
   账号.value = data.name || 账号.value
   token.value = data.token || ''
   用户id.value = data.id || ''
   api次数.value = data.api || 0
   是代理账号.value = agent
   账号信息.value = { ...data }
+  stores.登录到期时间 = data.expires_at || ''
   登录状态.value = true
   Cookies.set('name', 账号.value, { expires: 61, sameSite: 'Lax' })
+  Cookies.set('login_role', agent ? 'agent' : 'admin', { expires: 61, sameSite: 'Lax' })
+  当前登录类型是代理.value = agent
   Cookies.remove('password')
   密码.value = ''
   确认密码.value = ''
@@ -88,7 +88,7 @@ const 保存登录结果 = function (data, agent) {
 }
 
 const 登录 = function (agent) {
-  当前登录类型是代理.value = agent
+  if (加载中.value) return
   账号.value = (账号.value || '').trim()
   if (!账号.value || !密码.value) {
     ElMessage.error('请输入账号和密码')
@@ -117,10 +117,12 @@ const 登录 = function (agent) {
 }
 
 const 提交登录 = function () {
-  登录(当前登录类型是代理.value)
+  if (注册界面.value) 提交注册()
+  else 登录(当前登录类型是代理.value)
 }
 
 const 提交注册 = function () {
+  if (加载中.value) return
   账号.value = (账号.value || '').trim()
   if (密码.value !== 确认密码.value) {
     ElMessage.error('两次输入的密码不一致')
@@ -154,6 +156,7 @@ const 提交注册 = function () {
 }
 
 账号.value = Cookies.get('name') || ''
+Cookies.remove('password')
 密码.value = ''
 </script>
 
@@ -190,9 +193,18 @@ const 提交注册 = function () {
 .按钮行 {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 .按钮行 .el-button {
   flex: 1;
+  margin-left: 0;
+  min-width: 0;
+}
+.按钮行 .默认登录 {
+  flex: 1.5;
+  height: 46px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .注册链接 {
   width: 100%;

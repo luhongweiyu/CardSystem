@@ -2,10 +2,13 @@
   <section class="页面" v-loading="加载中">
     <div class="页面标题行">
       <div>
-        <h2>软件</h2>
-        <p class="说明">客户端按分钟选择授权时长，实际扣点价格始终由服务端决定。</p>
+        <h2>{{ 是代理账号 ? '软件设置' : '软件管理' }}</h2>
+        <p class="说明">{{ 是代理账号 ? '查看管理员配置的软件和时长卡价格，设置自己的点卡代扣总开关。' : '客户端按分钟选择授权时长，实际扣点价格始终由服务端决定。' }}</p>
       </div>
-      <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
+      <div>
+        <el-button :loading="加载中" :disabled="代理代扣.保存中" @click="刷新页面">刷新</el-button>
+        <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
+      </div>
     </div>
 
     <el-table :data="软件列表" border stripe row-key="ID">
@@ -30,6 +33,9 @@
       <el-table-column label="暂停扣除" width="120">
         <template #default="scope">{{ scope.row.pause_deduct_minutes || 0 }} 分钟</template>
       </el-table-column>
+      <el-table-column v-if="是代理账号" label="点卡每点价格" width="130">
+        <template #default="scope">{{ 代理软件单价(scope.row.ID) }}</template>
+      </el-table-column>
       <el-table-column prop="Bulletin" label="公告" min-width="220" show-overflow-tooltip />
       <el-table-column v-if="!是代理账号" label="操作" width="230" fixed="right">
         <template #default="scope">
@@ -40,14 +46,70 @@
       </el-table-column>
     </el-table>
 
-    <el-card v-if="是代理账号" shadow="never" class="代理提示">
-      渠道合伙人只能使用管理员配置的软件和点数价格。
-    </el-card>
+    <div v-if="是代理账号" class="代理设置区">
+      <el-card shadow="never" v-loading="代理代扣.加载中">
+        <div class="代理设置标题">
+          <div>
+            <h3>点卡代扣设置</h3>
+            <p class="设置说明">点卡余额不足时，是否允许按代理价格扣除自己的代理余额。</p>
+          </div>
+          <el-switch
+            v-model="代理代扣.point_card_auto_deduct"
+            active-text="已开启"
+            inactive-text="已关闭"
+            :loading="代理代扣.保存中"
+            :disabled="代理代扣.加载中"
+            @change="切换代理代扣"
+          />
+        </div>
+        <div class="代理设置状态">
+          <span>当前余额：{{ stores.账号信息.balance ?? 0 }} 点</span>
+          <span>管理员欠费权限：{{ 代理代扣.allow_point_debt ? '已允许' : '未允许' }}</span>
+          <span>最大欠费额度：{{ 代理代扣.point_debt_limit }} 点</span>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" v-loading="代理价格加载中">
+        <div class="代理设置标题">
+          <div>
+            <h3>时长卡价格</h3>
+            <p class="设置说明">精确命中锚点使用原价，其他时长按相邻锚点规则计价。</p>
+          </div>
+          <el-button size="small" @click="查询代理价格">刷新价格</el-button>
+        </div>
+        <el-form :inline="true" @submit.prevent>
+          <el-form-item label="软件">
+            <el-select v-model="代理价格软件" placeholder="全部软件" style="width: 220px">
+              <el-option label="全部软件" :value="0" />
+              <el-option v-for="item in 代理价格软件列表" :key="item.ID" :label="item.Software" :value="item.ID" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <el-table v-if="当前代理价格.length" :data="当前代理价格" border stripe>
+          <el-table-column label="软件" min-width="180">
+            <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
+          </el-table-column>
+          <el-table-column label="卡面时长" width="180">
+            <template #default="scope">{{ 时长卡时长文本(scope.row.duration_minutes) }}</template>
+          </el-table-column>
+          <el-table-column label="每张价格" width="160">
+            <template #default="scope">{{ Number(scope.row.price).toFixed(2) }} 点</template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="180">
+            <template #default="scope">{{ scope.row.duration_minutes === 最大时长分钟 ? '永久卡价格锚点' : '可用于区间计价' }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="管理员尚未配置可用的时长卡价格" />
+      </el-card>
+    </div>
 
     <section v-if="!是代理账号" class="代理区">
       <div class="子标题行">
         <h3>渠道合伙人</h3>
-        <el-button type="primary" plain @click="打开代理创建">新增渠道合伙人</el-button>
+        <div>
+          <el-button plain @click="打开代理时长价格总览">时长价格总览</el-button>
+          <el-button type="primary" plain @click="打开代理创建">新增渠道合伙人</el-button>
+        </div>
       </div>
       <el-table :data="代理列表" border stripe>
         <el-table-column prop="id" label="ID" width="70" />
@@ -57,7 +119,7 @@
           <template #default="scope">
             <el-button link type="primary" @click="编辑代理(scope.row)">计费方案与密码</el-button>
             <el-button link type="warning" @click="打开代理时长价格(scope.row)">时长卡价格</el-button>
-            <el-button link type="success" @click="打开代理充值(scope.row)">充值点数</el-button>
+            <el-button link type="success" @click="打开代理充值(scope.row)">调整余额</el-button>
             <el-button link type="danger" @click="删除代理(scope.row)">删除</el-button>
           </template>
         </el-table-column>
@@ -118,7 +180,7 @@
       </el-form>
       <template #footer>
         <el-button @click="软件框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="保存软件">保存</el-button>
+        <el-button type="primary" :loading="软件框.加载中" @click="保存软件">保存</el-button>
       </template>
     </el-dialog>
 
@@ -301,23 +363,70 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="代理充值框.显示" title="给渠道合伙人充值" width="420px" destroy-on-close>
+    <el-dialog v-model="代理时长价格总览框.显示" title="时长卡价格总览" width="1100px" destroy-on-close>
+      <el-form :inline="true" :disabled="代理时长价格总览框.加载中" @submit.prevent>
+        <el-form-item label="代理">
+          <el-select v-model="代理时长价格总览框.agent_id" clearable placeholder="全部代理" style="width: 190px" @change="查询代理时长价格总览">
+            <el-option label="全部代理" :value="0" />
+            <el-option v-for="item in 代理列表" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="软件">
+          <el-select v-model="代理时长价格总览框.software" clearable placeholder="全部软件" style="width: 190px" @change="查询代理时长价格总览">
+            <el-option label="全部软件" :value="0" />
+            <el-option v-for="item in 软件列表" :key="item.ID" :label="item.Software" :value="item.ID" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button @click="查询代理时长价格总览">刷新</el-button>
+        </el-form-item>
+      </el-form>
+      <el-table v-loading="代理时长价格总览框.加载中" :data="代理时长价格总览框.rows" row-key="key" border>
+        <el-table-column prop="agent_name" label="代理" width="180" />
+        <el-table-column prop="software_name" label="软件" width="180" />
+        <el-table-column label="价格锚点" min-width="620">
+          <template #default="scope">
+            <template v-if="scope.row.prices.length">
+              <div v-for="(price, priceIndex) in scope.row.prices" :key="price.key" class="总览价格">
+                <el-input-number v-model="price.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" size="small" controls-position="right" />
+                <span>({{ 时长卡时长文本(price.duration_minutes) }})：</span>
+                <el-input-number v-model="price.price" :min="0.01" :max="最大代理价格" :precision="2" size="small" controls-position="right" />
+                <span>点</span>
+                <el-switch v-model="price.enabled" size="small" />
+                <el-button link type="danger" @click="删除总览锚点(scope.row, priceIndex)">删除</el-button>
+              </div>
+            </template>
+            <span v-else class="弱文本">尚未配置</span>
+            <div>
+              <el-button size="small" plain :disabled="scope.row.保存中 || scope.row.prices.length >= 50" @click="新增总览锚点(scope.row)">新增锚点</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80">
+          <template #default="scope">
+            <el-button link type="primary" :loading="scope.row.保存中" @click="保存总览价格(scope.row)">保存</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!代理时长价格总览框.rows.length && !代理时长价格总览框.加载中" description="暂无时长卡价格" />
+    </el-dialog>
+
+    <el-dialog v-model="代理充值框.显示" title="调整渠道合伙人余额" width="420px" destroy-on-close>
       <p>账号：{{ 代理充值框.name }}</p>
       <el-form label-width="90px">
-        <el-form-item label="点数">
+        <el-form-item label="变更点数">
           <el-input-number
             v-model="代理充值框.amount"
-            :min="1"
-            :max="1000000000"
             :precision="0"
             controls-position="right"
           />
         </el-form-item>
+        <p class="提示文字">正数为充值，负数为扣款，0表示不变更，余额允许变为负数。</p>
         <el-form-item label="备注"><el-input v-model="代理充值框.note" maxlength="200" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="代理充值框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="代理充值">确认充值</el-button>
+        <el-button type="primary" :loading="代理充值框.保存中" @click="代理充值">确认调整</el-button>
       </template>
     </el-dialog>
   </section>
@@ -326,22 +435,34 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import {
+  格式化时长 as 时长卡时长文本,
+  最大计费周期分钟,
+  最大时长分钟,
+  最小计费周期分钟,
+  最小时长分钟
+} from '../utils/时长工具.js'
 
-const 最小计费周期分钟 = 5
-const 最大计费周期分钟 = 3 * 24 * 60
-const 最小时长分钟 = 5
-const 最大时长分钟 = 36500 * 24 * 60
 const 最大代理价格 = 1000000000
 const 最大代理欠费额度 = 1000000000
 
 const stores = use登录状态Store()
 const post = stores.post
+const { 软件列表, 代理列表, 代理时长价格列表: 代理价格列表 } = storeToRefs(stores)
 const 是代理账号 = computed(() => Boolean(stores.是代理账号))
 const 加载中 = ref(false)
-const 软件列表 = ref([])
-const 代理列表 = ref([])
+const 代理代扣 = reactive({
+  加载中: false,
+  保存中: false,
+  point_card_auto_deduct: false,
+  allow_point_debt: false,
+  point_debt_limit: 0
+})
+const 代理价格加载中 = ref(false)
+const 代理价格软件 = ref(0)
 const 软件框 = reactive({
   显示: false,
   加载中: false,
@@ -384,7 +505,18 @@ const 代理时长价格框 = reactive({
   software: 0,
   rows: []
 })
-const 代理充值框 = reactive({ 显示: false, id: 0, name: '', amount: 100, note: '' })
+const 代理时长价格总览框 = reactive({ 显示: false, 加载中: false, agent_id: 0, software: 0, rows: [] })
+const 代理充值框 = reactive({ 显示: false, 保存中: false, id: 0, name: '', amount: 100, note: '' })
+
+const 代理价格软件列表 = computed(() => {
+  const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
+  return 软件列表.value.filter((item) => ids.has(Number(item.ID)))
+})
+const 当前代理价格 = computed(() => {
+  return [...代理价格列表.value]
+    .filter((item) => !代理价格软件.value || Number(item.software) === Number(代理价格软件.value))
+    .sort((a, b) => Number(a.software) - Number(b.software) || Number(a.duration_minutes) - Number(b.duration_minutes))
+})
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 周期文本 = function (seconds) {
@@ -395,26 +527,80 @@ const 周期文本 = function (seconds) {
   if (value % 60 === 0) return `${value / 60} 分钟`
   return `${value} 秒`
 }
-const 时长卡时长文本 = function (minutes) {
-  const value = Number(minutes || 0)
-  if (!value) return '-'
-  if (value === 最大时长分钟) return '永久卡'
-  if (value % (24 * 60) === 0) return `${value / (24 * 60)} 天`
-  if (value % 60 === 0) return `${value / 60} 小时`
-  return `${value} 分钟`
+const 代理软件单价 = function (id) {
+  const prices = stores.账号信息.prices || {}
+  const value = Number(prices[String(id)] ?? prices[id] ?? 0)
+  return Number.isFinite(value) && value > 0 ? `${value.toFixed(2)} 点` : '未授权'
 }
-const 查询软件 = function () {
-  return post('/user_query_soft_list', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
-    软件列表.value = res.data.data || []
-  })
+const 软件名称 = function (id) {
+  return 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
 }
-const 查询代理 = function () {
+const 同步代理代扣设置 = function (data = {}) {
+  if (data.point_card_auto_deduct !== undefined) {
+    代理代扣.point_card_auto_deduct = Boolean(data.point_card_auto_deduct)
+  }
+  if (data.allow_point_debt !== undefined) {
+    代理代扣.allow_point_debt = Boolean(data.allow_point_debt)
+  }
+  if (data.point_debt_limit !== undefined) {
+    代理代扣.point_debt_limit = Math.max(0, Number(data.point_debt_limit) || 0)
+  }
+}
+const 切换代理代扣 = function (value) {
+  if (代理代扣.保存中) return
+  const previous = !Boolean(value)
+  代理代扣.保存中 = true
+  return post('/point_card/settings', { point_card_auto_deduct: Boolean(value) })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存点卡代扣设置失败')
+      同步代理代扣设置(stores.账号信息)
+      ElMessage.success('点卡代扣设置已保存')
+    })
+    .catch((error) => {
+      代理代扣.point_card_auto_deduct = previous
+      显示错误(error)
+    })
+    .finally(() => {
+      代理代扣.保存中 = false
+    })
+}
+const 查询软件 = function (force = false) {
+  代理代扣.加载中 = 是代理账号.value
+  return stores.查询软件列表(force)
+    .then(() => {
+      if (是代理账号.value) {
+        同步代理代扣设置(stores.账号信息)
+      }
+    })
+    .catch(显示错误)
+    .finally(() => {
+      代理代扣.加载中 = false
+    })
+}
+const 查询代理 = function (force = false) {
   if (是代理账号.value) return Promise.resolve()
-  return post('/查询代理账号', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询渠道合伙人失败')
-    代理列表.value = res.data.data || []
-  })
+  return stores.查询代理列表(force)
+}
+const 刷新页面 = async function () {
+  if (加载中.value || 代理代扣.保存中) return
+  加载中.value = true
+  try {
+    await Promise.all([查询软件(true), 是代理账号.value ? 查询代理价格(true) : 查询代理(true)])
+  } catch (error) {
+    显示错误(error)
+  } finally {
+    加载中.value = false
+  }
+}
+const 查询代理价格 = function (force = false) {
+  if (代理价格加载中.value) return Promise.resolve()
+  if (!是代理账号.value) return Promise.resolve()
+  代理价格加载中.value = true
+  return stores.查询代理时长价格列表(force)
+    .catch(显示错误)
+    .finally(() => {
+      代理价格加载中.value = false
+    })
 }
 const 打开软件编辑 = function () {
   Object.assign(软件框, {
@@ -443,6 +629,7 @@ const 编辑软件 = function (row) {
   })
 }
 const 保存软件 = function () {
+  if (软件框.加载中) return
   if (!软件框.software.trim()) {
     ElMessage.warning('请输入软件名称')
     return
@@ -495,7 +682,7 @@ const 保存软件 = function () {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存软件失败')
       ElMessage.success('保存成功')
       软件框.显示 = false
-      return 查询软件()
+      return 查询软件(true)
     })
     .catch(显示错误)
     .finally(() => {
@@ -510,7 +697,7 @@ const 删除软件 = function (row) {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除软件失败')
       ElMessage.success('删除成功')
-      查询软件()
+      查询软件(true)
     })
     .catch((error) => {
       if (error !== 'cancel' && error !== 'close') 显示错误(error)
@@ -577,7 +764,7 @@ const 保存价格 = function () {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存价格失败')
       ElMessage.success('保存成功')
       价格编辑框.显示 = false
-      return Promise.all([查询价格(), 查询软件()])
+      return Promise.all([查询价格(), 查询软件(true)])
     })
     .catch(显示错误)
 }
@@ -609,7 +796,7 @@ const 创建代理 = function () {
       ElMessage.success('创建成功')
       代理框.显示 = false
       Object.assign(代理框, { name: '', password: '' })
-      查询代理()
+      查询代理(true)
     })
     .catch(显示错误)
 }
@@ -679,6 +866,98 @@ const 查询代理时长价格 = function () {
       代理时长价格框.加载中 = false
     })
 }
+const 打开代理时长价格总览 = function () {
+  Object.assign(代理时长价格总览框, { 显示: true, 加载中: false, agent_id: 0, software: 0, rows: [] })
+  查询代理时长价格总览()
+}
+const 查询代理时长价格总览 = async function () {
+  if (代理时长价格总览框.加载中) return
+  const agents = 代理列表.value.filter((item) => !代理时长价格总览框.agent_id || Number(item.id) === Number(代理时长价格总览框.agent_id))
+  const softwares = 软件列表.value.filter((item) => !代理时长价格总览框.software || Number(item.ID) === Number(代理时长价格总览框.software))
+  代理时长价格总览框.加载中 = true
+  try {
+    const rows = []
+    // 接口支持一次返回该代理全部软件价格；最多并发四个代理，避免代理数×软件数的请求风暴。
+    for (let start = 0; start < agents.length; start += 4) {
+      const groups = await Promise.all(agents.slice(start, start + 4).map(async (agent) => {
+          const res = await post('/duration_card/agent_price/list', { agent_id: agent.id, software: 0 })
+          if (!res.data?.state) throw new Error(res.data?.msg || '查询时长卡价格总览失败')
+          return softwares.map((software) => ({
+            key: `${agent.id}-${software.ID}`,
+            agent_id: Number(agent.id),
+            agent_name: agent.name,
+            software: Number(software.ID),
+            software_name: software.Software,
+            保存中: false,
+            prices: (res.data.data || []).filter((item) => Number(item.software) === Number(software.ID)).map((item) => ({
+              key: `price-${item.id}`,
+              id: Number(item.id || 0),
+              duration_minutes: Number(item.duration_minutes || 0),
+              price: Number(item.price || 0),
+              enabled: Boolean(item.enabled)
+            }))
+          }))
+      }))
+      rows.push(...groups.flat())
+    }
+    代理时长价格总览框.rows = rows
+  } catch (error) {
+    显示错误(error)
+  } finally {
+    代理时长价格总览框.加载中 = false
+  }
+}
+const 新增总览锚点 = function (row) {
+  if (row.保存中 || row.prices.length >= 50) return
+  row.prices.push({
+    key: `new-${Date.now()}-${row.prices.length}`,
+    id: 0,
+    duration_minutes: 1440,
+    price: 1,
+    enabled: true
+  })
+}
+const 删除总览锚点 = function (row, index) {
+  if (row.保存中) return
+  ElMessageBox.confirm(`确定删除${时长卡时长文本(row.prices[index].duration_minutes)}价格锚点？`, '确认删除', { type: 'warning' })
+    .then(() => row.prices.splice(index, 1))
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+}
+const 保存总览价格 = function (row) {
+  if (row.保存中) return
+  const seen = new Set()
+  for (const price of row.prices) {
+    if (!Number.isInteger(price.duration_minutes) || price.duration_minutes < 最小时长分钟 || price.duration_minutes > 最大时长分钟) {
+      ElMessage.warning('卡面时长必须为5分钟至36500天的整数')
+      return
+    }
+    if (seen.has(price.duration_minutes)) {
+      ElMessage.warning('卡面时长不能重复')
+      return
+    }
+    if (!Number.isFinite(price.price) || price.price <= 0 || price.price > 最大代理价格 || Math.abs(price.price * 100 - Math.round(price.price * 100)) > 1e-8) {
+      ElMessage.warning('代理价格必须大于0且最多保留两位小数')
+      return
+    }
+    seen.add(price.duration_minutes)
+  }
+  row.保存中 = true
+  post('/duration_card/agent_price/save', {
+    agent_id: row.agent_id,
+    software: row.software,
+    prices: row.prices.map((price) => ({ duration_minutes: price.duration_minutes, price: Number(price.price), enabled: Boolean(price.enabled) }))
+  })
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '保存时长卡价格失败')
+      ElMessage.success('保存成功')
+    })
+    .catch(显示错误)
+    .finally(() => {
+      row.保存中 = false
+    })
+}
 const 新增代理时长价格 = function () {
   代理时长价格框.rows.push({
     id: 0,
@@ -712,6 +991,7 @@ const 删除代理时长价格 = function (index, row) {
     })
 }
 const 保存代理时长价格 = function () {
+  if (代理时长价格框.保存中 || 代理时长价格框.加载中) return
   if (!代理时长价格框.agent_id || !代理时长价格框.software) {
     ElMessage.warning('请选择软件')
     return
@@ -790,7 +1070,7 @@ const 保存代理 = function () {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存渠道合伙人失败')
       ElMessage.success('保存成功')
       代理编辑框.显示 = false
-      查询代理()
+      查询代理(true)
     })
     .catch(显示错误)
 }
@@ -798,18 +1078,23 @@ const 打开代理充值 = function (row) {
   Object.assign(代理充值框, { 显示: true, id: row.id, name: row.name, amount: 100, note: '' })
 }
 const 代理充值 = function () {
-  if (!代理充值框.amount || 代理充值框.amount < 1) {
-    ElMessage.warning('请输入充值点数')
-    return
-  }
-  post('/代理账号充值', { id: 代理充值框.id, amount: 代理充值框.amount, note: 代理充值框.note })
+  if (代理充值框.保存中) return
+  const request = { id: 代理充值框.id, amount: 代理充值框.amount, note: 代理充值框.note }
+  代理充值框.保存中 = true
+  ElMessageBox.confirm(`确定调整 ${request.amount} 点？`, '确认余额调整', {
+    type: 'warning'
+  })
+    .then(() => post('/代理账号充值', request))
     .then((res) => {
-      if (!res.data?.state) throw new Error(res.data?.msg || '充值失败')
-      ElMessage.success('充值成功')
+      if (!res.data?.state) throw new Error(res.data?.msg || '余额调整失败')
+      ElMessage.success('余额调整成功')
       代理充值框.显示 = false
-      查询代理()
+      查询代理(true)
     })
-    .catch(显示错误)
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
+    .finally(() => { 代理充值框.保存中 = false })
 }
 const 删除代理 = function (row) {
   ElMessageBox.confirm(`确定删除渠道合伙人“${row.name}”？已生成的点卡和流水仅保留最近30天。`, '确认删除', {
@@ -819,7 +1104,7 @@ const 删除代理 = function (row) {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
       ElMessage.success('删除成功')
-      查询代理()
+      查询代理(true)
     })
     .catch((error) => {
       if (error !== 'cancel' && error !== 'close') 显示错误(error)
@@ -827,7 +1112,11 @@ const 删除代理 = function (row) {
 }
 
 onMounted(() => {
-  Promise.all([查询软件(), 查询代理()]).catch(() => {})
+  if (是代理账号.value) {
+    Promise.all([查询软件(), 查询代理价格()]).catch(() => {})
+  } else {
+    Promise.all([查询软件(), 查询代理()]).catch(() => {})
+  }
 })
 </script>
 
@@ -836,7 +1125,7 @@ onMounted(() => {
   padding: 16px;
   color: #e6eaf2;
 }
-.标题行,
+.页面标题行,
 .子标题行,
 .价格标题 {
   display: flex;
@@ -856,9 +1145,29 @@ h3 {
 .代理区 {
   margin-top: 24px;
 }
-.代理提示 {
-  margin-top: 20px;
+.代理设置区 {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+.代理设置标题 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.设置说明 {
+  margin: 0;
   color: #aeb6c3;
+  font-size: 13px;
+}
+.代理设置状态 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 12px;
+  color: #aeb6c3;
+  font-size: 13px;
 }
 .价格标题 {
   margin-bottom: 12px;

@@ -20,3 +20,51 @@ input,
 textarea {
   font: inherit;
 }
+
+/* 管理端弹窗使用了固定宽度，窄屏时限制最大宽度并让长内容在弹窗内部滚动。 */
+.el-overlay .el-dialog {
+  max-width: calc(100vw - 24px);
+}
+
+.el-dialog__body {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+}
+
+.el-dialog .el-form-item__content {
+  min-width: 0;
+}
+
+.el-dialog .el-select,
+.el-dialog .el-input,
+.el-dialog .el-input-number {
+  max-width: 100%;
+}
+
+.el-pagination {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.el-dialog .el-descriptions__content {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .el-overlay .el-dialog {
+    margin-top: 12px;
+  }
+  .el-dialog .el-form-item {
+    display: block;
+  }
+  .el-dialog .el-form-item__label {
+    justify-content: flex-start;
+    width: auto !important;
+  }
+  .el-dialog .el-form-item__content {
+    margin-left: 0 !important;
+  }
+  .页面标题行, .标题行, .批量操作, .操作行 {
+    flex-wrap: wrap;
+  }
+}

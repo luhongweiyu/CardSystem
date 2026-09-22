@@ -331,6 +331,12 @@ func 启动网络() error {
 	legacyCard.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
 	legacyCard.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
 
+	// 更早的旧客户端只调用 /card/query 做启动前的时长卡状态检查，
+	// 不会提交 timestamp/sign。单独使用访客只读中间件，避免把新签名协议
+	// 或卡密登录流程强加给它；业务仍严格读取独立时长卡表。
+	legacyCardRead := router.Group("/card", visitor_验证对应id)
+	legacyCardRead.Match([]string{"POST", "GET"}, "/query", 旧客户端查询时长卡)
+
 	// 访客接口保留旧中文路径，同时提供含义明确的新路径；两套路径调用
 	// 同一实现，不会形成两份业务规则。
 	visitor := router.Group("/visitor", visitor_验证对应id)

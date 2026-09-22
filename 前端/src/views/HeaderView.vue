@@ -25,7 +25,7 @@ import Cookies from 'js-cookie'
 import { use登录状态Store } from '../stores/登录状态.js'
 
 const stores = use登录状态Store()
-const { 导航开关, 账号, 密码, token, 登录状态, 用户id, api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
+const { 导航开关, 账号, token, 用户id, api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
 
 const 访客链接 = computed(() => {
   const centerID = 是代理账号.value ? 账号信息.value.center_id : 用户id.value
@@ -38,13 +38,7 @@ const 开关导航 = function () {
 
 const 清理本地登录状态 = function () {
   Cookies.remove('password')
-  密码.value = ''
-  token.value = ''
-  登录状态.value = false
-  用户id.value = ''
-  api次数.value = 0
-  是代理账号.value = false
-  账号信息.value = {}
+  stores.清理登录状态()
 }
 
 const 退出登录 = function () {

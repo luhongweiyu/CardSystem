@@ -1,4 +1,5 @@
 <script setup>
+import { onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from './stores/登录状态.js'
@@ -8,6 +9,9 @@ import Login from './views/Login.vue'
 
 const stores = use登录状态Store()
 const { 登录状态 } = storeToRefs(stores)
+// 后台标签页的定时器可能被浏览器延迟，回到页面时再核对一次有效期。
+onMounted(() => document.addEventListener('visibilitychange', stores.检查登录到期))
+onUnmounted(() => document.removeEventListener('visibilitychange', stores.检查登录到期))
 </script>
 
 <template>
@@ -51,6 +55,7 @@ body,
   overflow: hidden;
 }
 .内容 {
+  min-width: 0;
   padding: 0;
   overflow: auto;
 }

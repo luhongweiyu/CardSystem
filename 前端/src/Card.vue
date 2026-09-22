@@ -7,10 +7,10 @@
         <el-radio-button label="point">点卡</el-radio-button>
         <el-radio-button label="duration">时长卡</el-radio-button>
       </el-radio-group>
-      <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情">
+      <el-input v-model="卡密" clearable placeholder="请输入卡密" @keyup.enter="查询详情()">
         <template #prepend>卡密</template>
       </el-input>
-      <el-button class="查询按钮" type="primary" @click="查询详情">查询</el-button>
+      <el-button class="查询按钮" type="primary" @click="查询详情()">查询</el-button>
     </el-card>
 
     <el-card v-if="详情?.mode === 'point'" class="结果卡片" shadow="never">
@@ -35,7 +35,7 @@
         <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
         <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
         <el-table-column label="授权到期" width="180">
-          <template #default="scope">{{ 格式化时间(scope.row.authorized_until) }}</template>
+          <template #default="scope">{{ 格式化时间(scope.row.authorized_until) || '-' }}</template>
         </el-table-column>
         <el-table-column label="授权状态" width="90">
           <template #default="scope">
@@ -78,18 +78,18 @@
           {{ 详情.status }}
         </el-tag>
         <span>使用时间</span>
-        <strong>{{ 格式化时间(详情.use_time) }}</strong>
+        <strong>{{ 格式化时间(详情.use_time) || '-' }}</strong>
         <span>到期时间</span>
-        <strong>{{ 格式化时间(详情.end_time) }}</strong>
+        <strong>{{ 格式化时间(详情.end_time) || '-' }}</strong>
         <span>暂停剩余</span>
         <strong>{{ 详情.status === '已暂停' ? 时长文本(详情.paused_remaining_minutes) : '-' }}</strong>
         <span>在线状态</span>
         <strong>{{ 详情.online ? '在线' : '不在线' }}</strong>
-      </div>
+    </div>
       <div class="操作行">
-        <el-button v-if="详情.status === '已激活'" type="warning" @click="暂停时长卡">暂停时长</el-button>
-        <el-button v-if="详情.status === '已暂停'" type="success" @click="恢复时长卡">恢复时长</el-button>
-        <el-button v-if="可充值" type="primary" plain @click="打开充值">使用充值卡</el-button>
+        <el-button v-if="详情.status === '已激活'" type="warning" :loading="操作中 === 'pause'" :disabled="!!操作中" @click="暂停时长卡">暂停时长</el-button>
+        <el-button v-if="详情.status === '已暂停'" type="success" :loading="操作中 === 'resume'" :disabled="!!操作中" @click="恢复时长卡">恢复时长</el-button>
+        <el-button v-if="可充值" type="primary" plain :disabled="!!操作中" @click="打开充值">使用充值卡</el-button>
       </div>
     </el-card>
 
@@ -137,30 +137,25 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import apiClient, { 获取接口错误提示, 规范化卡密 } from './api/请求客户端.js'
+import { 格式化时间, 格式化时长 as 时长文本 } from './utils/时长工具.js'
 
 const centerID = new URLSearchParams(window.location.search).get('center_id') || ''
 const 卡密 = ref('')
 const 模式 = ref('point')
 const 加载中 = ref(false)
 const 详情 = ref(null)
+const 操作中 = ref('')
 const 流水框 = reactive({ 显示: false, 加载中: false, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
 const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 充值框 = reactive({ 显示: false, 加载中: false, card: '' })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
-const 格式化时间 = (value) => (value ? new Date(value).toLocaleString('zh-CN') : '-')
-const 时长文本 = (minutes) => {
-  const value = Number(minutes || 0)
-  if (value === 52560000) return '永久卡'
-  if (value % 1440 === 0) return `${value / 1440} 天`
-  if (value % 60 === 0) return `${value / 60} 小时`
-  return `${value} 分钟`
-}
 // 只有仍在使用或暂停保留时长的目标卡允许充值；已到期卡需要先按管理端续费，
 // 不能把独立充值卡直接用于已结束的卡，保持与服务端业务条件一致。
 const 可充值 = computed(() => ['已激活', '已暂停'].includes(详情.value?.status))
 
 const 查询详情 = function (page = 1) {
+  if (加载中.value || 操作中.value) return
   详情.value = null
   if (!centerID) {
     ElMessage.error('查询链接缺少 center_id，请联系管理员获取完整链接')
@@ -233,7 +228,8 @@ const 刷新时长卡详情 = function () {
     .finally(() => { 加载中.value = false })
 }
 const 暂停时长卡 = function () {
-  if (!详情.value?.card) return
+  if (!详情.value?.card || 操作中.value) return
+  操作中.value = 'pause'
   apiClient
     .post('/visitor/duration_card/pause', { center_id: centerID, card: 详情.value.card })
     .then((res) => {
@@ -242,9 +238,11 @@ const 暂停时长卡 = function () {
       return 刷新时长卡详情()
     })
     .catch(错误)
+    .finally(() => { 操作中.value = '' })
 }
 const 恢复时长卡 = function () {
-  if (!详情.value?.card) return
+  if (!详情.value?.card || 操作中.value) return
+  操作中.value = 'resume'
   apiClient
     .post('/visitor/duration_card/resume', { center_id: centerID, card: 详情.value.card })
     .then((res) => {
@@ -253,8 +251,10 @@ const 恢复时长卡 = function () {
       return 刷新时长卡详情()
     })
     .catch(错误)
+    .finally(() => { 操作中.value = '' })
 }
 const 使用充值卡 = function () {
+  if (充值框.加载中) return
   const sourceCard = 规范化卡密(充值框.card)
   if (!sourceCard || !详情.value?.card) {
     ElMessage.warning('请输入格式正确的充值卡')

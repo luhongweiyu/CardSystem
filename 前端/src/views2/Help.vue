@@ -111,7 +111,7 @@
       <details class="接口项">
         <summary>代理余额充值 · POST <code>/admin/代理账号充值</code></summary>
         <div class="接口内容">
-          <p><strong>参数：</strong><code>id</code>（代理账号编号，必填）、<code>amount</code>（充值点数，1 至 10 亿，必填）、<code>note</code>（可选备注，最多 200 个字符）。</p>
+          <p><strong>参数：</strong><code>id</code>（代理账号编号，必填）、<code>amount</code>（余额变更点数，整数；正数充值、负数扣款，0 表示不变更，必填）、<code>note</code>（可选备注，最多 200 个字符）。</p>
           <p><strong>成功返回：</strong><code>msg</code>、充值后的 <code>balance</code>。</p>
         </div>
       </details>

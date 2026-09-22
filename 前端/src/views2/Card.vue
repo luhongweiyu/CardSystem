@@ -8,28 +8,6 @@
       <el-button type="primary" @click="打开生成">生成点卡卡密</el-button>
     </div>
 
-    <el-card v-if="是代理账号" shadow="never" class="代理代扣卡片" v-loading="代理代扣.加载中">
-      <div class="代理代扣内容">
-        <div>
-          <strong>点卡余额不足时扣代理余额</strong>
-          <p>不足部分按该软件的代理每点价格折算扣款，费用向上取整；每张卡可单独设置是否跟随此开关。</p>
-        </div>
-        <el-switch
-          v-model="代理代扣.point_card_auto_deduct"
-          active-text="已开启"
-          inactive-text="已关闭"
-          :loading="代理代扣.保存中"
-          :disabled="代理代扣.加载中"
-          @change="切换代理代扣"
-        />
-      </div>
-      <div class="代理代扣状态">
-        <span>当前代理余额：{{ 账号信息.balance ?? 0 }} 点</span>
-        <span>管理员欠费权限：{{ 代理代扣.allow_point_debt ? '已允许' : '未允许' }}</span>
-        <span>最大欠费额度：{{ 代理代扣.point_debt_limit }} 点</span>
-      </div>
-    </el-card>
-
     <el-card shadow="never" class="筛选卡片">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="软件">
@@ -118,6 +96,9 @@
         show-overflow-tooltip
       >
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
+      </el-table-column>
+      <el-table-column v-if="!是代理账号" label="归属代理" width="140">
+        <template #default="scope">{{ 代理名称(scope.row.agent_id) }}</template>
       </el-table-column>
       <el-table-column
         prop="point_balance"
@@ -279,7 +260,7 @@
       </el-form>
       <template #footer>
         <el-button @click="生成框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="生成点卡卡密">生成</el-button>
+        <el-button type="primary" :loading="生成框.加载中" @click="生成点卡卡密">生成</el-button>
       </template>
     </el-dialog>
 
@@ -331,10 +312,10 @@
       </el-form>
       <template #footer>
         <el-button @click="编辑框.显示 = false">取消</el-button>
-        <el-button v-if="!是代理账号" type="warning" :disabled="!调整.amount" @click="调整余额">
+        <el-button v-if="!是代理账号" type="warning" :disabled="!调整.amount" :loading="编辑框.加载中" @click="调整余额">
           调整余额
         </el-button>
-        <el-button type="primary" @click="保存编辑">保存</el-button>
+        <el-button type="primary" :loading="编辑框.加载中" @click="保存编辑">保存</el-button>
       </template>
     </el-dialog>
 
@@ -373,23 +354,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
+import { 查找软件名称, 格式化代理归属, 格式化时间 } from '../utils/时长工具.js'
 
 const stores = use登录状态Store()
 const post = stores.post
+const { 软件列表, 代理列表 } = storeToRefs(stores)
 const 是代理账号 = computed(() => stores.是代理账号)
 const 账号信息 = stores.账号信息
 const 加载中 = ref(false)
-const 代理代扣 = reactive({
-  加载中: false,
-  保存中: false,
-  point_card_auto_deduct: false,
-  allow_point_debt: false,
-  point_debt_limit: 0
-})
 const 点卡卡密表格 = ref(null)
-const 软件列表 = ref([])
 const 点卡卡密列表 = ref([])
 const 已选点卡卡密 = ref([])
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
@@ -460,67 +436,24 @@ const 可发卡软件列表 = computed(() => {
   return 软件列表.value.filter((item) => Number(prices[String(item.ID)] ?? prices[item.ID] ?? 0) > 0)
 })
 
-const 格式化时间 = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) || date.getFullYear() <= 1 ? '' : date.toLocaleString()
-}
-const 软件名称 = (id) => 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
+const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
+const 代理名称 = (id) => 格式化代理归属(id, 代理列表.value)
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 
-const 同步代理代扣设置 = function (data = {}) {
-  if (data.point_card_auto_deduct !== undefined) {
-    代理代扣.point_card_auto_deduct = Boolean(data.point_card_auto_deduct)
-  }
-  if (data.allow_point_debt !== undefined) {
-    代理代扣.allow_point_debt = Boolean(data.allow_point_debt)
-  }
-  if (data.point_debt_limit !== undefined) {
-    代理代扣.point_debt_limit = Math.max(0, Number(data.point_debt_limit) || 0)
-  }
-  if (data.balance !== undefined) {
-    账号信息.balance = Number(data.balance) || 0
-  }
-}
-
-const 切换代理代扣 = function (value) {
-  const previous = !Boolean(value)
-  代理代扣.保存中 = true
-  return post('/point_card/settings', { point_card_auto_deduct: Boolean(value) })
-    .then((res) => {
-      if (!res.data?.state) throw new Error(res.data?.msg || '保存点卡设置失败')
-      同步代理代扣设置(res.data)
-      ElMessage.success('点卡代扣设置已保存')
-    })
-    .catch((error) => {
-      代理代扣.point_card_auto_deduct = previous
-      显示错误(error)
-    })
-    .finally(() => {
-      代理代扣.保存中 = false
-    })
-}
-
 const 查询软件 = function () {
-  代理代扣.加载中 = 是代理账号.value
-  return post('/user_query_soft_list', {})
-    .then((res) => {
-      if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
-      软件列表.value = res.data.data || []
-      if (是代理账号.value) {
-        // 软件列表已同时返回最新余额和开关，无需额外发一次设置查询。
-        同步代理代扣设置(res.data)
-        账号信息.prices = res.data.prices || {}
-      }
+  return stores.查询软件列表()
+    .then(() => {
       if (!可发卡软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
         生成框.software = 可发卡软件列表.value[0]?.ID || 0
       }
     })
     .catch(显示错误)
-    .finally(() => {
-      代理代扣.加载中 = false
-    })
+}
+
+const 查询代理 = function () {
+  if (是代理账号.value) return Promise.resolve()
+  return stores.查询代理列表()
 }
 
 const 查询点卡卡密 = function (resetPage = false) {
@@ -581,7 +514,8 @@ const 打开生成 = function () {
   生成框结果.value = ''
 }
 const 生成点卡卡密 = function () {
-  if (!生成框.software || 生成框.points <= 0 || 生成框.num <= 0) {
+  if (生成框.加载中) return
+  if (!生成框.software || !Number.isInteger(生成框.points) || 生成框.points < 1 || 生成框.points > 1000000000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
     ElMessage.warning('请选择软件并填写有效的点数和数量')
     return
   }
@@ -602,11 +536,6 @@ const 生成点卡卡密 = function () {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '生成失败')
       生成框结果.value = res.data.data || ''
-      if (是代理账号.value && res.data.balance !== undefined) {
-        // 代理生成点卡卡密的扣款与卡密写入在同一事务完成，直接采用服务端
-        // 返回的最终余额，避免顶部余额一直停留在登录时的旧值。
-        账号信息.balance = Number(res.data.balance || 0)
-      }
       ElMessage.success(res.data.msg || '生成成功')
       查询点卡卡密(true)
     })
@@ -632,6 +561,7 @@ const 打开编辑 = function (row) {
   Object.assign(调整, { amount: 0, reason: '' })
 }
 const 保存编辑 = function () {
+  if (编辑框.加载中) return
   编辑框.加载中 = true
   post('/point_card/save', {
     card: 编辑框.card,
@@ -652,12 +582,19 @@ const 保存编辑 = function () {
     })
 }
 const 调整余额 = function () {
+  if (编辑框.加载中) return
   if (!调整.amount || !调整.reason.trim()) {
     ElMessage.warning('请填写变动点数和调整原因')
     return
   }
+  const request = { card: 编辑框.card, amount: 调整.amount, reason: 调整.reason }
   编辑框.加载中 = true
-  post('/point_card/adjust', { card: 编辑框.card, amount: 调整.amount, reason: 调整.reason })
+  ElMessageBox.confirm(`确定调整 ${request.amount} 点？`, '确认余额调整', {
+    type: 'warning'
+  })
+    .then(() => {
+      return post('/point_card/adjust', request)
+    })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '调整失败')
       编辑框.point_balance = Number(res.data.balance || 0)
@@ -666,7 +603,9 @@ const 调整余额 = function () {
       ElMessage.success('余额调整成功')
       查询点卡卡密(false)
     })
-    .catch(显示错误)
+    .catch((error) => {
+      if (error !== 'cancel' && error !== 'close') 显示错误(error)
+    })
     .finally(() => {
       编辑框.加载中 = false
     })
@@ -835,7 +774,7 @@ const 导出当前页 = function () {
 }
 
 onMounted(() => {
-  Promise.all([查询软件(), 查询点卡卡密(true)]).catch(() => {})
+  Promise.all([查询软件(), 查询代理(), 查询点卡卡密(true)]).catch(() => {})
 })
 </script>
 
@@ -844,7 +783,7 @@ onMounted(() => {
   padding: 16px;
   color: #e6eaf2;
 }
-.标题行 {
+.页面标题行 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -861,31 +800,6 @@ h2 {
 }
 .筛选卡片 {
   margin-bottom: 12px;
-}
-.代理代扣卡片 {
-  margin-bottom: 12px;
-}
-.代理代扣内容 {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.代理代扣内容 strong {
-  color: #e6eaf2;
-}
-.代理代扣内容 p {
-  margin: 6px 0 0;
-  color: #9099a8;
-  font-size: 13px;
-}
-.代理代扣状态 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin-top: 12px;
-  color: #aeb6c3;
-  font-size: 13px;
 }
 .批量操作 {
   display: flex;

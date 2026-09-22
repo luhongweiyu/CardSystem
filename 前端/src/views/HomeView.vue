@@ -40,8 +40,8 @@
       </div>
       <div class="概览项 概览提示">
         <span class="概览标签">使用提示</span>
-        <strong>{{ 是代理账号 ? '先从点卡开始' : '先配置软件' }}</strong>
-        <small>{{ 是代理账号 ? '生成、查询或维护卡密' : '配置完成后再批量生成卡密' }}</small>
+        <strong>{{ 是代理账号 ? '先查看软件设置' : '先配置软件' }}</strong>
+        <small>{{ 是代理账号 ? '确认价格与点卡代扣开关' : '配置完成后再批量生成卡密' }}</small>
       </div>
     </div>
 
@@ -93,7 +93,10 @@ const 功能菜单 = computed(() => {
     { path: '/about', label: '关于系统', description: '查看版本和支持信息', icon: 'InfoFilled', color: '灰色' }
   ]
   if (是代理账号.value) {
-    return 通用入口
+    return [
+      { path: '/software', label: '软件设置', description: '查看软件价格和点卡代扣设置', icon: 'Iphone', color: '绿色' },
+      ...通用入口
+    ]
   }
   return [
     ...通用入口.slice(0, 3),

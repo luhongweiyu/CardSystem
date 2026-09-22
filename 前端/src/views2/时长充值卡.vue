@@ -37,6 +37,9 @@
       <el-table-column prop="software" label="软件" width="150" show-overflow-tooltip>
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
+      <el-table-column v-if="!是代理账号" label="归属代理" width="140">
+        <template #default="scope">{{ 代理名称(scope.row.agent_id) }}</template>
+      </el-table-column>
       <el-table-column prop="duration_minutes" label="每次增加" width="115">
         <template #default="scope">{{ 时长文本(scope.row.duration_minutes) }}</template>
       </el-table-column>
@@ -83,8 +86,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="每次增加时长" required>
-          <el-input-number v-model="生成框.duration_minutes" :min="5" :max="52560000" :precision="0" controls-position="right" />
+          <el-input-number v-model="生成框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" controls-position="right" />
           <span class="单位">分钟（{{ 时长文本(生成框.duration_minutes) }}）</span>
+        </el-form-item>
+        <el-form-item label="快捷时长">
+          <el-select v-model="生成框.duration_minutes" style="width: 220px">
+            <el-option v-for="item in 时长预设" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="每张使用次数" required>
           <el-input-number v-model="生成框.uses" :min="1" :max="1000" :precision="0" controls-position="right" />
@@ -160,15 +168,24 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import {
+  查找软件名称,
+  格式化代理归属,
+  格式化时间,
+  格式化时长 as 时长文本,
+  最大时长分钟,
+  最小时长分钟,
+  时长预设
+} from '../utils/时长工具.js'
 
 const stores = use登录状态Store()
 const post = stores.post
+const { 软件列表, 代理列表, 代理时长价格列表: 代理价格列表 } = storeToRefs(stores)
 const 是代理账号 = computed(() => Boolean(stores.是代理账号))
 const 加载中 = ref(false)
-const 软件列表 = ref([])
-const 代理价格列表 = ref([])
 const 列表 = ref([])
 const 生成结果 = ref('')
 const 筛选 = reactive({ software: '', card_state: '', card: '' })
@@ -176,7 +193,6 @@ const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 生成框 = reactive({ 显示: false, 提交中: false, software: 0, duration_minutes: 1440, uses: 1, num: 1, random: true, cards: '', expires_at: '', notes: '' })
 const 编辑框 = reactive({ 显示: false, 加载中: false, card: '', duration_minutes: 0, initial_uses: 0, remaining_uses: 0, card_state: 2, notes: '' })
 const 详情框 = reactive({ 显示: false, 加载中: false, data: {} })
-
 const 可发卡软件列表 = computed(() => {
   if (!是代理账号.value) return 软件列表.value
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
@@ -184,20 +200,8 @@ const 可发卡软件列表 = computed(() => {
 })
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
-const 软件名称 = (id) => 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
-const 格式化时间 = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) || date.getFullYear() <= 1 ? '' : date.toLocaleString()
-}
-const 时长文本 = (minutes) => {
-  const value = Number(minutes || 0)
-  if (!value) return '-'
-  if (value === 52560000) return '永久'
-  if (value % 1440 === 0) return `${value / 1440} 天`
-  if (value % 60 === 0) return `${value / 60} 小时`
-  return `${value} 分钟`
-}
+const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
+const 代理名称 = (id) => 格式化代理归属(id, 代理列表.value)
 const 状态文本 = (row = {}) => {
   if (Number(row.card_state) === 4) return '冻结'
   if (Number(row.remaining_uses || 0) <= 0) return '已用完'
@@ -206,22 +210,22 @@ const 状态文本 = (row = {}) => {
 }
 const 状态类型 = (row) => ({ 正常: 'success', 冻结: 'danger', 已用完: 'info', 已过期: 'warning' })[状态文本(row)] || 'info'
 
-const 查询软件 = () => post('/user_query_soft_list', {}).then((res) => {
-  if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
-  软件列表.value = res.data.data || []
+const 查询软件 = () => stores.查询软件列表().then(() => {
   if (!软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
     生成框.software = 可发卡软件列表.value[0]?.ID || 软件列表.value[0]?.ID || 0
   }
 })
 const 查询代理价格 = () => {
   if (!是代理账号.value) return Promise.resolve()
-  return post('/duration_card/price/list', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询时长卡价格失败')
-    代理价格列表.value = res.data.data || []
+  return stores.查询代理时长价格列表().then(() => {
     if (!可发卡软件列表.value.some((item) => Number(item.ID) === Number(生成框.software))) {
       生成框.software = 可发卡软件列表.value[0]?.ID || 0
     }
   })
+}
+const 查询代理 = () => {
+  if (是代理账号.value) return Promise.resolve()
+  return stores.查询代理列表()
 }
 const 查询列表 = (resetPage = false) => {
   if (resetPage) 分页.page = 1
@@ -249,7 +253,8 @@ const 时间转ISO = (value) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 const 生成 = () => {
-  if (!生成框.software || !Number.isInteger(生成框.duration_minutes) || 生成框.duration_minutes < 5 || 生成框.duration_minutes > 52560000 || !Number.isInteger(生成框.uses) || 生成框.uses < 1 || 生成框.uses > 1000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
+  if (生成框.提交中) return
+  if (!生成框.software || !Number.isInteger(生成框.duration_minutes) || 生成框.duration_minutes < 最小时长分钟 || 生成框.duration_minutes > 最大时长分钟 || !Number.isInteger(生成框.uses) || 生成框.uses < 1 || 生成框.uses > 1000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
     ElMessage.warning('请填写有效的软件、时长、次数和数量')
     return
   }
@@ -271,7 +276,6 @@ const 生成 = () => {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '生成充值卡失败')
       生成结果.value = res.data.data || ''
-      if (是代理账号.value && res.data.balance !== undefined) stores.账号信息.balance = Number(res.data.balance || 0)
       ElMessage.success(res.data.msg || '生成成功')
       查询列表(true)
     })
@@ -289,6 +293,7 @@ const 打开编辑 = (row) => Object.assign(编辑框, {
   notes: row.notes || ''
 })
 const 保存编辑 = () => {
+  if (编辑框.加载中) return
   编辑框.加载中 = true
   post('/duration_recharge_card/save', { card: 编辑框.card, card_state: 编辑框.card_state, notes: 编辑框.notes })
     .then((res) => {
@@ -329,7 +334,7 @@ const 复制文本 = async (value) => {
 }
 
 onMounted(() => {
-  Promise.all([查询软件(), 查询代理价格(), 查询列表(true)]).catch(() => {})
+  Promise.all([查询软件(), 查询代理价格(), 查询代理(), 查询列表(true)]).catch(() => {})
 })
 </script>
 

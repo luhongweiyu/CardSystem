@@ -406,11 +406,11 @@ func 转换旧时长卡记录(oldCard 旧时长卡迁移记录, migrationTime ti
 	if !卡密格式规则.MatchString(oldCard.Card) {
 		return 时长卡表样式{}, fmt.Errorf("卡密格式不符合当前规则")
 	}
-	durationMinutes, usedAsRechargeSource, err := 旧时长天数转分钟(oldCard.AvailableTime, "available_time", true)
+	durationMinutes, usedAsRechargeSource, err := 旧时长天数转分钟(oldCard.AvailableTime, "available_time", true, true)
 	if err != nil {
 		return 时长卡表样式{}, err
 	}
-	if durationMinutes < 时长卡最小时长分钟 || durationMinutes > 时长卡永久分钟 {
+	if durationMinutes != 0 && (durationMinutes < 时长卡最小时长分钟 || durationMinutes > 时长卡永久分钟) {
 		return 时长卡表样式{}, fmt.Errorf("available_time 换算后的时长必须在%d分钟至%d天之间", 时长卡最小时长分钟, 时长卡永久分钟/1440)
 	}
 	if oldCard.StorageTime < 0 || math.IsNaN(oldCard.StorageTime) || math.IsInf(oldCard.StorageTime, 0) {
@@ -418,12 +418,9 @@ func 转换旧时长卡记录(oldCard 旧时长卡迁移记录, migrationTime ti
 	}
 	pausedMinutes := int64(0)
 	if oldCard.StorageTime > 0 {
-		pausedMinutes, _, err = 旧时长天数转分钟(oldCard.StorageTime, "storage_time", false)
+		pausedMinutes, _, err = 旧时长天数转分钟(oldCard.StorageTime, "storage_time", false, false)
 		if err != nil {
 			return 时长卡表样式{}, err
-		}
-		if pausedMinutes > durationMinutes {
-			return 时长卡表样式{}, fmt.Errorf("storage_time 换算后的暂停余额超过卡面时长")
 		}
 	}
 	// 旧版 -1 和 0 都表示不保存最晚激活截止时间；旧页面默认传 -1。
@@ -436,7 +433,7 @@ func 转换旧时长卡记录(oldCard 旧时长卡迁移记录, migrationTime ti
 		if oldCard.CreateTime.IsZero() {
 			return 时长卡表样式{}, fmt.Errorf("latest_activation_time 有值但 create_time 为空")
 		}
-		minutes, _, conversionErr := 旧时长天数转分钟(oldCard.LatestActivationTime, "latest_activation_time", false)
+		minutes, _, conversionErr := 旧时长天数转分钟(oldCard.LatestActivationTime, "latest_activation_time", false, false)
 		if conversionErr != nil {
 			return 时长卡表样式{}, conversionErr
 		}
@@ -516,10 +513,14 @@ func 迁移时长卡到期时间(value time.Time, paused bool) *time.Time {
 }
 
 // 旧时长天数转分钟沿用旧实现的截断规则，而不是四舍五入，避免迁移后
-// 授权时长或最晚激活时间被无意增加。允许负数时仅用于识别旧充值来源卡。
-func 旧时长天数转分钟(days float64, field string, allowNegative bool) (int64, bool, error) {
-	if math.IsNaN(days) || math.IsInf(days, 0) || days == 0 {
+// 授权时长或最晚激活时间被无意增加。允许负数时仅用于识别旧充值来源卡；
+// 只有 available_time 允许以 0 迁移，其他字段仍要求非零。
+func 旧时长天数转分钟(days float64, field string, allowNegative, allowZero bool) (int64, bool, error) {
+	if math.IsNaN(days) || math.IsInf(days, 0) || (days == 0 && !allowZero) {
 		return 0, false, fmt.Errorf("%s 必须是非零有限数", field)
+	}
+	if days == 0 {
+		return 0, false, nil
 	}
 	usedAsRechargeSource := days < 0
 	if usedAsRechargeSource && !allowNegative {

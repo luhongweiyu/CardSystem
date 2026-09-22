@@ -587,8 +587,8 @@ func 代理账号充值(ctx *gin.Context) {
 		Amount int64  `json:"amount"`
 		Note   string `json:"note"`
 	}
-	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.ID <= 0 || request.Amount <= 0 || request.Amount > 最大单次点数 {
-		失败提示管理端(ctx, "充值点数必须在1至10亿之间")
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.ID <= 0 {
+		失败提示管理端(ctx, "余额调整请求错误")
 		return
 	}
 	if normalized, valid := 规范化可显示文本(request.Note, 200); !valid {
@@ -609,7 +609,10 @@ func 代理账号充值(ctx *gin.Context) {
 		if query.Error != nil {
 			return fmt.Errorf("渠道合伙人不存在")
 		}
-		if account.Balance > math.MaxInt64-request.Amount {
+		if request.Amount > 0 && account.Balance > math.MaxInt64-request.Amount {
+			return fmt.Errorf("充值后余额超出允许范围")
+		}
+		if request.Amount < 0 && account.Balance < math.MinInt64-request.Amount {
 			return fmt.Errorf("充值后余额超出允许范围")
 		}
 		balance = account.Balance + request.Amount
@@ -622,7 +625,7 @@ func 代理账号充值(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	代理账号日志(request.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:+%d", request.Amount), "原因:管理员充值", "备注:"+request.Note)
+	代理账号日志(request.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:%+d", request.Amount), "原因:管理员充值", "备注:"+request.Note)
 	成功提示管理端(ctx, gin.H{"msg": "充值成功", "balance": balance})
 }
 

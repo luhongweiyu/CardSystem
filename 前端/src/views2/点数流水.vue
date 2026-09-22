@@ -67,24 +67,23 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import { 查找软件名称 } from '../utils/时长工具.js'
 
 const stores = use登录状态Store()
 const post = stores.post
+const { 软件列表 } = storeToRefs(stores)
 const 加载中 = ref(false)
-const 软件列表 = ref([])
 const 列表 = ref([])
 const 筛选 = reactive({ software: '', card: '', event_type: '' })
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
-const 软件名称 = (id) => 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
+const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 查询软件 = () =>
-  post('/user_query_soft_list', {}).then((res) => {
-    if (!res.data?.state) throw new Error(res.data?.msg || '查询软件失败')
-    软件列表.value = res.data.data || []
-  })
+  stores.查询软件列表()
 const 查询流水 = function (resetPage = false) {
   if (resetPage) 分页.page = 1
   加载中.value = true

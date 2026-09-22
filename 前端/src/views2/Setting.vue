@@ -5,7 +5,7 @@
         <h2>账号设置</h2>
         <p class="说明">管理联系方式、公告和接口安全选项。</p>
       </div>
-      <el-button :loading="加载中" @click="获取设置">刷新设置</el-button>
+      <el-button :loading="加载中" @click="获取设置()">刷新设置</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -44,7 +44,7 @@
       <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard
           标题="接口安全密码"
-          帮助="开启接口安全模式时，客户端需要使用此密码参与签名。密码只用于接口校验，不会在页面中回显。"
+          帮助="开启接口安全模式时，客户端需要使用此密码参与签名。点击眼睛图标可查看当前安全密码。"
         >
           <el-input
             v-model="设置.api_password"
@@ -132,20 +132,27 @@ const 设置 = reactive({
 const 密码表单 = reactive({ current: '', next: '', confirm: '' })
 
 // 从服务端读取当前管理员设置，并把布尔值转成单选框使用的 0/1。
-const 获取设置 = async function () {
+const 获取设置 = async function (onlyField = '') {
   加载中.value = true
   try {
     const response = await post('/user_get_info', {})
     if (!response.data?.state) throw new Error(response.data?.msg || '读取设置失败')
     const data = response.data.data || {}
-    Object.assign(设置, {
+    const next = {
       contact_information: data.contact_information || '',
       notice: data.notice || '',
       // 管理端需要找回安全码以兼容旧客户端，因此回填当前 API 安全码。
       api_password: data.api_password || '',
       api_password_set: Boolean(data.api_password_set),
       api_safe: Number(data.api_safe) ? 1 : 0
-    })
+    }
+    // 单项保存只回填这一项，保留其他卡片尚未保存的输入。
+    if (onlyField) {
+      设置[onlyField] = next[onlyField]
+      设置.api_password_set = next.api_password_set
+    } else {
+      Object.assign(设置, next)
+    }
   } catch (error) {
     ElMessage.error(获取接口错误提示(error))
   } finally {
@@ -157,6 +164,7 @@ const 获取设置 = async function () {
  * 保存单个设置项，保存成功后重新读取一次，确保页面状态与服务端一致。
  */
 const 上传设置 = async function (type, value) {
+  if (加载中.value) return
   if (typeof value !== 'string' && type !== 'api_safe') {
     ElMessage.warning('设置内容格式不正确')
     return
@@ -166,7 +174,7 @@ const 上传设置 = async function (type, value) {
     const response = await post('/user_update_info', { type, value })
     if (!response.data?.state) throw new Error(response.data?.msg || '保存设置失败')
     ElMessage.success('保存成功')
-    await 获取设置()
+    await 获取设置(type)
   } catch (error) {
     ElMessage.error(获取接口错误提示(error))
   } finally {
@@ -197,6 +205,7 @@ const 清除安全密码 = function () {
  * 中文密码在浏览器字符数与 bcrypt 实际接收字节数之间产生差异。
  */
 const 修改登录密码 = async function () {
+  if (加载中.value) return
   if (!密码表单.current || !密码表单.next) {
     ElMessage.warning('请填写当前密码和新密码')
     return
@@ -220,6 +229,7 @@ const 修改登录密码 = async function () {
     // 服务端会撤销该账号的所有旧令牌并返回一个新令牌，当前页面必须
     // 立即替换，否则下一次管理请求会被判定为未登录。
     stores.token = response.data.token || ''
+    stores.登录到期时间 = response.data.expires_at || ''
     Object.assign(密码表单, { current: '', next: '', confirm: '' })
     ElMessage.success('登录密码修改成功')
   } catch (error) {
@@ -229,7 +239,7 @@ const 修改登录密码 = async function () {
   }
 }
 
-onMounted(获取设置)
+onMounted(() => 获取设置())
 </script>
 
 <style scoped>
