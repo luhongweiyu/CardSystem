@@ -184,6 +184,39 @@ func 管理员_查询点卡周期价格(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"data": data})
 }
 
+// 代理账号_查询点卡周期价格只展示当前代理已授权软件中可用的方案；
+// 不返回管理员内部的停用、旧范围配置，也不提供修改入口。
+func 代理账号_查询点卡周期价格(ctx *gin.Context) {
+	account := 代理账号_取账号信息(ctx)
+	if account.ID <= 0 || !验证管理员名称(account.Admin) {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	prices := 解析代理价格(account.Prices)
+	softwareIDs := make([]int, 0, len(prices))
+	for id := range prices {
+		softwareIDs = append(softwareIDs, id)
+	}
+	data := make([]gin.H, 0)
+	if len(softwareIDs) == 0 {
+		成功提示管理端(ctx, gin.H{"data": data})
+		return
+	}
+	var rows []点卡周期价格
+	if err := db_point_period_price.Where("admin = ? AND software IN ? AND enabled = ?", account.Admin, softwareIDs, true).
+		Order("software ASC, period_seconds ASC").Find(&rows).Error; err != nil {
+		失败提示管理端(ctx, "查询点卡计费方案失败")
+		return
+	}
+	for _, row := range rows {
+		if !点卡授权时长秒有效(row.PeriodSeconds, false) || row.Cost <= 0 || row.Cost > 最大单次点数 {
+			continue
+		}
+		data = append(data, gin.H{"software": row.Software, "period_minutes": 秒转分钟(row.PeriodSeconds), "cost": row.Cost, "is_default": row.IsDefault, "enabled": true})
+	}
+	成功提示管理端(ctx, gin.H{"data": data})
+}
+
 // 点卡公开计费方案只返回客户端选择授权时长所需的字段。管理员名称、数据库
 // 主键和停用记录不会暴露；客户端可先调用此接口再决定本次登录提交哪个授权时长。
 type 点卡公开周期价格 struct {

@@ -19,6 +19,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import { 日志倒序 } from '../utils/日志工具.js'
 
 const post = use登录状态Store().post
 const 加载中 = ref(false)
@@ -30,13 +31,13 @@ const 查询 = async function () {
   try {
     const response = await post('/query_log', {})
     if (typeof response.data === 'string') {
-      日志内容.value = response.data
+      日志内容.value = 日志倒序(response.data)
       return
     }
     if (!response.data?.state) {
       throw new Error(response.data?.msg || '查询日志失败')
     }
-    日志内容.value = response.data.data || ''
+    日志内容.value = 日志倒序(response.data.data)
   } catch (error) {
     ElMessage.error(获取接口错误提示(error))
   } finally {

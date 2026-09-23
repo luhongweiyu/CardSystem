@@ -14,14 +14,32 @@
     <el-table :data="软件列表" border stripe row-key="ID">
       <el-table-column prop="ID" label="ID" width="70" />
       <el-table-column prop="Software" label="软件名称" min-width="170" />
-      <el-table-column label="默认授权时长" width="130">
-        <template #default="scope">{{ scope.row.default_period_minutes }} 分钟</template>
+      <el-table-column label="点卡方案" min-width="300">
+        <template #default="scope">
+          <span v-if="是代理账号 && !代理软件单价值(scope.row.ID)">未授权</span>
+          <span v-else-if="点卡方案.加载中">加载中…</span>
+          <span v-else-if="!点卡方案.已加载">暂不可用</span>
+          <span v-else-if="!软件点卡方案(scope.row.ID).length">未配置</span>
+          <div v-else class="方案列表">
+            <el-tag
+              v-for="item in 软件点卡方案(scope.row.ID)"
+              :key="`${item.software}-${item.period_minutes}`"
+              :type="!点卡计费周期有效(item.period_minutes) ? 'warning' : item.enabled ? 'success' : 'info'"
+              effect="plain"
+            >
+              {{ 时长卡时长文本(item.period_minutes) }} / {{ item.cost }} 点{{ item.is_default ? ' · 默认' : '' }}{{ !item.enabled ? ' · 停用' : '' }}{{ !点卡计费周期有效(item.period_minutes) ? ' · 范围外' : '' }}
+            </el-tag>
+          </div>
+        </template>
       </el-table-column>
-      <el-table-column label="心跳间隔" width="130">
+      <el-table-column label="默认授权时长" width="130">
+        <template #default="scope">{{ 时长卡时长文本(scope.row.default_period_minutes) }}</template>
+      </el-table-column>
+      <el-table-column v-if="!是代理账号" label="心跳间隔" width="130">
         <template #default="scope">{{ 周期文本(scope.row.heartbeat_interval_seconds) }}</template>
       </el-table-column>
       <el-table-column label="自动离线时间" width="140">
-        <template #default="scope">{{ scope.row.online_grace_minutes || 60 }} 分钟</template>
+        <template #default="scope">{{ 时长卡时长文本(scope.row.online_grace_minutes || 60) }}</template>
       </el-table-column>
       <el-table-column label="点卡授权复用" width="120">
         <template #default="scope">
@@ -31,7 +49,7 @@
         </template>
       </el-table-column>
       <el-table-column label="暂停扣除" width="120">
-        <template #default="scope">{{ scope.row.pause_deduct_minutes || 0 }} 分钟</template>
+        <template #default="scope">{{ scope.row.pause_deduct_minutes ? 时长卡时长文本(scope.row.pause_deduct_minutes) : '0 分钟' }}</template>
       </el-table-column>
       <el-table-column v-if="是代理账号" label="点卡每点价格" width="130">
         <template #default="scope">{{ 代理软件单价(scope.row.ID) }}</template>
@@ -47,27 +65,27 @@
     </el-table>
 
     <div v-if="是代理账号" class="代理设置区">
-      <el-card shadow="never" v-loading="代理代扣.加载中">
-        <div class="代理设置标题">
-          <div>
-            <h3>点卡代扣设置</h3>
-            <p class="设置说明">点卡余额不足时，是否允许按代理价格扣除自己的代理余额。</p>
-          </div>
+      <div class="代扣设置栏" v-loading="代理代扣.加载中">
+        <div class="代扣设置主行">
+          <span class="代扣设置名称">点卡代扣</span>
+          <span class="设置说明">卡内点数不足时使用账户余额</span>
           <el-switch
             v-model="代理代扣.point_card_auto_deduct"
             active-text="已开启"
             inactive-text="已关闭"
-            :loading="代理代扣.保存中"
-            :disabled="代理代扣.加载中"
-            @change="切换代理代扣"
+            :disabled="代理代扣.加载中 || 代理代扣.保存中"
           />
+          <el-button size="small" type="primary" :loading="代理代扣.保存中" :disabled="!代理代扣有改动 || 代理代扣.加载中" @click="保存代理代扣">保存</el-button>
+          <el-button link size="small" class="账户详情切换" :aria-expanded="显示账户详情" @click="显示账户详情 = !显示账户详情">
+            {{ 显示账户详情 ? '收起账户详情' : '查看账户详情' }}
+          </el-button>
         </div>
-        <div class="代理设置状态">
+        <div v-if="显示账户详情" class="代理设置状态">
           <span>当前余额：{{ stores.账号信息.balance ?? 0 }} 点</span>
           <span>管理员欠费权限：{{ 代理代扣.allow_point_debt ? '已允许' : '未允许' }}</span>
           <span>最大欠费额度：{{ 代理代扣.point_debt_limit }} 点</span>
         </div>
-      </el-card>
+      </div>
 
       <el-card shadow="never" v-loading="代理价格加载中">
         <div class="代理设置标题">
@@ -75,7 +93,7 @@
             <h3>时长卡价格</h3>
             <p class="设置说明">精确命中锚点使用原价，其他时长按相邻锚点规则计价。</p>
           </div>
-          <el-button size="small" @click="查询代理价格">刷新价格</el-button>
+          <el-button size="small" @click="查询代理价格(true)">刷新价格</el-button>
         </div>
         <el-form :inline="true" @submit.prevent>
           <el-form-item label="软件">
@@ -85,21 +103,17 @@
             </el-select>
           </el-form-item>
         </el-form>
-        <el-table v-if="当前代理价格.length" :data="当前代理价格" border stripe>
-          <el-table-column label="软件" min-width="180">
-            <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
-          </el-table-column>
-          <el-table-column label="卡面时长" width="180">
-            <template #default="scope">{{ 时长卡时长文本(scope.row.duration_minutes) }}</template>
-          </el-table-column>
-          <el-table-column label="每张价格" width="160">
-            <template #default="scope">{{ Number(scope.row.price).toFixed(2) }} 点</template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="180">
-            <template #default="scope">{{ scope.row.duration_minutes === 最大时长分钟 ? '永久卡价格锚点' : '可用于区间计价' }}</template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-else description="管理员尚未配置可用的时长卡价格" />
+        <div v-if="代理时长价格分组.length" class="时长价格分组">
+          <div v-for="group in 代理时长价格分组" :key="group.software" class="时长价格组">
+            <div class="时长价格组标题">{{ group.name }}</div>
+            <div class="方案列表">
+              <el-tag v-for="item in group.prices" :key="item.id" effect="plain">
+                {{ 时长卡时长文本(item.duration_minutes) }} / {{ Number(item.price).toFixed(2) }} 点{{ item.duration_minutes === 最大时长分钟 ? ' · 永久卡' : '' }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else-if="!代理价格加载中" :description="代理价格软件 ? '该软件暂无可用的时长卡价格' : '管理员尚未配置可用的时长卡价格'" />
       </el-card>
     </div>
 
@@ -115,11 +129,32 @@
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="账号" width="160" />
         <el-table-column prop="balance" label="余额（点）" width="120" />
-        <el-table-column label="操作" min-width="350">
+        <el-table-column label="点卡每点价格" min-width="300">
+          <template #default="scope">
+            <span v-if="!代理软件价格列表(scope.row).length">未配置</span>
+            <div v-else class="方案列表">
+              <el-tooltip v-if="代理统一单价(scope.row)" :content="代理软件价格列表(scope.row).map((item) => item.name).join('、')" placement="top">
+                <el-tag effect="plain">
+                  {{ 代理软件价格列表(scope.row).length === 软件列表.length ? '全部软件' : `已授权 ${代理软件价格列表(scope.row).length}/${软件列表.length} 个软件` }}：{{ 代理统一单价(scope.row).toFixed(2) }} 点/点
+                </el-tag>
+              </el-tooltip>
+              <template v-else>
+                <el-tag v-for="item in 代理软件价格列表(scope.row)" :key="item.id" effect="plain">
+                  {{ item.name }}：{{ item.price.toFixed(2) }} 点/点
+                </el-tag>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="点卡欠费" width="155">
+          <template #default="scope">{{ scope.row.allow_point_debt ? `允许 · 限额 ${scope.row.point_debt_limit} 点` : '不允许' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="410">
           <template #default="scope">
             <el-button link type="primary" @click="编辑代理(scope.row)">计费方案与密码</el-button>
             <el-button link type="warning" @click="打开代理时长价格(scope.row)">时长卡价格</el-button>
             <el-button link type="success" @click="打开代理充值(scope.row)">调整余额</el-button>
+            <el-button link type="primary" @click="打开代理日志(scope.row)">查看日志</el-button>
             <el-button link type="danger" @click="删除代理(scope.row)">删除</el-button>
           </template>
         </el-table-column>
@@ -140,15 +175,16 @@
             :precision="0"
             controls-position="right"
           />
+          <div v-if="软件框.default_period_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.default_period_minutes) }}</div>
         </el-form-item>
-        <el-form-item label="心跳间隔（秒）" required>
+        <el-form-item label="心跳间隔（分钟）" required>
           <el-input-number
-            v-model="软件框.heartbeat_interval_seconds"
-            :min="1"
-            :max="86400"
-            :precision="0"
+            v-model="软件框.heartbeat_interval_minutes"
+            :min="0"
+            :max="1440"
             controls-position="right"
           />
+          <div class="字段说明">可输入小数分钟，最小 1 秒</div>
         </el-form-item>
         <el-form-item label="自动离线时间（分钟）" required>
           <el-input-number
@@ -159,7 +195,8 @@
             controls-position="right"
           />
           <div class="字段说明">0 表示默认 60 分钟后自动离线</div>
-          <div v-if="软件框.heartbeat_interval_seconds >= (软件框.online_grace_minutes || 60) * 60" class="字段说明 风险提醒">心跳间隔不小于自动离线时间，设备可能被误判离线。</div>
+          <div v-if="软件框.online_grace_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.online_grace_minutes) }}</div>
+          <div v-if="软件框.heartbeat_interval_minutes >= (软件框.online_grace_minutes || 60)" class="字段说明 风险提醒">心跳间隔不小于自动离线时间，设备可能被误判离线。</div>
           <div v-if="(软件框.online_grace_minutes || 60) > 软件框.default_period_minutes" class="字段说明 风险提醒">自动离线时间长于默认授权周期，断线后可能连续多次续费扣点。</div>
         </el-form-item>
         <el-form-item label="暂停扣除（分钟）" required>
@@ -171,6 +208,7 @@
             controls-position="right"
           />
           <div class="字段说明">0 表示不启用时长卡暂停；暂停时从剩余时长中扣除</div>
+          <div v-if="软件框.pause_deduct_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.pause_deduct_minutes) }}</div>
         </el-form-item>
         <el-form-item label="点卡授权复用">
           <el-switch v-model="软件框.point_card_reuse_enabled" />
@@ -190,7 +228,7 @@
     <el-dialog v-model="价格框.显示" title="点卡计费方案" width="760px" destroy-on-close>
       <div class="价格标题">
         <span>{{ 价格框.softwareName }}</span>
-        <el-button type="primary" size="small" @click="新增价格">新增计费方案</el-button>
+        <el-button type="primary" size="small" :disabled="价格框.加载中 || 价格框.保存中 || 价格框.rows.some((item) => !item.id)" @click="新增价格">新增计费方案</el-button>
       </div>
       <el-alert
         v-if="价格框.rows.some((item) => !点卡计费周期有效(item.period_minutes))"
@@ -199,66 +237,43 @@
         :closable="false"
         class="代理价格提示"
       />
-      <el-table :data="价格框.rows" border>
-        <el-table-column label="授权时长" width="150">
-          <template #default="scope">{{ scope.row.period_minutes }} 分钟</template>
-        </el-table-column>
-        <el-table-column prop="cost" label="扣点" width="90" />
-        <el-table-column label="状态" width="100">
+      <el-table v-loading="价格框.加载中 || 价格框.保存中" :data="价格框.rows" border>
+        <el-table-column label="授权时长" min-width="195">
           <template #default="scope">
-            <el-tag v-if="!点卡计费周期有效(scope.row.period_minutes)" type="warning">范围外</el-tag>
-            <el-tag v-else :type="scope.row.enabled ? 'success' : 'info'">
-              {{ scope.row.enabled ? '启用' : '停用' }}
-            </el-tag>
+            <template v-if="scope.row.id">{{ 时长卡时长文本(scope.row.period_minutes) }}</template>
+            <div v-else>
+              <el-input-number v-model="scope.row.period_minutes" :min="最小计费周期分钟" :max="最大计费周期分钟" :precision="0" :disabled="scope.row.保存中" controls-position="right" class="方案时长输入" />
+              <span class="价格单位">{{ 时长卡时长文本(scope.row.period_minutes) }}</span>
+            </div>
+            <div v-if="scope.row.period_minutes < 价格框.onlineGraceMinutes" class="风险提醒 方案提醒">短于自动离线时间</div>
           </template>
         </el-table-column>
-        <el-table-column label="默认方案" width="90">
-          <template #default="scope">{{ scope.row.is_default ? '是' : '' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="150">
+        <el-table-column label="扣点" width="150">
           <template #default="scope">
-            <el-button link type="primary" :disabled="!点卡计费周期有效(scope.row.period_minutes)" @click="编辑价格(scope.row)">编辑</el-button>
-            <el-button link type="danger" @click="删除价格(scope.row)">删除</el-button>
+            <el-input-number v-if="点卡计费周期有效(scope.row.period_minutes)" v-model="scope.row.cost" :min="1" :max="1000000000" :precision="0" :disabled="scope.row.保存中" controls-position="right" class="方案扣点输入" />
+            <span v-else>{{ scope.row.cost }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="scope">
+            <el-tag v-if="!点卡计费周期有效(scope.row.period_minutes)" type="warning">范围外</el-tag>
+            <el-switch v-else v-model="scope.row.enabled" :disabled="scope.row.原默认 || scope.row.is_default || scope.row.保存中" />
+          </template>
+        </el-table-column>
+        <el-table-column label="默认方案" width="100">
+          <template #default="scope">
+            <el-tag v-if="scope.row.原默认" type="success">默认</el-tag>
+            <el-switch v-else v-model="scope.row.is_default" :disabled="!scope.row.enabled || !点卡计费周期有效(scope.row.period_minutes) || scope.row.保存中" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130">
+          <template #default="scope">
+            <el-button link type="primary" :loading="scope.row.保存中" :disabled="!点卡计费周期有效(scope.row.period_minutes)" @click="保存价格(scope.row)">保存</el-button>
+            <el-button link type="danger" :disabled="scope.row.原默认 || scope.row.保存中" @click="删除价格(scope.row)">{{ scope.row.id ? '删除' : '取消' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!价格框.rows.length" description="尚未配置点卡计费方案" />
-    </el-dialog>
-
-    <el-dialog
-      v-model="价格编辑框.显示"
-      :title="价格编辑框.id ? '编辑点卡计费方案' : '新增点卡计费方案'"
-      width="420px"
-      destroy-on-close
-    >
-      <el-form label-width="120px">
-        <el-form-item label="授权时长（分钟）">
-          <el-input-number
-            v-model="价格编辑框.period_minutes"
-            :min="最小计费周期分钟"
-            :max="最大计费周期分钟"
-            :precision="0"
-            controls-position="right"
-            :disabled="!!价格编辑框.id"
-          />
-          <div v-if="价格编辑框.period_minutes < 价格框.onlineGraceMinutes" class="字段说明 风险提醒">自动离线时间长于此周期，断线后可能连续多次续费扣点。</div>
-        </el-form-item>
-        <el-form-item label="扣点数">
-          <el-input-number
-            v-model="价格编辑框.cost"
-            :min="1"
-            :max="1000000000"
-            :precision="0"
-            controls-position="right"
-          />
-        </el-form-item>
-        <el-form-item label="启用"><el-switch v-model="价格编辑框.enabled" /></el-form-item>
-        <el-form-item label="设为默认方案"><el-switch v-model="价格编辑框.is_default" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="价格编辑框.显示 = false">取消</el-button>
-        <el-button type="primary" @click="保存价格">保存</el-button>
-      </template>
+      <el-empty v-if="!价格框.加载中 && !价格框.rows.length" description="尚未配置点卡计费方案" />
     </el-dialog>
 
     <!-- 渠道合伙人 -->
@@ -432,12 +447,24 @@
             controls-position="right"
           />
         </el-form-item>
-        <p class="提示文字">正数为充值，负数为扣款，0表示不变更，余额允许变为负数。</p>
+        <p class="提示文字">正数为充值，负数为扣款；请输入非零点数，余额允许变为负数。</p>
         <el-form-item label="备注"><el-input v-model="代理充值框.note" maxlength="200" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="代理充值框.显示 = false">取消</el-button>
-        <el-button type="primary" :loading="代理充值框.保存中" @click="代理充值">确认调整</el-button>
+        <el-button type="primary" :loading="代理充值框.保存中" :disabled="!代理充值框.amount" @click="代理充值">确认调整</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="代理日志框.显示" :title="`渠道合伙人日志 · ${代理日志框.name}`" width="850px" destroy-on-close>
+      <p class="设置说明">最近两个月的日志；最新记录在上方。</p>
+      <div v-loading="代理日志框.加载中" class="代理日志内容">
+        <pre v-if="代理日志框.content">{{ 代理日志框.content }}</pre>
+        <el-empty v-else-if="!代理日志框.加载中" description="暂无日志" />
+      </div>
+      <template #footer>
+        <el-button :loading="代理日志框.加载中" @click="查询代理日志">刷新</el-button>
+        <el-button @click="代理日志框.显示 = false">关闭</el-button>
       </template>
     </el-dialog>
   </section>
@@ -449,6 +476,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import { 日志倒序 } from '../utils/日志工具.js'
 import {
   格式化时长 as 时长卡时长文本,
   最大计费周期分钟,
@@ -472,11 +500,15 @@ const 代理代扣 = reactive({
   加载中: false,
   保存中: false,
   point_card_auto_deduct: false,
+  已保存代扣: false,
   allow_point_debt: false,
   point_debt_limit: 0
 })
+const 代理代扣有改动 = computed(() => 代理代扣.point_card_auto_deduct !== 代理代扣.已保存代扣)
 const 代理价格加载中 = ref(false)
 const 代理价格软件 = ref(0)
+const 显示账户详情 = ref(false)
+const 点卡方案 = reactive({ 加载中: false, 已加载: false, rows: [] })
 const 软件框 = reactive({
   显示: false,
   加载中: false,
@@ -484,21 +516,12 @@ const 软件框 = reactive({
   software: '',
   bulletin: '',
   default_period_minutes: 60,
-  heartbeat_interval_seconds: 300,
+  heartbeat_interval_minutes: 5,
   online_grace_minutes: 60,
-  point_card_reuse_enabled: false,
+  point_card_reuse_enabled: true,
   pause_deduct_minutes: 0
 })
-const 价格框 = reactive({ 显示: false, software: 0, softwareName: '', onlineGraceMinutes: 60, rows: [] })
-const 价格编辑框 = reactive({
-  显示: false,
-  id: 0,
-  software: 0,
-  period_minutes: 60,
-  cost: 1,
-  enabled: true,
-  is_default: false
-})
+const 价格框 = reactive({ 显示: false, 加载中: false, 保存中: false, software: 0, softwareName: '', onlineGraceMinutes: 60, rows: [] })
 const 代理框 = reactive({ 显示: false, name: '', password: '' })
 const 代理编辑框 = reactive({
   显示: false,
@@ -520,7 +543,8 @@ const 代理时长价格框 = reactive({
   rows: []
 })
 const 代理时长价格总览框 = reactive({ 显示: false, 加载中: false, agent_id: 0, software: 0, rows: [] })
-const 代理充值框 = reactive({ 显示: false, 保存中: false, id: 0, name: '', amount: 100, note: '' })
+const 代理充值框 = reactive({ 显示: false, 保存中: false, id: 0, name: '', amount: 0, note: '' })
+const 代理日志框 = reactive({ 显示: false, 加载中: false, id: 0, name: '', content: '' })
 
 const 代理价格软件列表 = computed(() => {
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
@@ -531,28 +555,61 @@ const 当前代理价格 = computed(() => {
     .filter((item) => !代理价格软件.value || Number(item.software) === Number(代理价格软件.value))
     .sort((a, b) => Number(a.software) - Number(b.software) || Number(a.duration_minutes) - Number(b.duration_minutes))
 })
+const 代理时长价格分组 = computed(() => {
+  const groups = new Map()
+  for (const item of 当前代理价格.value) {
+    const software = Number(item.software)
+    if (!groups.has(software)) groups.set(software, { software, name: 软件名称(software), prices: [] })
+    groups.get(software).prices.push(item)
+  }
+  return [...groups.values()]
+})
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 点卡计费周期有效 = (minutes) => Number.isInteger(minutes) && minutes >= 最小计费周期分钟 && minutes <= 最大计费周期分钟
 const 周期文本 = function (seconds) {
   const value = Number(seconds || 0)
   if (!value) return '-'
-  if (value % 86400 === 0) return `${value / 86400} 天`
-  if (value % 3600 === 0) return `${value / 3600} 小时`
-  if (value % 60 === 0) return `${value / 60} 分钟`
-  return `${value} 秒`
+  if (value < 60) return `${value}秒`
+  const remainder = value % 60
+  return `${时长卡时长文本(Math.floor(value / 60))}${remainder ? `${remainder}秒` : ''}`
 }
-const 代理软件单价 = function (id) {
+const 代理软件单价值 = function (id) {
   const prices = stores.账号信息.prices || {}
   const value = Number(prices[String(id)] ?? prices[id] ?? 0)
-  return Number.isFinite(value) && value > 0 ? `${value.toFixed(2)} 点` : '未授权'
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+const 代理软件单价 = function (id) {
+  const value = 代理软件单价值(id)
+  return value ? `${value.toFixed(2)} 点` : '未授权'
 }
 const 软件名称 = function (id) {
   return 软件列表.value.find((item) => Number(item.ID) === Number(id))?.Software || `软件#${id}`
 }
+const 软件点卡方案 = (id) => 点卡方案.rows.filter((item) => Number(item.software) === Number(id))
+// 编辑框以分钟显示；保留四位小数足以往返还原已有的整秒配置。
+const 心跳秒转分钟 = (seconds) => Number((Number(seconds) / 60).toFixed(4))
+const 代理软件价格列表 = function (row) {
+  let prices = row.prices || {}
+  try {
+    if (typeof prices === 'string') prices = JSON.parse(prices)
+  } catch {
+    prices = {}
+  }
+  return 软件列表.value.flatMap((item) => {
+    const price = Number(prices?.[item.ID] ?? 0)
+    return Number.isFinite(price) && price > 0 ? [{ id: item.ID, name: item.Software, price }] : []
+  })
+}
+// 仅在两个及以上已授权软件同价时合并；部分授权必须显示覆盖数量，不能写成“全部软件”。
+const 代理统一单价 = function (row) {
+  const items = 代理软件价格列表(row)
+  return items.length > 1 && items.every((item) => item.price === items[0].price) ? items[0].price : null
+}
 const 同步代理代扣设置 = function (data = {}) {
   if (data.point_card_auto_deduct !== undefined) {
-    代理代扣.point_card_auto_deduct = Boolean(data.point_card_auto_deduct)
+    代理代扣.已保存代扣 = Boolean(data.point_card_auto_deduct)
+    代理代扣.point_card_auto_deduct = 代理代扣.已保存代扣
   }
   if (data.allow_point_debt !== undefined) {
     代理代扣.allow_point_debt = Boolean(data.allow_point_debt)
@@ -561,18 +618,18 @@ const 同步代理代扣设置 = function (data = {}) {
     代理代扣.point_debt_limit = Math.max(0, Number(data.point_debt_limit) || 0)
   }
 }
-const 切换代理代扣 = function (value) {
-  if (代理代扣.保存中) return
-  const previous = !Boolean(value)
+// 开关只修改本地草稿，显式保存后才更新服务端；失败时恢复到已保存状态。
+const 保存代理代扣 = function () {
+  if (代理代扣.保存中 || 代理代扣.加载中 || !代理代扣有改动.value) return
   代理代扣.保存中 = true
-  return post('/point_card/settings', { point_card_auto_deduct: Boolean(value) })
+  return post('/point_card/settings', { point_card_auto_deduct: 代理代扣.point_card_auto_deduct })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存点卡代扣设置失败')
-      同步代理代扣设置(stores.账号信息)
+      同步代理代扣设置(res.data)
       ElMessage.success('点卡代扣设置已保存')
     })
     .catch((error) => {
-      代理代扣.point_card_auto_deduct = previous
+      代理代扣.point_card_auto_deduct = 代理代扣.已保存代扣
       显示错误(error)
     })
     .finally(() => {
@@ -596,11 +653,26 @@ const 查询代理 = function (force = false) {
   if (是代理账号.value) return Promise.resolve()
   return stores.查询代理列表(force)
 }
+// 两种身份分别使用自己的只读列表接口，一次返回全部有权查看的软件方案。
+const 查询全部价格 = function () {
+  点卡方案.加载中 = true
+  return post('/point_card/price/list', {})
+    .then((res) => {
+      if (!res.data?.state) throw new Error(res.data?.msg || '查询点卡计费方案失败')
+      点卡方案.rows = res.data.data || []
+      点卡方案.已加载 = true
+    })
+    .catch((error) => {
+      点卡方案.已加载 = false
+      显示错误(error)
+    })
+    .finally(() => { 点卡方案.加载中 = false })
+}
 const 刷新页面 = async function () {
   if (加载中.value || 代理代扣.保存中) return
   加载中.value = true
   try {
-    await Promise.all([查询软件(true), 是代理账号.value ? 查询代理价格(true) : 查询代理(true)])
+    await Promise.all([查询软件(true), 是代理账号.value ? 查询代理价格(true) : 查询代理(true), 查询全部价格()])
   } catch (error) {
     显示错误(error)
   } finally {
@@ -624,9 +696,9 @@ const 打开软件编辑 = function () {
     software: '',
     bulletin: '',
     default_period_minutes: 60,
-    heartbeat_interval_seconds: 300,
+    heartbeat_interval_minutes: 5,
     online_grace_minutes: 60,
-    point_card_reuse_enabled: false,
+    point_card_reuse_enabled: true,
     pause_deduct_minutes: 0
   })
 }
@@ -637,7 +709,7 @@ const 编辑软件 = function (row) {
     software: row.Software,
     bulletin: row.Bulletin || '',
     default_period_minutes: Number(row.default_period_minutes || 60),
-    heartbeat_interval_seconds: Number(row.heartbeat_interval_seconds || 300),
+    heartbeat_interval_minutes: 心跳秒转分钟(row.heartbeat_interval_seconds || 300),
     online_grace_minutes: Number(row.online_grace_minutes || 60),
     point_card_reuse_enabled: Boolean(row.point_card_reuse_enabled),
     pause_deduct_minutes: Number(row.pause_deduct_minutes || 0)
@@ -645,6 +717,7 @@ const 编辑软件 = function (row) {
 }
 const 保存软件 = function () {
   if (软件框.加载中) return
+  const heartbeatSeconds = Math.round(软件框.heartbeat_interval_minutes * 60)
   if (!软件框.software.trim()) {
     ElMessage.warning('请输入软件名称')
     return
@@ -662,11 +735,11 @@ const 保存软件 = function () {
     return
   }
   if (
-    !Number.isInteger(软件框.heartbeat_interval_seconds) ||
-    软件框.heartbeat_interval_seconds < 1 ||
-    软件框.heartbeat_interval_seconds > 86400
+    !Number.isFinite(软件框.heartbeat_interval_minutes) ||
+    heartbeatSeconds < 1 ||
+    heartbeatSeconds > 86400
   ) {
-    ElMessage.warning('心跳间隔必须在1至86400秒之间')
+    ElMessage.warning('心跳间隔必须在1秒至1440分钟之间')
     return
   }
   if (
@@ -684,7 +757,7 @@ const 保存软件 = function () {
     software: 软件框.software,
     bulletin: 软件框.bulletin,
     default_period_minutes: 软件框.default_period_minutes,
-    heartbeat_interval_seconds: 软件框.heartbeat_interval_seconds,
+    heartbeat_interval_seconds: heartbeatSeconds,
     online_grace_minutes: 软件框.online_grace_minutes,
     point_card_reuse_enabled: 软件框.point_card_reuse_enabled,
     pause_deduct_minutes: 软件框.pause_deduct_minutes
@@ -693,7 +766,7 @@ const 保存软件 = function () {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存软件失败')
       ElMessage.success('保存成功')
       软件框.显示 = false
-      return 查询软件(true)
+      return Promise.all([查询软件(true), 查询全部价格()])
     })
     .catch(显示错误)
     .finally(() => {
@@ -708,7 +781,7 @@ const 删除软件 = function (row) {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除软件失败')
       ElMessage.success('删除成功')
-      查询软件(true)
+      return Promise.all([查询软件(true), 查询全部价格()])
     })
     .catch((error) => {
       if (error !== 'cancel' && error !== 'close') 显示错误(error)
@@ -726,61 +799,93 @@ const 打开价格 = function (row) {
   查询价格()
 }
 const 查询价格 = function () {
+  const software = 价格框.software
+  价格框.加载中 = true
   return post('/point_card/price/list', { software: 价格框.software })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询点卡计费方案失败')
-      价格框.rows = res.data.data || []
+      if (价格框.software === software) {
+        价格框.rows = (res.data.data || []).map((item) => ({ ...item, 原默认: Boolean(item.is_default), 保存中: false }))
+      }
     })
     .catch(显示错误)
+    .finally(() => { if (价格框.software === software) 价格框.加载中 = false })
 }
 const 新增价格 = function () {
-  Object.assign(价格编辑框, {
-    显示: true,
+  if (价格框.加载中 || 价格框.保存中 || 价格框.rows.some((item) => !item.id)) return
+  const usedPeriods = new Set(价格框.rows.map((item) => Number(item.period_minutes)))
+  价格框.rows.push({
     id: 0,
     software: 价格框.software,
-    period_minutes: 60,
+    period_minutes: [60, 120, 1440, 15, 30].find((minutes) => !usedPeriods.has(minutes)) ?? 60,
     cost: 1,
     enabled: true,
-    is_default: !价格框.rows.length
+    is_default: !价格框.rows.length,
+    原默认: false,
+    保存中: false
   })
 }
-const 编辑价格 = function (row) {
-  Object.assign(价格编辑框, {
-    显示: true,
-    id: row.id,
-    software: row.software,
-    period_minutes: Number(row.period_minutes || 60),
-    cost: Number(row.cost),
-    enabled: Boolean(row.enabled),
-    is_default: Boolean(row.is_default)
-  })
-}
-const 保存价格 = function () {
-  if (!点卡计费周期有效(价格编辑框.period_minutes)) {
+const 保存价格 = function (row) {
+  if (价格框.保存中 || row.保存中) return
+  if (!点卡计费周期有效(row.period_minutes)) {
     ElMessage.warning('授权时长必须在15至43200分钟之间')
     return
   }
+  if (!Number.isInteger(row.cost) || row.cost < 1 || row.cost > 1000000000) {
+    ElMessage.warning('扣点数必须在1至1000000000之间')
+    return
+  }
+  if (!row.id && 价格框.rows.some((item) => item.id && Number(item.period_minutes) === Number(row.period_minutes))) {
+    ElMessage.warning('该授权时长已存在，请直接修改原方案')
+    return
+  }
+  if (row.is_default && !row.enabled) {
+    ElMessage.warning('默认方案必须启用')
+    return
+  }
+  row.保存中 = true
+  价格框.保存中 = true
+  const software = 价格框.software
   post('/point_card/price/save', {
-    software: 价格编辑框.software,
-    period_minutes: 价格编辑框.period_minutes,
-    cost: 价格编辑框.cost,
-    enabled: 价格编辑框.enabled,
-    is_default: 价格编辑框.is_default
+    software,
+    period_minutes: row.period_minutes,
+    cost: row.cost,
+    enabled: row.enabled,
+    is_default: row.is_default
   })
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '保存价格失败')
       ElMessage.success('保存成功')
-      价格编辑框.显示 = false
-      return Promise.all([查询价格(), 查询软件(true)])
+      if (价格框.software === software) {
+        const saved = res.data.data
+        if (saved.is_default) {
+          // 后端切换默认方案会同时清除其他行的默认标记，行内状态随之同步。
+          价格框.rows.forEach((item) => {
+            if (item !== row) item.is_default = item.原默认 = false
+          })
+        }
+        Object.assign(row, saved, { 原默认: Boolean(saved.is_default) })
+      }
+      return Promise.all([查询软件(true), 查询全部价格()])
     })
     .catch(显示错误)
+    .finally(() => {
+      row.保存中 = false
+      价格框.保存中 = false
+    })
 }
 const 删除价格 = function (row) {
+  if (价格框.保存中) return
+  if (!row.id) {
+    价格框.rows = 价格框.rows.filter((item) => item !== row)
+    return
+  }
   ElMessageBox.confirm('删除后使用该授权时长的登录会被拒绝，确定删除？', '确认删除', { type: 'warning' })
     .then(() => post('/point_card/price/delete', { id: row.id }))
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
-      查询价格()
+      价格框.rows = 价格框.rows.filter((item) => item !== row)
+      return 查询全部价格()
     })
     .catch((error) => {
       if (error !== 'cancel' && error !== 'close') 显示错误(error)
@@ -1082,10 +1187,38 @@ const 保存代理 = function () {
     .catch(显示错误)
 }
 const 打开代理充值 = function (row) {
-  Object.assign(代理充值框, { 显示: true, id: row.id, name: row.name, amount: 100, note: '' })
+  Object.assign(代理充值框, { 显示: true, id: row.id, name: row.name, amount: 0, note: '' })
+}
+const 打开代理日志 = function (row) {
+  Object.assign(代理日志框, { 显示: true, 加载中: false, id: row.id, name: row.name, content: '' })
+  查询代理日志()
+}
+const 查询代理日志 = async function () {
+  if (!代理日志框.id || 代理日志框.加载中) return
+  const id = 代理日志框.id
+  代理日志框.加载中 = true
+  try {
+    const response = await post('/查询代理账号日志', { id })
+    if (代理日志框.id !== id) return
+    if (typeof response.data === 'string') {
+      代理日志框.content = 日志倒序(response.data)
+    } else if (!response.data?.state) {
+      throw new Error(response.data?.msg || '查询渠道合伙人日志失败')
+    } else {
+      代理日志框.content = 日志倒序(response.data.data)
+    }
+  } catch (error) {
+    if (代理日志框.id === id) 显示错误(error)
+  } finally {
+    if (代理日志框.id === id) 代理日志框.加载中 = false
+  }
 }
 const 代理充值 = function () {
   if (代理充值框.保存中) return
+  if (!Number.isSafeInteger(代理充值框.amount) || 代理充值框.amount === 0) {
+    ElMessage.warning('请输入非零的整数变更点数')
+    return
+  }
   const request = { id: 代理充值框.id, amount: 代理充值框.amount, note: 代理充值框.note }
   代理充值框.保存中 = true
   ElMessageBox.confirm(`确定调整 ${request.amount} 点？`, '确认余额调整', {
@@ -1120,9 +1253,9 @@ const 删除代理 = function (row) {
 
 onMounted(() => {
   if (是代理账号.value) {
-    Promise.all([查询软件(), 查询代理价格()]).catch(() => {})
+    Promise.all([查询软件(), 查询代理价格(), 查询全部价格()]).catch(() => {})
   } else {
-    Promise.all([查询软件(), 查询代理()]).catch(() => {})
+    Promise.all([查询软件(), 查询代理(), 查询全部价格()]).catch(() => {})
   }
 })
 </script>
@@ -1152,10 +1285,54 @@ h3 {
 .代理区 {
   margin-top: 24px;
 }
+.方案列表 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.代理日志内容 {
+  min-height: 240px;
+  max-height: 60vh;
+  overflow: auto;
+  margin-top: 12px;
+}
+.代理日志内容 pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #cbd3df;
+  line-height: 1.6;
+}
+.时长价格分组 {
+  display: grid;
+  gap: 12px;
+}
+.时长价格组 {
+  padding: 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+}
+.时长价格组标题 {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
 .代理设置区 {
   display: grid;
   gap: 14px;
   margin-top: 16px;
+}
+.代扣设置栏 {
+  padding: 4px 2px;
+}
+.代扣设置主行 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.代扣设置名称 {
+  font-size: 14px;
+  font-weight: 600;
 }
 .代理设置标题 {
   display: flex;
@@ -1176,8 +1353,19 @@ h3 {
   color: #aeb6c3;
   font-size: 13px;
 }
+.账户详情切换 {
+  margin-left: auto;
+}
 .价格标题 {
   margin-bottom: 12px;
+}
+.方案时长输入,
+.方案扣点输入 {
+  width: 120px;
+}
+.方案提醒 {
+  margin-top: 4px;
+  font-size: 12px;
 }
 .代理价格标题 {
   display: flex;

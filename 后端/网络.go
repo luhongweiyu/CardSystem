@@ -267,6 +267,7 @@ func 启动网络() error {
 		admin.POST("/创建代理账号", 管理员_创建代理账号)
 		admin.POST("/设置代理账号", 设置代理账号)
 		admin.POST("/查询代理账号", 查询代理账号)
+		admin.POST("/查询代理账号日志", 管理员_查询代理账号日志)
 		admin.POST("/删除代理账号", 删除代理账号)
 		admin.POST("/代理账号充值", 代理账号充值)
 	}
@@ -285,6 +286,7 @@ func 启动网络() error {
 		agent.POST("/point_card/device/offline", 代理账号_下线点卡设备)
 		agent.POST("/point_card/ledger", 代理账号_查询点卡流水)
 		agent.POST("/point_card/settings", 代理账号_修改点卡代扣设置)
+		agent.POST("/point_card/price/list", 代理账号_查询点卡周期价格)
 		agent.POST("/user_query_soft_list", 代理账号_查询软件列表)
 		agent.POST("/query_log", 代理账号_查询操作日志)
 		agent.POST("/duration_card/price/list", 代理账号_查询时长卡价格)

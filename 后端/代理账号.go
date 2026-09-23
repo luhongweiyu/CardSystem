@@ -509,16 +509,22 @@ func 代理账号_修改点卡代扣设置(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit, "balance": account.Balance})
 }
 
-func 代理账号_查询操作日志(ctx *gin.Context) {
-	account := 代理账号_取账号信息(ctx)
+// 管理员和代理共用同一份代理日志读取范围，避免两处的月份规则不一致。
+func 读取代理账号最近两月日志(accountID int) string {
+	now := time.Now()
 	read := func(month time.Time) string {
-		content, err := os.ReadFile(fmt.Sprintf("log/代理账号%v_%v", account.ID, month.Format("200601")))
+		content, err := os.ReadFile(fmt.Sprintf("log/代理账号%v_%v", accountID, month.Format("200601")))
 		if err != nil {
 			return "没有其他内容"
 		}
 		return string(content)
 	}
-	ctx.String(http.StatusOK, read(time.Now())+"\n"+read(time.Now().AddDate(0, -1, 0)))
+	return read(now) + "\n" + read(now.AddDate(0, -1, 0))
+}
+
+func 代理账号_查询操作日志(ctx *gin.Context) {
+	account := 代理账号_取账号信息(ctx)
+	ctx.String(http.StatusOK, 读取代理账号最近两月日志(account.ID))
 }
 
 // 设置代理账号保存密码、软件价格和点卡代扣欠费额度，不修改代理自己的代扣开关。
@@ -674,6 +680,33 @@ func 查询代理账号(ctx *gin.Context) {
 		result = append(result, 代理账号列表项转换(account))
 	}
 	成功提示管理端(ctx, gin.H{"data": result})
+}
+
+// 管理员只能按自己名下的代理 ID 读取日志，不能凭文件名访问其他管理员的记录。
+func 管理员_查询代理账号日志(ctx *gin.Context) {
+	var request struct {
+		ID int `json:"id"`
+	}
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.ID <= 0 {
+		失败提示管理端(ctx, "渠道合伙人编号不正确")
+		return
+	}
+	parent, ok := 管理员_取账号信息(ctx)
+	if !ok {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	var account 代理账号记录
+	err := db_代理账号.Select("id").Where("id = ? AND admin = ?", request.ID, parent.Name).First(&account).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		失败提示管理端(ctx, "渠道合伙人不存在")
+		return
+	}
+	if err != nil {
+		失败提示管理端(ctx, "查询渠道合伙人失败")
+		return
+	}
+	ctx.String(http.StatusOK, 读取代理账号最近两月日志(account.ID))
 }
 
 // 删除代理账号只删除代理登录主体，已经生成的点卡和保留期内的流水继续归管理员所有。
