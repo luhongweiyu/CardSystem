@@ -343,7 +343,7 @@ func 启动网络() error {
 	// 访客接口保留旧中文路径，同时提供含义明确的新路径；两套路径调用
 	// 同一实现，不会形成两份业务规则。
 	visitor := router.Group("/visitor", visitor_验证对应id)
-	visitor.POST("/查询所有卡密", 访客_查询所有点卡卡密)
+	visitor.POST("/查询所有卡密", 访客_查找卡密)
 	visitor.POST("/查询卡密", 访客_查询点卡卡密详情)
 	visitor.POST("/point_ledger/query", 访客_查询点卡流水)
 	visitor.POST("/查询时长卡", 访客_查询时长卡)
