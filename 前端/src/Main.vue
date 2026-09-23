@@ -33,30 +33,43 @@ body,
   min-height: 100%;
   height: 100%;
   margin: 0;
-  background: #20242d;
   color: #e6eaf2;
 }
 .应用 {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   min-height: 100vh;
-  background: rgba(24, 28, 36, 0.92);
+  overflow: hidden;
+  background: transparent;
 }
 .头部 {
+  flex: none;
   height: auto;
   min-height: 48px;
   padding: 0;
   border-bottom: 1px solid #343b48;
+  background: rgba(37, 43, 54, 0.82);
 }
 .主体 {
-  min-height: calc(100vh - 49px);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .侧栏 {
+  height: 100%;
+  min-height: 0;
   transition: width 0.2s;
-  background: #252b36;
+  background: transparent;
   overflow: hidden;
 }
 .内容 {
+  flex: 1;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   padding: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 </style>

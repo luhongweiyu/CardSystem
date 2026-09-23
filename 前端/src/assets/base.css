@@ -26,5 +26,12 @@ body {
   min-height: 100vh;
   margin: 0;
   color: #e6eaf2;
-  background: #20242d;
+  background-color: #20242d;
+  background-image:
+    linear-gradient(rgba(17, 20, 27, 0.32), rgba(17, 20, 27, 0.32)),
+    url('https://t.mwm.moe/pc');
+  background-position: center, center;
+  background-size: cover, cover;
+  background-attachment: fixed, fixed;
+  background-repeat: no-repeat, no-repeat;
 }

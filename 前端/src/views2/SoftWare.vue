@@ -1310,7 +1310,10 @@ h3 {
   margin-top: 16px;
 }
 .代扣设置栏 {
-  padding: 4px 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(160, 174, 192, 0.24);
+  border-radius: 6px;
+  background: rgba(24, 28, 36, 0.84);
 }
 .代扣设置主行 {
   display: flex;

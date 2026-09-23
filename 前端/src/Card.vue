@@ -572,7 +572,6 @@ body,
 #app {
   min-height: 100%;
   margin: 0;
-  background: #20242d;
 }
 .查询页 {
   max-width: 1280px;

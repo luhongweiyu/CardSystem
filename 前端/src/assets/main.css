@@ -8,11 +8,42 @@ body,
   width: 100%;
   min-height: 100%;
   margin: 0;
-  background: #20242d;
 }
 
 body {
   min-width: 320px;
+}
+
+#app {
+  background: transparent;
+}
+
+html.dark body {
+  --el-fill-color-blank: rgba(24, 28, 36, 0.86);
+  --el-fill-color-light: rgba(37, 43, 54, 0.84);
+}
+
+html.dark body .el-card:not(.登录卡片) {
+  --el-card-bg-color: rgba(24, 28, 36, 0.86);
+}
+
+html.dark body .内容 > .页面 > .页面标题行 {
+  padding: 10px 14px;
+  border: 1px solid rgba(160, 174, 192, 0.24);
+  border-radius: 6px;
+  background: rgba(24, 28, 36, 0.84);
+}
+
+/* 全站表格统一使用深色半透明底，保持文字对比度并透出页面背景。 */
+html.dark .el-table {
+  --el-table-bg-color: rgba(24, 28, 36, 0.84);
+  --el-table-tr-bg-color: rgba(24, 28, 36, 0.84);
+  --el-table-header-bg-color: rgba(37, 43, 54, 0.94);
+  --el-table-row-hover-bg-color: rgba(63, 79, 102, 0.92);
+  --el-table-current-row-bg-color: rgba(41, 79, 121, 0.92);
+  --el-table-expanded-cell-bg-color: rgba(24, 28, 36, 0.9);
+  --el-table-border-color: rgba(160, 174, 192, 0.24);
+  --el-fill-color-lighter: rgba(37, 43, 54, 0.88);
 }
 
 button,
@@ -44,6 +75,10 @@ textarea {
 .el-pagination {
   flex-wrap: wrap;
   row-gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(160, 174, 192, 0.24);
+  border-radius: 6px;
+  background: rgba(24, 28, 36, 0.84);
 }
 
 .el-dialog .el-descriptions__content {

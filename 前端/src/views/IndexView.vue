@@ -1,16 +1,11 @@
 <template>
   <aside class="导航栏" :class="{ 折叠: 导航开关 }">
     <div class="品牌区">
-      <img class="品牌图标" src="../assets/logo.svg" alt="卡密管理" />
+      <img class="品牌图标" src="/favicon.png" alt="快乐马" />
       <div v-show="!导航开关" class="品牌文字">
         <strong>卡密管理</strong>
         <span>卡密控制台</span>
       </div>
-    </div>
-
-    <div v-show="!导航开关" class="账号提示">
-      <span>{{ 是代理账号 ? '小伙伴账号' : '管理员账号' }}</span>
-      <strong>{{ 账号 || '当前账号' }}</strong>
     </div>
 
     <el-menu
@@ -42,7 +37,7 @@ import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 
 const stores = use登录状态Store()
-const { 导航开关, 账号, 是代理账号 } = storeToRefs(stores)
+const { 导航开关, 是代理账号 } = storeToRefs(stores)
 
 const 管理员菜单 = [
   { path: '/index', label: '首页', icon: 'HomeFilled' },
@@ -73,10 +68,11 @@ const 菜单 = computed(() => (是代理账号.value ? 代理菜单 : 管理员�
   display: flex;
   flex-direction: column;
   width: 100%;
-  min-height: calc(100vh - 49px);
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   border-right: 1px solid #343b48;
-  background: #252b36;
+  background: rgba(37, 43, 54, 0.82);
   transition: background-color 0.2s;
 }
 
@@ -91,8 +87,8 @@ const 菜单 = computed(() => (是代理账号.value ? 代理菜单 : 管理员�
 
 .品牌图标 {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
 }
 
 .品牌文字 {
@@ -116,33 +112,11 @@ const 菜单 = computed(() => (是代理账号.value ? 代理菜单 : 管理员�
   white-space: nowrap;
 }
 
-.账号提示 {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 12px 12px 7px;
-  padding: 9px 13px;
-  border: 1px solid rgba(129, 153, 187, 0.18);
-  border-radius: 10px;
-  background: rgba(13, 18, 27, 0.24);
-}
-
-.账号提示 span {
-  color: #8491a4;
-  font-size: 11px;
-}
-
-.账号提示 strong {
-  overflow: hidden;
-  color: #dce5f2;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .侧边菜单 {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   padding: 7px 8px;
   border-right: 0;
 }

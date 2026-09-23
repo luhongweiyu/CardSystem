@@ -117,9 +117,6 @@ const 前往 = function (path) {
   min-height: 100%;
   padding: clamp(20px, 4vw, 42px);
   color: #e6eaf2;
-  background:
-    radial-gradient(circle at 88% 0%, rgba(64, 123, 209, 0.16), transparent 34%),
-    #20242d;
 }
 
 .欢迎区 {
@@ -134,7 +131,7 @@ const 前往 = function (path) {
   overflow: hidden;
   border: 1px solid rgba(130, 156, 201, 0.25);
   border-radius: 20px;
-  background: linear-gradient(135deg, rgba(46, 62, 88, 0.96), rgba(31, 37, 49, 0.96));
+  background: linear-gradient(135deg, rgba(46, 62, 88, 0.86), rgba(31, 37, 49, 0.86));
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
 }
 
@@ -205,7 +202,7 @@ h1 {
   padding: 10px 14px;
   border: 1px solid rgba(174, 198, 232, 0.18);
   border-radius: 13px;
-  background: rgba(13, 18, 27, 0.28);
+  background: rgba(13, 18, 27, 0.72);
 }
 
 .账号头像 {
@@ -322,7 +319,7 @@ h1 {
 .功能卡片:focus-visible {
   border-color: #5d8dcc;
   outline: none;
-  background: rgba(43, 53, 70, 0.96);
+  background: rgba(43, 53, 70, 0.92);
   transform: translateY(-2px);
 }
 
