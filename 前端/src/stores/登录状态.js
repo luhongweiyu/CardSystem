@@ -53,7 +53,7 @@ export const use登录状态Store = defineStore('登录状态', () => {
       // 余额和代扣设置只接收当前会话的真实响应，不能在切页时用软件缓存回填旧值。
       // 较早发出的慢请求也不能覆盖较新请求已经返回的同一字段。
       if (agent && requestVersion === 公共缓存版本 && response.data?.state) {
-        for (const key of ['balance', 'prices', 'point_card_auto_deduct', 'allow_point_debt', 'point_debt_limit']) {
+        for (const key of ['balance', 'prices', 'point_card_auto_deduct', 'min_balance']) {
           if (response.data[key] !== undefined && sequence >= (账号字段版本[key] || 0)) {
             账号信息.value[key] = response.data[key]
             账号字段版本[key] = sequence

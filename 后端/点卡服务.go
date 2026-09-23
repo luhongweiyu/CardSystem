@@ -227,7 +227,7 @@ func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, pa
 }
 
 // 点卡代理余额代扣只处理点卡所属代理的不足部分。卡密开关由代理自己
-// 控制，管理员只通过账号上的欠费权限和额度限制最终可扣范围。
+// 控制，管理员设置的统一余额下限限制最终可扣范围。
 func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, softwareID int, shortfall int64) (int64, int64, error) {
 	if card.AgentID <= 0 || shortfall <= 0 {
 		return 0, 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
@@ -259,14 +259,9 @@ func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, 
 	if err != nil {
 		return 0, 0, fmt.Errorf("%w：代理代扣金额计算失败", 错误_点卡余额不足)
 	}
-	if account.Balance < math.MinInt64+charge {
-		return 0, 0, fmt.Errorf("%w：代理余额超出允许范围", 错误_点卡余额不足)
-	}
-	after := account.Balance - charge
-	if after < 0 {
-		if !account.AllowPointDebt || account.PointDebtLimit <= 0 || after < -account.PointDebtLimit {
-			return 0, 0, fmt.Errorf("%w：代理余额不足，需要%d点，当前%d点", 错误_点卡余额不足, charge, account.Balance)
-		}
+	after, err := 检查代理扣款余额(account, charge)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w：%v", 错误_点卡余额不足, err)
 	}
 	update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, admin).UpdateColumn("balance", gorm.Expr("balance - ?", charge))
 	if update.Error != nil || update.RowsAffected != 1 {

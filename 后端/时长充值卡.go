@@ -211,10 +211,10 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if current.Balance < quote.Charge {
-			return fmt.Errorf("代理余额不足，需要%d点，当前%d点", quote.Charge, current.Balance)
+		if _, err := 检查代理扣款余额(current, quote.Charge); err != nil {
+			return err
 		}
-		if update := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, quote.Charge).
+		if update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", current.ID, current.Admin).
 			UpdateColumn("balance", gorm.Expr("balance - ?", quote.Charge)); update.Error != nil || update.RowsAffected != 1 {
 			return fmt.Errorf("扣除代理余额失败")
 		}

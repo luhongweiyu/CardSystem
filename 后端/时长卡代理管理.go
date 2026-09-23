@@ -325,10 +325,10 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if current.Balance < charge {
-			return fmt.Errorf("代理余额不足，需要%d点，当前%d点", charge, current.Balance)
+		if _, err := 检查代理扣款余额(current, charge); err != nil {
+			return err
 		}
-		if result := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, charge).
+		if result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", current.ID, current.Admin).
 			UpdateColumn("balance", gorm.Expr("balance - ?", charge)); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("扣除代理余额失败")
 		}

@@ -130,11 +130,11 @@ JSON 请求的业务参数只从正文读取，缺字段时不回退到 URL 或�
 
 点卡余额不足代扣：
 
-- 代理使用 `POST /agent/point_card/settings` 提交 `point_card_auto_deduct: true/false`，只修改自己的总开关，默认关闭。当前设置随 `/agent/user_query_soft_list` 返回，保存接口也返回 `point_card_auto_deduct`、`allow_point_debt`、`point_debt_limit` 和 `balance`。
+- 代理使用 `POST /agent/point_card/settings` 提交 `point_card_auto_deduct: true/false`，只修改自己的总开关，默认关闭。当前设置随 `/agent/user_query_soft_list` 返回，保存接口也返回 `point_card_auto_deduct`、`min_balance` 和 `balance`。
 - 代理使用 `/agent/point_card/save` 提交 `card` 和 `point_card_auto_deduct_mode`：`inherit` 跟随总开关（默认）、`allow` 允许、`deny` 禁止。只允许修改自己的卡，卡密设置优先于总开关；卡密列表返回该字段。批量设置使用 `/agent/point_card/auto_deduct`，提交 `cards` 和同名字段，整批设置为同一种模式。
-- 管理员在 `/admin/设置代理账号` 的 `data` 中提交代理 `id`、`allow_point_debt` 和 `point_debt_limit`（整数，0 至 10 亿点）；未提交 `prices` 时保留原价格。默认禁止欠费；允许且额度大于 0 时，点卡代扣后的代理余额最低可到负额度。代理不能修改这两个字段。
+- 管理员在 `/admin/设置代理账号` 的 `data` 中提交代理 `id` 和 `min_balance`（整数，-10 亿至 10 亿点）；未提交 `prices` 时保留原价格。默认下限为 0；负数允许欠费，正数要求扣款后保留相应余额。代理不能修改该字段。复用原数据库数值列，旧数据不会自动转换，现有额度须由管理员手动调整。
 
-登录、心跳续费和后台续费均先扣卡内点数，不足部分按所属代理当前软件单价折算，每次代扣费用按整数点向上取整。代扣未允许、价格不可用或超出可扣额度时，本次不扣任何余额。代理扣款、卡内扣点和设备续费在同一事务中完成；管理员名下或没有有效所属代理的卡不会代扣。欠费额度只用于点卡代扣，不用于生成卡密或时长卡业务。
+登录、心跳续费和后台续费均先扣卡内点数，不足部分按所属代理当前软件单价折算，每次代扣费用按整数点向上取整。代扣未允许、价格不可用或扣后余额低于 `min_balance` 时，本次不扣任何余额。代理扣款、卡内扣点和设备续费在同一事务中完成；管理员名下或没有有效所属代理的卡不会代扣。统一余额下限也适用于代理生成点卡、时长卡、时长充值卡及续费时长卡；管理员手动调整余额不受此限制。
 
 点数流水仍只记录卡内真实余额变化；代理代扣在事务提交后写入代理操作日志。修改开关不会撤销已付费授权，下一次需要扣费时读取最新设置。
 

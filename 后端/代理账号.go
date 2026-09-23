@@ -21,7 +21,7 @@ const (
 	代理账号表名      = "agent_account"
 	最大代理价格配置字节数 = 4096
 	最大代理价格软件数量  = 100
-	最大代理欠费额度    = int64(1000000000)
+	最大代理余额下限绝对值 = int64(1000000000)
 )
 
 // 代理账号记录保存代理身份、独立余额和价格配置。代理余额用于发卡和
@@ -39,11 +39,10 @@ type 代理账号记录 struct {
 	Balance      int64  `json:"balance" gorm:"column:balance;not null;default:0"`
 	Prices       string `json:"prices" gorm:"column:prices;type:text;not null"`
 	// PointCardAutoDeduct 由代理自己控制，决定卡内点数不足时是否尝试
-	// 使用自己的代理余额补足；管理员只控制欠费权限和额度。
+	// 使用自己的代理余额补足；管理员只控制统一余额下限。
 	PointCardAutoDeduct bool `json:"point_card_auto_deduct" gorm:"column:point_card_auto_deduct;not null;default:false"`
-	// AllowPointDebt 和 PointDebtLimit 由管理员控制；额度为0时不允许欠费。
-	AllowPointDebt bool  `json:"allow_point_debt" gorm:"column:allow_point_debt;not null;default:false"`
-	PointDebtLimit int64 `json:"point_debt_limit" gorm:"column:point_debt_limit;not null;default:0"`
+	// 复用旧的数值列，不迁移现有数据；负数可欠费，正数表示必须保留的余额。
+	MinBalance int64 `json:"min_balance" gorm:"column:point_debt_limit;not null;default:0"`
 }
 
 // TableName 固定代理账号模型的物理表名。业务查询即使没有显式调用 Table，
@@ -58,14 +57,13 @@ type 代理账号列表项 struct {
 	Balance             int64  `json:"balance"`
 	Prices              string `json:"prices"`
 	PointCardAutoDeduct bool   `json:"point_card_auto_deduct"`
-	AllowPointDebt      bool   `json:"allow_point_debt"`
-	PointDebtLimit      int64  `json:"point_debt_limit"`
+	MinBalance          int64  `json:"min_balance"`
 }
 
 func 代理账号列表项转换(account 代理账号记录) 代理账号列表项 {
 	return 代理账号列表项{
 		ID: account.ID, Name: account.Name, Balance: account.Balance, Prices: account.Prices,
-		PointCardAutoDeduct: account.PointCardAutoDeduct, AllowPointDebt: account.AllowPointDebt, PointDebtLimit: account.PointDebtLimit,
+		PointCardAutoDeduct: account.PointCardAutoDeduct, MinBalance: account.MinBalance,
 	}
 }
 
@@ -87,7 +85,7 @@ func 代理账号登录(ctx *gin.Context) {
 		return
 	}
 	session := 全局_登录会话.创建会话(account.Name, true)
-	成功提示管理端(ctx, gin.H{"msg": "登录成功", "id": account.ID, "admin": account.Admin, "center_id": parent.ID, "name": account.Name, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit, "token": session.Token, "expires_at": session.ExpiresAt})
+	成功提示管理端(ctx, gin.H{"msg": "登录成功", "id": account.ID, "admin": account.Admin, "center_id": parent.ID, "name": account.Name, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "min_balance": account.MinBalance, "token": session.Token, "expires_at": session.ExpiresAt})
 }
 
 func 管理员_创建代理账号(ctx *gin.Context) {
@@ -203,6 +201,19 @@ func 代理每点价格有效(price float64) bool {
 
 func 代理账号日志(accountID int, fields ...string) {
 	日志(fmt.Sprintf("log/代理账号%v_%v", accountID, time.Now().Format("200601")), 业务流水文本(fields...))
+}
+
+// 各扣款路径已在事务中锁定同一代理账号行；用该行最新余额和统一下限校验，
+// 不额外查询数据库。管理员手动调整余额不经过此函数。
+func 检查代理扣款余额(account 代理账号记录, charge int64) (int64, error) {
+	if charge < 0 || account.Balance < math.MinInt64+charge {
+		return 0, fmt.Errorf("代理余额超出允许范围")
+	}
+	after := account.Balance - charge
+	if after < account.MinBalance {
+		return 0, fmt.Errorf("代理余额不足，需要%d点，当前%d点，余额下限%d点", charge, account.Balance, account.MinBalance)
+	}
+	return after, nil
 }
 
 // 计算代理点卡费用把两位小数单价转为“百分之一点”后按整数计算，避免
@@ -352,10 +363,10 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 			return err
 		}
 		if charge > 0 {
-			if current.Balance < charge {
-				return fmt.Errorf("账户余额不足，需要%d点，当前%d点", charge, current.Balance)
+			if _, err := 检查代理扣款余额(current, charge); err != nil {
+				return err
 			}
-			if update := tx.Table(代理账号表名).Where("id = ? AND admin = ? AND balance >= ?", current.ID, current.Admin, charge).UpdateColumn("balance", gorm.Expr("balance - ?", charge)); update.Error != nil || update.RowsAffected != 1 {
+			if update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", current.ID, current.Admin).UpdateColumn("balance", gorm.Expr("balance - ?", charge)); update.Error != nil || update.RowsAffected != 1 {
 				return fmt.Errorf("扣除渠道余额失败")
 			}
 		}
@@ -477,10 +488,10 @@ func 代理账号_查询软件列表(ctx *gin.Context) {
 	}
 	// 代理每次进入点卡页都会查询软件；顺带返回数据库中的最新余额和价格，
 	// 让管理员刚完成的充值或改价无需代理退出重登即可显示在页面上。
-	成功提示管理端(ctx, gin.H{"data": rows, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit})
+	成功提示管理端(ctx, gin.H{"data": rows, "balance": account.Balance, "prices": 解析代理价格(account.Prices), "point_card_auto_deduct": account.PointCardAutoDeduct, "min_balance": account.MinBalance})
 }
 
-// 代理账号_修改点卡代扣设置只允许代理修改自己的总开关；欠费权限和额度
+// 代理账号_修改点卡代扣设置只允许代理修改自己的总开关；余额下限
 // 由管理员设置，不能通过代理接口自行放开。
 func 代理账号_修改点卡代扣设置(ctx *gin.Context) {
 	var request struct {
@@ -501,12 +512,12 @@ func 代理账号_修改点卡代扣设置(ctx *gin.Context) {
 		return
 	}
 	// 相同开关值在 MySQL 中可能返回零条变更；重新读取确认账号仍存在，
-	// 同时返回当前余额和欠费设置，重复保存也能正常成功。
+	// 同时返回当前余额和余额下限，重复保存也能正常成功。
 	if err := db.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&account).Error; err != nil {
 		失败提示管理端(ctx, "读取渠道合伙人设置失败")
 		return
 	}
-	成功提示管理端(ctx, gin.H{"msg": "保存成功", "point_card_auto_deduct": account.PointCardAutoDeduct, "allow_point_debt": account.AllowPointDebt, "point_debt_limit": account.PointDebtLimit, "balance": account.Balance})
+	成功提示管理端(ctx, gin.H{"msg": "保存成功", "point_card_auto_deduct": account.PointCardAutoDeduct, "min_balance": account.MinBalance, "balance": account.Balance})
 }
 
 // 管理员和代理共用同一份代理日志读取范围，避免两处的月份规则不一致。
@@ -527,15 +538,14 @@ func 代理账号_查询操作日志(ctx *gin.Context) {
 	ctx.String(http.StatusOK, 读取代理账号最近两月日志(account.ID))
 }
 
-// 设置代理账号保存密码、软件价格和点卡代扣欠费额度，不修改代理自己的代扣开关。
+// 设置代理账号保存密码、软件价格和统一余额下限，不修改代理自己的代扣开关。
 func 设置代理账号(ctx *gin.Context) {
 	var request struct {
 		Data struct {
-			ID             int     `json:"id"`
-			Password       string  `json:"password"`
-			Prices         *string `json:"prices"`
-			AllowPointDebt *bool   `json:"allow_point_debt"`
-			PointDebtLimit *int64  `json:"point_debt_limit"`
+			ID         int     `json:"id"`
+			Password   string  `json:"password"`
+			Prices     *string `json:"prices"`
+			MinBalance *int64  `json:"min_balance"`
 		} `json:"data"`
 	}
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
@@ -565,8 +575,8 @@ func 设置代理账号(ctx *gin.Context) {
 			return
 		}
 	}
-	if request.Data.PointDebtLimit != nil && (*request.Data.PointDebtLimit < 0 || *request.Data.PointDebtLimit > 最大代理欠费额度) {
-		失败提示管理端(ctx, fmt.Sprintf("最大欠费额度必须在0至%d之间", 最大代理欠费额度))
+	if request.Data.MinBalance != nil && (*request.Data.MinBalance < -最大代理余额下限绝对值 || *request.Data.MinBalance > 最大代理余额下限绝对值) {
+		失败提示管理端(ctx, fmt.Sprintf("余额下限必须在-%d至%d之间", 最大代理余额下限绝对值, 最大代理余额下限绝对值))
 		return
 	}
 	var agentName string
@@ -594,11 +604,8 @@ func 设置代理账号(ctx *gin.Context) {
 		if request.Data.Prices != nil {
 			updates["prices"] = *request.Data.Prices
 		}
-		if request.Data.AllowPointDebt != nil {
-			updates["allow_point_debt"] = *request.Data.AllowPointDebt
-		}
-		if request.Data.PointDebtLimit != nil {
-			updates["point_debt_limit"] = *request.Data.PointDebtLimit
+		if request.Data.MinBalance != nil {
+			updates["point_debt_limit"] = *request.Data.MinBalance
 		}
 		if err := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.Data.ID, parent.Name).Updates(updates).Error; err != nil {
 			return fmt.Errorf("保存代理配置失败")

@@ -82,8 +82,7 @@
         </div>
         <div v-if="显示账户详情" class="代理设置状态">
           <span>当前余额：{{ stores.账号信息.balance ?? 0 }} 点</span>
-          <span>管理员欠费权限：{{ 代理代扣.allow_point_debt ? '已允许' : '未允许' }}</span>
-          <span>最大欠费额度：{{ 代理代扣.point_debt_limit }} 点</span>
+          <span>余额下限：{{ 代理代扣.min_balance }} 点</span>
         </div>
       </div>
 
@@ -146,8 +145,8 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="点卡欠费" width="155">
-          <template #default="scope">{{ scope.row.allow_point_debt ? `允许 · 限额 ${scope.row.point_debt_limit} 点` : '不允许' }}</template>
+        <el-table-column label="余额下限（点）" width="145">
+          <template #default="scope">{{ scope.row.min_balance }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="410">
           <template #default="scope">
@@ -303,19 +302,15 @@
           />
           <span class="价格说明">0 表示不授权该软件</span>
         </el-form-item>
-        <el-form-item label="允许点卡代扣欠费">
-          <el-switch v-model="代理编辑框.allow_point_debt" />
-          <span class="价格说明">允许代理点卡代扣时将代理余额扣到负数</span>
-        </el-form-item>
-        <el-form-item label="最大欠费额度">
+        <el-form-item label="余额下限">
           <el-input-number
-            v-model="代理编辑框.point_debt_limit"
-            :min="0"
-            :max="最大代理欠费额度"
+            v-model="代理编辑框.min_balance"
+            :min="-最大代理余额下限绝对值"
+            :max="最大代理余额下限绝对值"
             :precision="0"
             controls-position="right"
           />
-          <span class="价格说明">点；0 表示不允许欠费</span>
+          <span class="价格说明">点；负数可欠费，0 不欠费，正数须保留相应余额</span>
         </el-form-item>
         <el-form-item label="新密码（可选）">
           <el-input v-model="代理编辑框.password" type="password" show-password placeholder="留空表示不修改" />
@@ -486,7 +481,7 @@ import {
 } from '../utils/时长工具.js'
 
 const 最大代理价格 = 1000000000
-const 最大代理欠费额度 = 1000000000
+const 最大代理余额下限绝对值 = 1000000000
 // 自动离线时间仍独立允许 5 分钟至 3 天，不能随点卡计费周期一起扩到 30 天。
 const 最小自动离线时间分钟 = 5
 const 最大自动离线时间分钟 = 3 * 24 * 60
@@ -501,8 +496,7 @@ const 代理代扣 = reactive({
   保存中: false,
   point_card_auto_deduct: false,
   已保存代扣: false,
-  allow_point_debt: false,
-  point_debt_limit: 0
+  min_balance: 0
 })
 const 代理代扣有改动 = computed(() => 代理代扣.point_card_auto_deduct !== 代理代扣.已保存代扣)
 const 代理价格加载中 = ref(false)
@@ -530,8 +524,7 @@ const 代理编辑框 = reactive({
   balance: 0,
   prices: {},
   password: '',
-  allow_point_debt: false,
-  point_debt_limit: 0
+  min_balance: 0
 })
 const 代理时长价格框 = reactive({
   显示: false,
@@ -611,11 +604,8 @@ const 同步代理代扣设置 = function (data = {}) {
     代理代扣.已保存代扣 = Boolean(data.point_card_auto_deduct)
     代理代扣.point_card_auto_deduct = 代理代扣.已保存代扣
   }
-  if (data.allow_point_debt !== undefined) {
-    代理代扣.allow_point_debt = Boolean(data.allow_point_debt)
-  }
-  if (data.point_debt_limit !== undefined) {
-    代理代扣.point_debt_limit = Math.max(0, Number(data.point_debt_limit) || 0)
+  if (data.min_balance !== undefined) {
+    代理代扣.min_balance = Number(data.min_balance) || 0
   }
 }
 // 开关只修改本地草稿，显式保存后才更新服务端；失败时恢复到已保存状态。
@@ -934,8 +924,7 @@ const 编辑代理 = function (row) {
     balance: row.balance,
     prices: normalized,
     password: '',
-    allow_point_debt: Boolean(row.allow_point_debt),
-    point_debt_limit: Math.max(0, Number(row.point_debt_limit) || 0)
+    min_balance: Number(row.min_balance) || 0
   })
 }
 
@@ -1156,11 +1145,11 @@ const 保存代理 = function () {
     }
   }
   if (
-    !Number.isInteger(代理编辑框.point_debt_limit) ||
-    代理编辑框.point_debt_limit < 0 ||
-    代理编辑框.point_debt_limit > 最大代理欠费额度
+    !Number.isInteger(代理编辑框.min_balance) ||
+    代理编辑框.min_balance < -最大代理余额下限绝对值 ||
+    代理编辑框.min_balance > 最大代理余额下限绝对值
   ) {
-    ElMessage.warning(`最大欠费额度必须为0至${最大代理欠费额度}点`)
+    ElMessage.warning(`余额下限必须为-${最大代理余额下限绝对值}至${最大代理余额下限绝对值}点`)
     return
   }
   // 价格为 0 的软件不写入映射，缺少映射即表示代理无权为该软件发卡。
@@ -1174,8 +1163,7 @@ const 保存代理 = function () {
       id: 代理编辑框.id,
       password: 代理编辑框.password,
       prices: JSON.stringify(prices),
-      allow_point_debt: Boolean(代理编辑框.allow_point_debt),
-      point_debt_limit: 代理编辑框.point_debt_limit
+      min_balance: 代理编辑框.min_balance
     }
   })
     .then((res) => {
