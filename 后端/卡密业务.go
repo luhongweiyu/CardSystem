@@ -842,7 +842,13 @@ func 管理员_添加点卡卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	日志("log/"+account.Name+time.Now().Format("200601"), fmt.Sprintf("新增卡密;软件:%d;数量:%d;点数:%d", request.Software, len(cards), request.Points))
+	记录管理员代理业务流水(account.Name, nil,
+		"操作:新增点卡",
+		fmt.Sprintf("软件:%d", request.Software),
+		fmt.Sprintf("数量:%d", len(cards)),
+		fmt.Sprintf("点数:%d", request.Points),
+		"成功卡密:"+strings.Join(cards, ","),
+	)
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张卡密", len(cards)), "data": strings.Join(cards, "\n")})
 }
 
@@ -1120,8 +1126,15 @@ func 管理员_删除点卡卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	deleteLog := fmt.Sprintf("删除卡密;成功:%v;失败:%v", success, failed)
-	日志("log/"+account.Name+time.Now().Format("200601"), 清理拒绝日志字段(deleteLog, 4000))
+	if len(success) > 0 {
+		记录管理员代理业务流水(account.Name, nil,
+			"操作:删除点卡",
+			fmt.Sprintf("成功数量:%d", len(success)),
+			"成功卡密:"+strings.Join(success, ","),
+			fmt.Sprintf("失败数量:%d", len(failed)),
+			"失败卡密:"+strings.Join(failed, ","),
+		)
+	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 

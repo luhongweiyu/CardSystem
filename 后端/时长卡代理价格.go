@@ -577,7 +577,23 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 	if err != nil {
 		return 代理生成时长卡结果{}, err
 	}
-	代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成时长卡", fmt.Sprintf("软件:%d", normalized.Software), fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes), fmt.Sprintf("数量:%d", len(result.Cards)), "计价方式:"+result.PricingMode, fmt.Sprintf("价格来源:%d分钟", result.RateSourceDurationMinutes))
+	fields := []string{
+		"操作:新增时长卡",
+		fmt.Sprintf("软件:%d", normalized.Software),
+		fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes),
+		fmt.Sprintf("数量:%d", len(result.Cards)),
+		"成功卡密:" + strings.Join(result.Cards, ","),
+		"计价方式:" + result.PricingMode,
+		fmt.Sprintf("价格来源:%d分钟", result.RateSourceDurationMinutes),
+	}
+	if result.Charge > 0 {
+		fields = append([]string{
+			fmt.Sprintf("余额:%d", result.Balance),
+			fmt.Sprintf("变更:-%d", result.Charge),
+			"原因:生成时长卡",
+		}, fields...)
+	}
+	记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	return result, nil
 }
 

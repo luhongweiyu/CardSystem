@@ -71,7 +71,7 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "暂停时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
-	记录时长卡业务流水(admin, []int{agentID}, "原因:时长卡暂停", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:-%d分钟", pauseDeductMinutes), fmt.Sprintf("暂停剩余:%d分钟", remainingMinutes), "原授权截止:"+业务流水时间(beforeEnd))
+	记录管理员代理业务流水(admin, []int{agentID}, "操作:暂停时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:-%d分钟", pauseDeductMinutes), fmt.Sprintf("暂停剩余:%d分钟", remainingMinutes), "原授权截止:"+业务流水时间(beforeEnd))
 	return remainingMinutes, nil
 }
 
@@ -112,7 +112,7 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "恢复时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
-	记录时长卡业务流水(admin, []int{agentID}, "原因:时长卡恢复", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", beforeRemaining), "授权截止:"+业务流水时间(end))
+	记录管理员代理业务流水(admin, []int{agentID}, "操作:恢复时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", beforeRemaining), "授权截止:"+业务流水时间(end))
 	return end, nil
 }
 
@@ -262,7 +262,7 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 			日志("log/启动记录.txt", "时长卡充值后同步心跳缓存失败:"+cacheErr.Error())
 		}
 	}
-	记录时长卡业务流水(admin, []int{targetAgentID, sourceAgentID}, "原因:时长卡充值", "目标卡:"+targetCard, "来源卡:"+sourceCard, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", added), "原授权截止:"+业务流水时间(targetBeforeEnd), "新授权截止:"+业务流水时间(end), fmt.Sprintf("原暂停剩余:%d分钟", targetBeforePaused), fmt.Sprintf("新暂停剩余:%d分钟", targetAfterPaused))
+	记录管理员代理业务流水(admin, []int{targetAgentID, sourceAgentID}, "操作:时长卡充值", "目标卡:"+targetCard, "来源卡:"+sourceCard, fmt.Sprintf("软件:%d", softwareID), fmt.Sprintf("变更:+%d分钟", added), "原授权截止:"+业务流水时间(targetBeforeEnd), "新授权截止:"+业务流水时间(end), fmt.Sprintf("原暂停剩余:%d分钟", targetBeforePaused), fmt.Sprintf("新暂停剩余:%d分钟", targetAfterPaused))
 	return end, added, nil
 }
 

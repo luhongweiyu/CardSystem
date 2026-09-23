@@ -342,7 +342,13 @@ func 管理员_添加时长卡(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	日志("log/"+admin+time.Now().Format("200601"), fmt.Sprintf("新增时长卡;软件:%d;数量:%d;时长:%d分钟", request.Software, len(cards), request.DurationMinutes))
+	记录管理员代理业务流水(admin, nil,
+		"操作:新增时长卡",
+		fmt.Sprintf("软件:%d", request.Software),
+		fmt.Sprintf("数量:%d", len(cards)),
+		fmt.Sprintf("时长:%d分钟", request.DurationMinutes),
+		"成功卡密:"+strings.Join(cards, ","),
+	)
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张时长卡", len(cards)), "data": strings.Join(cards, "\n")})
 }
 
@@ -555,6 +561,15 @@ func 管理员_删除时长卡(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
+	if len(success) > 0 {
+		记录管理员代理业务流水(管理员_用户名(ctx), nil,
+			"操作:删除时长卡",
+			fmt.Sprintf("成功数量:%d", len(success)),
+			"成功卡密:"+strings.Join(success, ","),
+			fmt.Sprintf("失败数量:%d", len(failed)),
+			"失败卡密:"+strings.Join(failed, ","),
+		)
+	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
@@ -580,6 +595,7 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 		return
 	}
 	success, failed := make([]string, 0, len(request.Cards)), make([]string, 0)
+	agentIDs := make(map[int]struct{})
 	for _, raw := range request.Cards {
 		card := strings.ToLower(strings.TrimSpace(raw))
 		if !卡密格式规则.MatchString(card) {
@@ -590,6 +606,7 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			failed = append(failed, raw)
 			continue
 		}
+		affectedAgentID := 0
 		err := db.Transaction(func(tx *gorm.DB) error {
 			var row 时长卡表样式
 			query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
@@ -606,7 +623,12 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 				if request.DurationMinutes > math.MaxInt64-row.PausedRemainingMinutes {
 					return fmt.Errorf("暂停剩余时长溢出")
 				}
-				return tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", row.PausedRemainingMinutes+request.DurationMinutes).Error
+				remaining := row.PausedRemainingMinutes + request.DurationMinutes
+				if err := tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", remaining).Error; err != nil {
+					return err
+				}
+				affectedAgentID = row.AgentID
+				return nil
 			}
 			if row.CardState != 卡密状态_正常 {
 				return fmt.Errorf("状态不正常")
@@ -620,7 +642,11 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 				base = now
 			}
 			end := base.Add(time.Duration(request.DurationMinutes) * time.Minute)
-			return tx.Table(tableName).Where("card = ?", card).Update("end_time", end).Error
+			if err := tx.Table(tableName).Where("card = ?", card).Update("end_time", end).Error; err != nil {
+				return err
+			}
+			affectedAgentID = row.AgentID
+			return nil
 		})
 		if err != nil {
 			failed = append(failed, raw)
@@ -629,10 +655,23 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 				日志("log/启动记录.txt", "续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
 			}
 			success = append(success, card)
+			if affectedAgentID > 0 {
+				agentIDs[affectedAgentID] = struct{}{}
+			}
 		}
 	}
 	if len(success) > 0 {
-		记录时长卡业务流水(管理员_用户名(ctx), nil, "原因:管理员续费时长卡", "卡密:"+strings.Join(success, ","), fmt.Sprintf("变更:+%d分钟", request.DurationMinutes), fmt.Sprintf("数量:%d", len(success)))
+		involvedAgents := make([]int, 0, len(agentIDs))
+		for agentID := range agentIDs {
+			involvedAgents = append(involvedAgents, agentID)
+		}
+		记录管理员代理业务流水(管理员_用户名(ctx), involvedAgents,
+			"操作:管理员续费时长卡",
+			"卡密:"+strings.Join(success, ","),
+			fmt.Sprintf("变更:+%d分钟", request.DurationMinutes),
+			fmt.Sprintf("数量:%d", len(success)),
+			fmt.Sprintf("失败数量:%d", len(failed)),
+		)
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
@@ -710,7 +749,7 @@ func durationCardLogin(ctx *gin.Context) {
 		return
 	}
 	if activated {
-		记录时长卡业务流水(admin, []int{row.AgentID}, "原因:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), fmt.Sprintf("变更:+%d分钟", row.DurationMinutes), "授权截止:"+业务流水时间(*row.EndTime))
+		记录管理员代理业务流水(admin, []int{row.AgentID}, "操作:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), fmt.Sprintf("变更:+%d分钟", row.DurationMinutes), "授权截止:"+业务流水时间(*row.EndTime))
 	}
 	写入时长卡心跳缓存(admin, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "software": row.Software, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})

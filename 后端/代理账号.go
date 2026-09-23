@@ -380,9 +380,21 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
-	if result.Charge > 0 {
-		代理账号日志(account.ID, fmt.Sprintf("余额:%d", result.Balance), fmt.Sprintf("变更:-%d", result.Charge), "原因:生成卡密", fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("点数:%d", request.Points), fmt.Sprintf("数量:%d", len(result.Cards)))
+	fields := []string{
+		"操作:新增点卡",
+		fmt.Sprintf("软件:%d", request.Software),
+		fmt.Sprintf("数量:%d", len(result.Cards)),
+		fmt.Sprintf("点数:%d", request.Points),
+		"成功卡密:" + strings.Join(result.Cards, ","),
 	}
+	if result.Charge > 0 {
+		fields = append([]string{
+			fmt.Sprintf("余额:%d", result.Balance),
+			fmt.Sprintf("变更:-%d", result.Charge),
+			"原因:生成点卡",
+		}, fields...)
+	}
+	记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	return result, nil
 }
 
@@ -418,6 +430,9 @@ func 代理账号_删除点卡卡密(ctx *gin.Context) {
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
+	}
+	if len(success) > 0 {
+		记录管理员代理业务流水(account.Admin, []int{account.ID}, "操作:删除点卡", fmt.Sprintf("成功数量:%d", len(success)), "成功卡密:"+strings.Join(success, ","), fmt.Sprintf("失败数量:%d", len(failed)), "失败卡密:"+strings.Join(failed, ","))
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
@@ -667,7 +682,11 @@ func 代理账号充值(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	代理账号日志(request.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:%+d", request.Amount), "原因:管理员充值", "备注:"+request.Note)
+	if request.Amount != 0 {
+		fields := []string{fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:%+d", request.Amount), "原因:管理员调整余额", "备注:" + request.Note}
+		代理账号日志(request.ID, fields...)
+		记录代理余额充值汇总(parent.Name, request.ID, fields...)
+	}
 	成功提示管理端(ctx, gin.H{"msg": "充值成功", "balance": balance})
 }
 

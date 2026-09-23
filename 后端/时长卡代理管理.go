@@ -205,6 +205,15 @@ func 代理账号_删除时长卡(ctx *gin.Context) {
 		}
 		success = append(success, card)
 	}
+	if len(success) > 0 {
+		记录管理员代理业务流水(account.Admin, []int{account.ID},
+			"操作:删除时长卡",
+			fmt.Sprintf("成功数量:%d", len(success)),
+			"成功卡密:"+strings.Join(success, ","),
+			fmt.Sprintf("失败数量:%d", len(failed)),
+			"失败卡密:"+strings.Join(failed, ","),
+		)
+	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
@@ -338,7 +347,8 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 				if request.DurationMinutes > math.MaxInt64-row.PausedRemainingMinutes {
 					return fmt.Errorf("暂停剩余时长溢出")
 				}
-				if result := tx.Table(tableName).Where("card = ? AND agent_id = ?", row.Card, current.ID).Update("paused_remaining_minutes", row.PausedRemainingMinutes+request.DurationMinutes); result.Error != nil || result.RowsAffected != 1 {
+				remaining := row.PausedRemainingMinutes + request.DurationMinutes
+				if result := tx.Table(tableName).Where("card = ? AND agent_id = ?", row.Card, current.ID).Update("paused_remaining_minutes", remaining); result.Error != nil || result.RowsAffected != 1 {
 					return fmt.Errorf("保存时长卡续费失败")
 				}
 			} else {
@@ -366,7 +376,17 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		}
 	}
 	if len(success) > 0 {
-		代理账号日志(account.ID, fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:-%d", charge), "原因:续费时长卡", fmt.Sprintf("时长:%d分钟", request.DurationMinutes), fmt.Sprintf("数量:%d", len(success)))
+		fields := []string{
+			"操作:代理续费时长卡",
+			"卡密:" + strings.Join(success, ","),
+			fmt.Sprintf("时长变更:+%d分钟", request.DurationMinutes),
+			fmt.Sprintf("数量:%d", len(success)),
+			fmt.Sprintf("失败数量:%d", len(failed)),
+		}
+		if charge > 0 {
+			fields = append([]string{fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:-%d", charge), "原因:续费时长卡"}, fields...)
+		}
+		记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed, "charge": charge, "balance": balance})
 }
