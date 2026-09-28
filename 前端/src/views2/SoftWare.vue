@@ -41,6 +41,7 @@
       <el-table-column label="自动离线时间" width="140">
         <template #default="scope">{{ 时长卡时长文本(scope.row.online_grace_minutes || 60) }}</template>
       </el-table-column>
+      <el-table-column prop="point_card_max_devices" label="单卡设备上限" width="115" />
       <el-table-column label="点卡授权复用" width="120">
         <template #default="scope">
           <el-tag :type="scope.row.point_card_reuse_enabled ? 'success' : 'info'">
@@ -208,6 +209,10 @@
           />
           <div class="字段说明">0 表示不启用时长卡暂停；暂停时从剩余时长中扣除</div>
           <div v-if="软件框.pause_deduct_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.pause_deduct_minutes) }}</div>
+        </el-form-item>
+        <el-form-item label="单卡设备上限">
+          <el-input-number v-model="软件框.point_card_max_devices" :min="0" :max="1000" :precision="0" controls-position="right" />
+          <div class="字段说明">范围 0～1000；0 禁止新增设备，已有设备继续使用；降低上限只限制新增设备。</div>
         </el-form-item>
         <el-form-item label="点卡授权复用">
           <el-switch v-model="软件框.point_card_reuse_enabled" />
@@ -513,6 +518,7 @@ const 软件框 = reactive({
   heartbeat_interval_minutes: 5,
   online_grace_minutes: 60,
   point_card_reuse_enabled: true,
+  point_card_max_devices: 1000,
   pause_deduct_minutes: 0
 })
 const 价格框 = reactive({ 显示: false, 加载中: false, 保存中: false, software: 0, softwareName: '', onlineGraceMinutes: 60, rows: [] })
@@ -689,6 +695,7 @@ const 打开软件编辑 = function () {
     heartbeat_interval_minutes: 5,
     online_grace_minutes: 60,
     point_card_reuse_enabled: true,
+    point_card_max_devices: 1000,
     pause_deduct_minutes: 0
   })
 }
@@ -702,11 +709,16 @@ const 编辑软件 = function (row) {
     heartbeat_interval_minutes: 心跳秒转分钟(row.heartbeat_interval_seconds || 300),
     online_grace_minutes: Number(row.online_grace_minutes || 60),
     point_card_reuse_enabled: Boolean(row.point_card_reuse_enabled),
+    point_card_max_devices: Number(row.point_card_max_devices ?? 1000),
     pause_deduct_minutes: Number(row.pause_deduct_minutes || 0)
   })
 }
 const 保存软件 = function () {
   if (软件框.加载中) return
+  if (!Number.isInteger(软件框.point_card_max_devices) || 软件框.point_card_max_devices < 0 || 软件框.point_card_max_devices > 1000) {
+    ElMessage.warning('单卡设备上限必须为0至1000，0表示禁止新增设备')
+    return
+  }
   const heartbeatSeconds = Math.round(软件框.heartbeat_interval_minutes * 60)
   if (!软件框.software.trim()) {
     ElMessage.warning('请输入软件名称')
@@ -750,6 +762,7 @@ const 保存软件 = function () {
     heartbeat_interval_seconds: heartbeatSeconds,
     online_grace_minutes: 软件框.online_grace_minutes,
     point_card_reuse_enabled: 软件框.point_card_reuse_enabled,
+    point_card_max_devices: 软件框.point_card_max_devices,
     pause_deduct_minutes: 软件框.pause_deduct_minutes
   })
     .then((res) => {

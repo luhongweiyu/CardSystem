@@ -32,9 +32,6 @@
       <div class="流水摘要">卡密：{{ 流水框.card }}　当前余额：{{ 流水框.balance }} 点</div>
       <el-table :data="流水框.rows" border v-loading="流水框.加载中">
         <el-table-column prop="created_at" label="时间" width="175" />
-        <el-table-column label="类型" width="80">
-          <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
-        </el-table-column>
         <el-table-column label="变动" width="80">
           <template #default="scope">
             <span :class="scope.row.change > 0 ? '增加' : '扣除'">
@@ -42,9 +39,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="余额" width="130">
-          <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
-        </el-table-column>
+        <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
         <el-table-column prop="remark" label="备注（含设备信息）" min-width="340" show-overflow-tooltip />
       </el-table>
       <el-pagination
@@ -80,7 +75,6 @@ const 流水框 = reactive({
   total: 0
 })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
-const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 请求 = (path, data = {}) => apiClient.post('/visitor' + path, { ...data, center_id: centerID })
 
 const 查询列表 = function () {

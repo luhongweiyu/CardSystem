@@ -67,6 +67,9 @@ func 读取点卡计费配置(tx *gorm.DB, admin string, softwareID int) (点卡
 	if settings.HeartbeatIntervalSeconds <= 0 || settings.HeartbeatIntervalSeconds > 最大心跳周期秒 {
 		return 点卡配置缓存条目{}, fmt.Errorf("软件心跳间隔配置不正确")
 	}
+	if settings.PointCardMaxDevices < 0 || settings.PointCardMaxDevices > 最大卡密设备数 {
+		return 点卡配置缓存条目{}, fmt.Errorf("软件点卡设备上限配置不正确")
+	}
 	// 兼容新增字段前已经存在的软件记录：数据库中的 0 按默认 60 分钟解释，
 	// 不在只读配置加载期间回写，避免缓存读取承担数据迁移职责。
 	if settings.OnlineGraceMinutes == 0 {

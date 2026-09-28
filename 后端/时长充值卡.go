@@ -179,7 +179,7 @@ func 管理员_添加时长充值卡(ctx *gin.Context) {
 	记录管理员代理业务流水(admin, nil,
 		"操作:新增时长充值卡",
 		fmt.Sprintf("软件:%d", normalized.Software),
-		fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes),
+		"时长:"+格式化授权时长(分钟转秒(normalized.DurationMinutes)),
 		fmt.Sprintf("每张次数:%d", normalized.Uses),
 		fmt.Sprintf("数量:%d", len(cards)),
 		"成功卡密:"+strings.Join(cards, ","),
@@ -239,7 +239,7 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 	fields := []string{
 		"操作:新增时长充值卡",
 		fmt.Sprintf("软件:%d", normalized.Software),
-		fmt.Sprintf("时长:%d分钟", normalized.DurationMinutes),
+		"时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
 		fmt.Sprintf("每张次数:%d", normalized.Uses),
 		fmt.Sprintf("数量:%d", len(result.Cards)),
 		"成功卡密:" + strings.Join(result.Cards, ","),
@@ -613,7 +613,7 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 		if len(success) == 0 {
 			return nil
 		}
-		record := recharge.Record + fmt.Sprintf("\n%s;充值%d分钟;成功:%s;暂停卡:%s;失败:%s", now.Format("2006-01-02 15:04:05"), recharge.DurationMinutes, strings.Join(success, ","), strings.Join(pausedSuccess, ","), strings.Join(failed, ","))
+		record := recharge.Record + fmt.Sprintf("\n%s;充值%s;成功:%s;暂停卡:%s;失败:%s", now.Format(timeLayout), 格式化授权时长(分钟转秒(recharge.DurationMinutes)), strings.Join(success, ","), strings.Join(pausedSuccess, ","), strings.Join(failed, ","))
 		result := tx.Table(时长充值卡表名).Where("id = ?", recharge.ID).Updates(map[string]interface{}{"remaining_uses": remaining, "record": record})
 		if result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("保存充值卡余额失败")
@@ -640,7 +640,7 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 		记录管理员代理业务流水(admin, involvedAgents,
 			"操作:使用时长充值卡",
 			"充值卡:"+rechargeCard,
-			fmt.Sprintf("变更:+%d分钟", rechargeDurationMinutes),
+			"变更:+"+格式化授权时长(分钟转秒(rechargeDurationMinutes)),
 			fmt.Sprintf("成功数量:%d", len(success)),
 			"成功卡密:"+strings.Join(success, ","),
 			"暂停卡密:"+strings.Join(pausedSuccess, ","),

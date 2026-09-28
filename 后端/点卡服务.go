@@ -141,14 +141,14 @@ func 校验点卡状态(card 点卡表样式, softwareID int) error {
 }
 
 // 生成扣点流水备注。设备信息刻意放在文本备注中，流水表仍然只承担余额审计。
-func 生成扣点备注(params 点卡扣费参数, period int64, price int64) string {
+func 生成扣点备注(params 点卡扣费参数, period int64) string {
 	parts := make([]string, 0, 7)
 	if params.RemarkPrefix != "" {
 		parts = append(parts, params.RemarkPrefix)
 	} else {
 		parts = append(parts, "登录扣点")
 	}
-	parts = append(parts, fmt.Sprintf("授权时长=%d分钟", 秒转分钟(period)), fmt.Sprintf("扣点=%d", price))
+	parts = append(parts, "授权时长="+格式化授权时长(period))
 	if params.AgentCharged > 0 {
 		parts = append(parts, fmt.Sprintf("卡内扣点=%d", params.CardCharged), fmt.Sprintf("代理代扣=%d", params.AgentCharged))
 	}
@@ -162,16 +162,14 @@ func 生成扣点备注(params 点卡扣费参数, period int64, price int64) st
 }
 
 // 保存点数流水必须和余额更新在同一事务中调用。
-func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID int, eventType string, change int64, before int64, after int64, remark string, now time.Time) (点数流水, error) {
-	if eventType != 点数事件_扣点 && eventType != 点数事件_补点 {
-		return 点数流水{}, fmt.Errorf("流水类型不正确")
-	}
-	if change == 0 || before < 0 || after < 0 || after != before+change || (eventType == 点数事件_扣点 && change >= 0) || (eventType == 点数事件_补点 && change <= 0) {
+// 调用方负责跳过零变动并保证点卡余额非负；这里只校验流水金额一致性。
+func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID int, change int64, before int64, after int64, remark string, now time.Time) (点数流水, error) {
+	if after-before != change {
 		return 点数流水{}, fmt.Errorf("流水余额变动不一致")
 	}
 	流水 := 点数流水{
-		Admin: admin, Card: card, Software: softwareID, EventType: eventType,
-		Change: change, BalanceBefore: before, BalanceAfter: after,
+		Admin: admin, Card: card, Software: softwareID,
+		Change: change, BalanceAfter: after,
 		Remark: remark, CreatedAt: now,
 	}
 	if err := tx.Table("point_ledger").Create(&流水).Error; err != nil {
@@ -217,7 +215,7 @@ func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, pa
 	params.CardCharged, params.AgentCharged = cardCharged, agentCharged
 	var ledgerID uint64
 	if cardCharged > 0 {
-		流水, err := 保存点数流水(tx, params.Admin, card.Card, card.Software, 点数事件_扣点, -cardCharged, card.Point_balance, after, 生成扣点备注(params, period, price.Cost), now)
+		流水, err := 保存点数流水(tx, params.Admin, card.Card, card.Software, -cardCharged, card.Point_balance, after, 生成扣点备注(params, period), now)
 		if err != nil {
 			return 点卡扣费结果{}, err
 		}
@@ -276,7 +274,7 @@ func 记录点卡代扣日志(charge 点卡扣费结果, session 点卡设备会
 	if charge.AgentCharged <= 0 {
 		return
 	}
-	代理账号日志(charge.AgentID, fmt.Sprintf("余额:%d", charge.AgentBalanceAfter), fmt.Sprintf("变更:-%d", charge.AgentCharged), "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+session.AuthorizedUntil.Format(time.RFC3339))
+	代理账号日志(charge.AgentID, fmt.Sprintf("余额:%d", charge.AgentBalanceAfter), fmt.Sprintf("变更:-%d", charge.AgentCharged), "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+业务流水时间(session.AuthorizedUntil))
 }
 
 // 调整点卡余额供管理员补点或扣回点数。余额不能变成负数，且每次真实变更
@@ -317,6 +315,10 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		if card.Card_state != 卡密状态_正常 && card.Card_state != 卡密状态_冻结 {
 			return fmt.Errorf("卡密状态不正常")
 		}
+		// 非负余额属于点卡业务规则，在更新余额前检查，避免依赖流水层拦截。
+		if card.Point_balance < 0 {
+			return fmt.Errorf("点卡余额数据不正确")
+		}
 		if amount > 0 && card.Point_balance > math.MaxInt64-amount {
 			return fmt.Errorf("调整后余额超出允许范围")
 		}
@@ -328,15 +330,11 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		if result := tx.Table(tableName).Where("card = ?", card.Card).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("调整点卡余额失败")
 		}
-		eventType := 点数事件_补点
-		if amount < 0 {
-			eventType = 点数事件_扣点
-		}
 		remark := reason
 		if clientIP != "" {
 			remark += "；操作IP=" + clientIP
 		}
-		_, err := 保存点数流水(tx, admin, card.Card, card.Software, eventType, amount, card.Point_balance, balance, remark, time.Now())
+		_, err := 保存点数流水(tx, admin, card.Card, card.Software, amount, card.Point_balance, balance, remark, time.Now())
 		return err
 	})
 	if err != nil {

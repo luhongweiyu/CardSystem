@@ -22,7 +22,13 @@ func 启动点卡会话清理() {
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
+		count := 0
 		for range ticker.C {
+			count++
+			// 活动记录每 30 轮清理一次，避免每分钟遍历。
+			if count%30 == 0 {
+				全局卡密活动.清理(time.Now())
+			}
 			清理过期点卡复用候选缓存()
 			清理点卡设备会话()
 		}

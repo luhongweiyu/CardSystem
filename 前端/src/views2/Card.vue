@@ -114,6 +114,9 @@
       <el-table-column label="账户代扣" width="170">
         <template #default="scope">{{ scope.row.agent_id > 0 ? 代扣模式文本(scope.row.point_card_auto_deduct_mode) : '—' }}</template>
       </el-table-column>
+      <el-table-column label="设备数 / 上限" width="125">
+        <template #default="scope">{{ scope.row.device_total || 0 }} / {{ 实际设备上限(scope.row) }}</template>
+      </el-table-column>
       <el-table-column
         prop="card_state"
         label="状态"
@@ -146,9 +149,10 @@
         <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column label="操作" width="320" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="打开详情(scope.row)">详情</el-button>
+          <el-button link type="primary" @click="打开详情(scope.row)">活动记录</el-button>
           <el-button link type="primary" @click="打开流水(scope.row)">流水</el-button>
           <el-button link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
           <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
@@ -175,10 +179,14 @@
         <span>软件：{{ 软件名称(详情框.software) }}</span>
         <span>授权设备：{{ 详情框.authorized_device_count }}</span>
         <span>在线设备：{{ 详情框.online_device_count }}</span>
+        <span>设备数 / 上限：{{ 详情框.total }} / {{ 详情框.effective_max_devices }}</span>
       </div>
       <el-table :data="详情框.devices" border stripe v-loading="详情框.加载中" empty-text="暂无设备会话">
         <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
         <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
+        <el-table-column label="最近心跳" width="180">
+          <template #default="scope">{{ 格式化时间(scope.row.last_heartbeat_at) || '-' }}</template>
+        </el-table-column>
         <el-table-column label="授权到期" width="180">
           <template #default="scope">{{ 格式化时间(scope.row.authorized_until) }}</template>
         </el-table-column>
@@ -197,8 +205,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="scope">
+            <el-button link type="primary" @click="查看活动(scope.row)">活动记录</el-button>
             <el-button
               link
               type="danger"
@@ -247,6 +256,10 @@
         <el-form-item label="生成数量" required>
           <el-input-number v-model="生成框.num" :min="1" :max="500" :precision="0" controls-position="right" />
           <el-tag v-if="是代理账号" size="small" type="warning" effect="plain">预计消费 {{ 预计代理费用 }} 点</el-tag>
+        </el-form-item>
+        <el-form-item label="设备上限">
+          <el-input-number v-model="生成框.max_devices" :min="0" :max="1000" :precision="0" controls-position="right" />
+          <div class="字段说明">0 跟随软件；当前软件最多 {{ 软件设备上限(生成框.software) }} 台，实际取两者较小值。</div>
         </el-form-item>
         <el-form-item label="生成方式">
           <el-radio-group v-model="生成框.random">
@@ -307,6 +320,10 @@
         <el-form-item label="所属软件">
           <span>{{ 软件名称(编辑框.software) }}</span>
         </el-form-item>
+        <el-form-item label="设备上限">
+          <el-input-number v-model="编辑框.max_devices" :min="0" :max="1000" :precision="0" controls-position="right" />
+          <div class="字段说明">0 跟随软件；实际上限 {{ 实际设备上限(编辑框) }} 台，降低上限只限制新增设备。</div>
+        </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="编辑框.card_state">
             <el-radio :label="2">正常</el-radio>
@@ -356,9 +373,6 @@
       <div class="流水摘要">点卡卡密：{{ 流水框.card }}　当前余额：{{ 流水框.balance }} 点</div>
       <el-table :data="流水框.rows" border v-loading="流水框.加载中">
         <el-table-column prop="created_at" label="时间" width="170" />
-        <el-table-column label="类型" width="90">
-          <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
-        </el-table-column>
         <el-table-column prop="change" label="变动" width="80" align="right">
           <template #default="scope">
             <span :class="scope.row.change > 0 ? '增加' : '扣除'">
@@ -366,9 +380,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="余额" width="130">
-          <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
-        </el-table-column>
+        <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
         <el-table-column prop="remark" label="备注（含设备信息）" min-width="330" show-overflow-tooltip />
       </el-table>
       <el-pagination
@@ -380,6 +392,9 @@
         @current-change="查询流水(false)"
       />
     </el-dialog>
+    <el-dialog v-model="活动框.显示" :title="活动框.title" width="min(760px, 94vw)" destroy-on-close>
+      <ActivityRecords :rows="活动框.rows" :loading="活动框.加载中" />
+    </el-dialog>
   </section>
 </template>
 
@@ -389,6 +404,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
+import ActivityRecords from '../components/活动记录.vue'
 import { 查找软件名称, 格式化代理归属, 格式化时间 } from '../utils/时长工具.js'
 
 const stores = use登录状态Store()
@@ -411,6 +427,7 @@ const 代扣模式选项 = [
   { value: 'deny', label: '禁止扣账户余额' }
 ]
 const 生成框 = reactive({
+  max_devices: 0,
   显示: false,
   加载中: false,
   software: 0,
@@ -430,6 +447,7 @@ const 批量代扣框 = reactive({
   point_card_auto_deduct_mode: 'inherit'
 })
 const 编辑框 = reactive({
+  max_devices: 0,
   显示: false,
   加载中: false,
   card: '',
@@ -453,6 +471,7 @@ const 流水框 = reactive({
   total: 0
 })
 const 详情框 = reactive({
+  effective_max_devices: 1000,
   显示: false,
   加载中: false,
   下线中: '',
@@ -465,6 +484,12 @@ const 详情框 = reactive({
   page_size: 50,
   total: 0
 })
+
+const 活动框 = reactive({ 显示: false, 加载中: false, title: '', rows: [] })
+let 活动请求序号 = 0
+const 软件设备上限 = (id) => Number(软件列表.value.find((item) => Number(item.ID) === Number(id))?.point_card_max_devices ?? 1000)
+const 实际设备上限 = (row) => Math.min(Number(row.max_devices) || 1000, 软件设备上限(row.software))
+const 设备上限有效 = (value) => Number.isInteger(value) && value >= 0 && value <= 1000
 
 const 预计代理费用 = computed(() => {
   const prices = 账号信息.prices || {}
@@ -483,7 +508,6 @@ const 可发卡软件列表 = computed(() => {
 const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
 const 代理名称 = (id) => 格式化代理归属(id, 代理列表.value)
 const 代扣模式文本 = (mode) => 代扣模式选项.find((item) => item.value === mode)?.label || '跟随总开关'
-const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
 
 const 查询软件 = function () {
@@ -547,6 +571,7 @@ const 打开生成 = function () {
     return
   }
   Object.assign(生成框, {
+    max_devices: 0,
     显示: true,
     software: 生成框.software || 可发卡软件列表.value[0].ID,
     points: 0,
@@ -561,6 +586,10 @@ const 打开生成 = function () {
 }
 const 生成点卡卡密 = function () {
   if (生成框.加载中) return
+  if (!设备上限有效(生成框.max_devices)) {
+    ElMessage.warning('设备上限必须为0至1000，0表示跟随软件')
+    return
+  }
   if (!生成框.software || !Number.isInteger(生成框.points) || 生成框.points < 0 || 生成框.points > 1000000000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
     ElMessage.warning('请选择软件并填写有效的点数和数量')
     return
@@ -571,6 +600,7 @@ const 生成点卡卡密 = function () {
   }
   生成框.加载中 = true
   post('/point_card/create', {
+    max_devices: 生成框.max_devices,
     software: 生成框.software,
     points: 生成框.points,
     num: 生成框.num,
@@ -594,6 +624,7 @@ const 生成点卡卡密 = function () {
 
 const 打开编辑 = function (row) {
   Object.assign(编辑框, {
+    max_devices: Number(row.max_devices || 0),
     显示: true,
     card: row.card,
     software: row.software,
@@ -609,8 +640,13 @@ const 打开编辑 = function (row) {
 }
 const 保存编辑 = function () {
   if (编辑框.加载中) return
+  if (!设备上限有效(编辑框.max_devices)) {
+    ElMessage.warning('设备上限必须为0至1000，0表示跟随软件')
+    return
+  }
   编辑框.加载中 = true
   post('/point_card/save', {
+    max_devices: 编辑框.max_devices,
     card: 编辑框.card,
     card_state: 编辑框.card_state,
     notes: 编辑框.notes,
@@ -711,6 +747,7 @@ const 删除单张 = function (row) {
 }
 const 打开详情 = function (row) {
   Object.assign(详情框, {
+    effective_max_devices: 实际设备上限(row),
     显示: true,
     card: row.card,
     software: Number(row.software || 0),
@@ -745,6 +782,7 @@ const 查询详情 = function (resetPage = false) {
       详情框.online_device_count = Number(res.data.online_device_count || 0)
       详情框.devices = Array.isArray(res.data.devices) ? res.data.devices : []
       详情框.total = Number(res.data.device_total || 0)
+      详情框.effective_max_devices = Number(res.data.effective_max_devices ?? 1000)
       详情框.page = Number(res.data.device_page || 详情框.page)
       详情框.page_size = Number(res.data.device_page_size || 详情框.page_size)
     })
@@ -753,6 +791,24 @@ const 查询详情 = function (resetPage = false) {
       详情框.加载中 = false
     })
 }
+const 查看活动 = async function (row) {
+  const sequence = ++活动请求序号
+  Object.assign(活动框, { 显示: true, 加载中: true, title: `活动记录 · ${row.device_alias || row.device_id || '默认设备'}`, rows: [] })
+  try {
+    const res = await apiClient.post('/visitor/查询卡密', {
+      center_id: 是代理账号.value ? 账号信息.center_id : stores.用户id,
+      card: 详情框.card, device_id: row.device_id, activity_only: true
+    })
+    if (sequence !== 活动请求序号) return
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询活动记录失败')
+    活动框.rows = res.data.activity_records || []
+  } catch (error) {
+    if (sequence === 活动请求序号) 显示错误(error)
+  } finally {
+    if (sequence === 活动请求序号) 活动框.加载中 = false
+  }
+}
+
 const 下线设备 = function (row) {
   const card = 详情框.card
   const device = row.device_alias || row.device_id || '默认设备'

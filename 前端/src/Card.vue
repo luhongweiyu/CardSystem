@@ -60,6 +60,9 @@
         </el-table-column>
         <el-table-column prop="authorized_device_count" label="授权设备" width="95" />
         <el-table-column prop="online_device_count" label="在线设备" width="95" />
+        <el-table-column label="设备数 / 上限" width="125">
+          <template #default="scope">{{ 设备分页.total }} / {{ scope.row.effective_max_devices }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="85">
           <template #default="scope">
             <el-tag :type="scope.row.card_state === 4 ? 'danger' : 'success'">
@@ -77,6 +80,9 @@
       <el-table :data="详情.devices" border stripe empty-text="暂无设备会话">
         <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
         <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
+        <el-table-column label="最近心跳" width="180">
+          <template #default="scope">{{ 格式化时间(scope.row.last_heartbeat_at) || '-' }}</template>
+        </el-table-column>
         <el-table-column label="授权到期" width="180">
           <template #default="scope">{{ 格式化时间(scope.row.authorized_until) || '-' }}</template>
         </el-table-column>
@@ -95,6 +101,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="scope"><el-button link type="primary" @click="查看点卡活动(scope.row)">活动记录</el-button></template>
+        </el-table-column>
       </el-table>
       <el-pagination
         v-if="设备分页.total > 0"
@@ -140,8 +149,9 @@
         <el-table-column label="在线" width="70">
           <template #default="scope">{{ scope.row.online ? '在线' : '离线' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="270" fixed="right">
           <template #default="scope">
+            <el-button link type="primary" @click="查看时长卡活动(scope.row)">活动记录</el-button>
             <el-button v-if="scope.row.status === '已激活'" link type="warning" :loading="操作中 === `pause:${scope.row.card}`" :disabled="!!操作中 || 充值框.加载中" @click="暂停时长卡(scope.row)">暂停</el-button>
             <el-button v-if="scope.row.status === '已暂停'" link type="success" :loading="操作中 === `resume:${scope.row.card}`" :disabled="!!操作中 || 充值框.加载中" @click="恢复时长卡(scope.row)">恢复</el-button>
             <el-button v-if="可充值时长卡(scope.row)" link type="primary" :disabled="!!操作中 || 充值框.加载中" @click="打开充值(scope.row)">使用充值卡</el-button>
@@ -157,13 +167,15 @@
     />
 
     <el-pagination
-      v-if="查卡分页.total > 查卡分页.page_size"
+      v-if="查卡分页.total > 10"
       v-model:current-page="查卡分页.page"
       class="分页 查卡分页"
-      layout="total, prev, pager, next"
+      layout="total, sizes, prev, pager, next"
       :total="查卡分页.total"
       :page-size="查卡分页.page_size"
+      :page-sizes="[10, 20, 50, 100]"
       :disabled="加载中 || !!操作中 || 充值框.加载中"
+      @size-change="每页数量改变"
       @current-change="page => 查询卡密(page, true)"
     />
 
@@ -188,9 +200,6 @@
       <div class="流水摘要">当前余额：{{ 流水框.balance }} 点</div>
       <el-table :data="流水框.rows" border v-loading="流水框.加载中">
         <el-table-column prop="created_at" label="时间" width="175" />
-        <el-table-column label="类型" width="80">
-          <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
-        </el-table-column>
         <el-table-column label="变动" width="80">
           <template #default="scope">
             <span :class="scope.row.change > 0 ? '增加' : '扣除'">
@@ -198,9 +207,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="余额" width="130">
-          <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
-        </el-table-column>
+        <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
         <el-table-column prop="remark" label="备注（含设备信息）" min-width="340" show-overflow-tooltip />
       </el-table>
       <el-pagination
@@ -225,6 +232,10 @@
         <el-button v-if="!充值框.result" type="primary" :loading="充值框.加载中" @click="使用充值卡">确认充值</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="活动框.显示" :title="活动框.title" width="min(760px, 94vw)" destroy-on-close>
+      <p v-if="活动框.last_heartbeat_at" class="说明">最近心跳：{{ 格式化时间(活动框.last_heartbeat_at) }}</p>
+      <ActivityRecords :rows="活动框.rows" :loading="活动框.加载中" />
+    </el-dialog>
   </main>
 </template>
 
@@ -233,6 +244,7 @@ import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiClient, { 获取接口错误提示, 规范化卡密 } from './api/请求客户端.js'
 import { 格式化时间, 格式化时长 as 时长文本 } from './utils/时长工具.js'
+import ActivityRecords from './components/活动记录.vue'
 
 const centerID = new URLSearchParams(window.location.search).get('center_id') || ''
 const 读取上次卡种 = function () {
@@ -259,8 +271,9 @@ const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
 const 充值卡查询 = reactive({ card: '', 加载中: false, detail: null })
 const 充值框 = reactive({ 显示: false, 加载中: false, card: '', cards: [], rows: [], result: null })
 let 查询序号 = 0
+let 活动请求序号 = 0
+const 活动框 = reactive({ 显示: false, 加载中: false, title: '', rows: [], last_heartbeat_at: '' })
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
-const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 
 const 切换模式 = function () {
   try {
@@ -294,6 +307,7 @@ const 读取点卡详情 = async function (card, page, sequence) {
     card_state: Number(res.data.card_state || 0),
     authorized_device_count: Number(res.data.authorized_device_count || 0),
     online_device_count: Number(res.data.online_device_count || 0),
+    effective_max_devices: Number(res.data.effective_max_devices ?? 1000),
     devices: Array.isArray(res.data.devices) ? res.data.devices : []
   }
   设备分页.total = Number(res.data.device_total || 0)
@@ -367,6 +381,12 @@ const 查询卡密 = async function (page = 1, 保留当前结果 = false) {
   }
 }
 
+const 每页数量改变 = function (size) {
+  查卡分页.page_size = Number(size)
+  查卡分页.page = 1
+  查询卡密(1, true)
+}
+
 const 选择点卡 = async function (row, page = 1) {
   if (加载中.value || 操作中.value) return
   const card = typeof row === 'string' ? row : row?.card
@@ -417,6 +437,27 @@ const 查询流水 = async function (resetPage = false) {
     if (流水框.card === card) 流水框.加载中 = false
   }
 }
+
+const 查看卡密活动 = async function (path, request, title, lastHeartbeat = '') {
+  const sequence = ++活动请求序号
+  Object.assign(活动框, { 显示: true, 加载中: true, title, rows: [], last_heartbeat_at: lastHeartbeat })
+  try {
+    const res = await apiClient.post(path, { center_id: centerID, ...request })
+    if (sequence !== 活动请求序号) return
+    if (!res.data?.state) throw new Error(res.data?.msg || '查询活动记录失败')
+    const data = request.activity_only ? res.data : res.data.data
+    活动框.rows = data?.activity_records || []
+    活动框.last_heartbeat_at = data?.last_heartbeat_at || lastHeartbeat
+  } catch (error) {
+    if (sequence === 活动请求序号) 错误(error)
+  } finally {
+    if (sequence === 活动请求序号) 活动框.加载中 = false
+  }
+}
+const 查看点卡活动 = (row) => 查看卡密活动('/point_card/query', {
+  card: 详情.value.card, device_id: row.device_id, activity_only: true
+}, `活动记录 · ${row.device_alias || row.device_id || '默认设备'}`, row.last_heartbeat_at)
+const 查看时长卡活动 = (row) => 查看卡密活动('/visitor/查询时长卡', { card: row.card }, `活动记录 · ${row.card}`)
 
 // 服务端允许正常且已激活/已到期的卡，或仍有暂停余额的卡充值。
 const 可充值时长卡 = (row) => ['已激活', '已到期'].includes(row?.status) || (row?.status === '已暂停' && Number(row.paused_remaining_minutes) > 0)

@@ -308,8 +308,8 @@ func 启动网络() error {
 	// 客户端点卡接口只使用 /point_card 前缀，避免与时长卡模式产生任何
 	// 路径歧义。点卡客户端接口使用当前签名协议，系统支持 HTTP。
 	pointCard := router.Group("/point_card", 卡端读取用户设置, 卡密md5验证)
-	pointCard.Match([]string{"POST", "GET"}, "/card_login", 点卡登录)
-	pointCard.Match([]string{"POST", "GET"}, "/card_ping", 点卡心跳)
+	pointCard.Match([]string{"POST", "GET"}, "/card_login", 记录卡密活动("point", "login"), 点卡登录)
+	pointCard.Match([]string{"POST", "GET"}, "/card_ping", 记录卡密活动("point", "heartbeat"), 点卡心跳)
 	pointCard.Match([]string{"POST", "GET"}, "/card_logout", 点卡退出)
 	pointCard.Match([]string{"POST", "GET"}, "/config", 点卡修改配置内容)
 	pointCardRead := router.Group("/point_card", 卡端读取用户设置)
@@ -321,8 +321,8 @@ func 启动网络() error {
 	// 独立时长卡客户端接口使用当前签名协议；后续业务只读取
 	// duration_card_<管理员> 表。
 	durationCard := router.Group("/duration_card", 卡端读取用户设置, 卡密md5验证)
-	durationCard.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
-	durationCard.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
+	durationCard.Match([]string{"POST", "GET"}, "/card_login", 记录卡密活动("duration", "login"), durationCardLogin)
+	durationCard.Match([]string{"POST", "GET"}, "/card_ping", 记录卡密活动("duration", "heartbeat"), durationCardPing)
 	durationCard.Match([]string{"POST", "GET"}, "/card_logout", durationCardLogout)
 	durationCard.Match([]string{"POST", "GET"}, "/query", durationCardQuery)
 	durationCard.Match([]string{"POST", "GET"}, "/bulletin", durationCardBulletin)
@@ -331,8 +331,8 @@ func 启动网络() error {
 
 	// 旧客户端只使用这两个接口，仍映射到时长卡业务，并保留旧签名协议。
 	legacyCard := router.Group("/card", 标记旧卡密签名, 卡端读取用户设置, 卡密md5验证)
-	legacyCard.Match([]string{"POST", "GET"}, "/card_login", durationCardLogin)
-	legacyCard.Match([]string{"POST", "GET"}, "/card_ping", durationCardPing)
+	legacyCard.Match([]string{"POST", "GET"}, "/card_login", 记录卡密活动("duration", "login"), durationCardLogin)
+	legacyCard.Match([]string{"POST", "GET"}, "/card_ping", 记录卡密活动("duration", "heartbeat"), durationCardPing)
 
 	// 更早的旧客户端只调用 /card/query 做启动前的时长卡状态检查，
 	// 不会提交 timestamp/sign。单独使用访客只读中间件，避免把新签名协议

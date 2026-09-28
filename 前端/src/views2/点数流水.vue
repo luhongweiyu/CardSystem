@@ -17,7 +17,7 @@
           <el-input v-model="筛选.card" clearable placeholder="模糊搜索" @keyup.enter="查询流水(true)" />
         </el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="筛选.event_type" clearable placeholder="全部" style="width: 120px">
+          <el-select v-model="筛选.change_type" clearable placeholder="全部" style="width: 120px">
             <el-option label="扣点" value="debit" />
             <el-option label="补点" value="credit" />
           </el-select>
@@ -35,9 +35,6 @@
       <el-table-column label="软件" width="140" show-overflow-tooltip>
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
-      <el-table-column label="类型" width="80">
-        <template #default="scope">{{ 事件名称(scope.row.event_type) }}</template>
-      </el-table-column>
       <el-table-column label="变动" width="80" align="right">
         <template #default="scope">
           <span :class="scope.row.change > 0 ? '增加' : '扣除'">
@@ -45,9 +42,7 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="余额" width="130">
-        <template #default="scope">{{ scope.row.balance_before }} → {{ scope.row.balance_after }}</template>
-      </el-table-column>
+      <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
       <el-table-column prop="remark" label="备注（含设备信息）" min-width="360" show-overflow-tooltip />
     </el-table>
     <el-pagination
@@ -77,9 +72,8 @@ const post = stores.post
 const { 软件列表 } = storeToRefs(stores)
 const 加载中 = ref(false)
 const 列表 = ref([])
-const 筛选 = reactive({ software: '', card: '', event_type: '' })
+const 筛选 = reactive({ software: '', card: '', change_type: '' })
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
-const 事件名称 = (type) => (type === 'debit' ? '扣点' : type === 'credit' ? '补点' : type || '')
 const 软件名称 = (id) => 查找软件名称(id, 软件列表.value)
 const 错误 = (error) => ElMessage.error(获取接口错误提示(error))
 const 查询软件 = () =>
@@ -99,7 +93,7 @@ const 查询流水 = function (resetPage = false) {
     })
 }
 const 重置 = () => {
-  Object.assign(筛选, { software: '', card: '', event_type: '' })
+  Object.assign(筛选, { software: '', card: '', change_type: '' })
   查询流水(true)
 }
 onMounted(() => {

@@ -21,9 +21,9 @@
 - `software` 从卡密记录读取，无需提交。`device_id` 省略时按空字符串处理；非空值应由客户端生成并持久化。`device_alias` 仅登录时使用，最长 64 个字符。
 - `period_minutes` 省略或为 `0` 时，新会话使用软件默认时长；已有会话沿用上次选择的时长。显式时长必须对应启用的计费方案。
 - `prefer_reuse` 默认 `false`。只有请求和软件设置都允许时，才复用同卡已离线、未到期的授权；复用保留原到期时间，不扣点，旧设备凭证失效。没有可复用授权时正常计费。
-- 每张卡最多保留 1000 个设备会话。同一管理员、卡密和设备 ID 只有一条会话；当前授权未到期时重复登录不重复扣点。
+- 每张卡的设备上限由软件和单卡设置共同决定，详见下方“设备上限”。同一管理员、卡密和设备 ID 只有一条会话；当前授权未到期时重复登录不重复扣点。
 
-成功响应包含 `needle`、`authorized_until`、`heartbeat_interval_seconds` 和本次请求的 `nonce`。
+成功响应包含 `needle`、`authorized_until`、`heartbeat_interval_seconds` 和本次请求的 `nonce`。客户端须原样保存并携带服务端返回的 `needle`。
 
 ### 心跳
 
@@ -36,12 +36,12 @@
 ### 退出、查询和流水
 
 - `GET/POST /point_card/card_logout`：提交 `center_id/name`、`card`，可选 `device_id`、`needle`。删除对应设备会话，不退款；省略 `device_id` 按空字符串处理。
-- `GET/POST /point_card/query`：查询余额、状态和设备会话；支持 `page`、`page_size`，默认每页 50 条，最多 100 条。设备项包含设备标识、授权截止时间、在线状态和心跳令牌。
+- `GET/POST /point_card/query`：查询余额、状态和设备会话；支持 `page`、`page_size`，默认每页 50 条，最多 100 条。返回 `device_total`、单卡设置 `max_devices` 和实际生效的 `effective_max_devices`；设备项包含设备标识、授权截止时间、在线状态、最近心跳 `last_heartbeat_at` 和心跳令牌。活动查询见[最近活动记录](#最近活动记录)。
 - `GET/POST /point_card/point_ledger/query`：查询当前卡密流水，支持分页；流水保留 30 天。
 - `GET/POST /point_card/bulletin`：读取软件公告。
 - `GET/POST /point_card/config`：读写卡密配置，最多 200 个字符。
 
-点卡流水只记录余额变化，字段为 `created_at`、`event_type`、`change`、`balance_before`、`balance_after`、`remark`。生成卡密会写初始流水，包括 0 点卡；删除并重用同名卡密时，30 天保留期内的新旧流水可能同时出现。
+点卡流水只记录真实余额变化，业务字段为 `created_at`、`change`、`balance_after`、`remark`，另有 `id`、`card`、`software` 等标识。`change > 0` 表示增加，`change < 0` 表示扣除。初始点数大于 0 时生成初始流水，0 点卡不写零变动流水；删除并重用同名卡密时，保留期内的新旧流水可能同时出现。
 
 ## 点卡管理与代理
 
@@ -53,6 +53,16 @@
 - 代理账号：`/创建代理账号`、`/设置代理账号`、`/查询代理账号`、`/删除代理账号`、`/代理账号充值`。
 
 每次最多生成 500 张点卡，允许 0 点。代理价格以软件 ID 为键，表示生成 1 点卡点数所需的余额；未配置价格的软件不能发卡。价格最多两位小数，批次总额向上取整。
+
+管理员 `/admin/point_card/ledger` 使用 `change_type` 筛选流水：`debit` 为扣点，`credit` 为增加，省略表示全部。
+
+### 设备上限
+
+- 软件创建 `/admin/user_add_soft` 和修改 `/admin/user_modify_bulletin` 接收 `point_card_max_devices`，范围 0～1000，0 表示禁止新增设备；创建时默认 1000，修改时省略则保留原值。管理员和代理的软件列表均返回此字段。
+- 管理员和代理的 `/point_card/create|save` 接收 `max_devices`，范围 0～1000，创建时默认 0，修改时省略则保留原值。0 表示跟随软件，非零时实际上限取 `min(max_devices, point_card_max_devices)`。
+- 上限按该卡当前保留的全部设备会话计算，包含离线及尚未清理的到期会话；列表返回 `device_total` 和 `max_devices`。只在新增会话时检查，下调后已有设备仍可登录、心跳和续费。授权复用不增加会话数量时仍可进行；退出删除会话后再次登录属于新增，需要重新检查。
+
+### 代理代扣
 
 代理点卡代扣设置：
 
@@ -88,7 +98,27 @@
 ## 访客与充值
 
 - `POST /visitor/查询所有卡密`：提交 `center_id`、`mode`（`point` 或 `duration`，默认 `point`）和 `card`。完整卡密精确查询；前缀查询格式为至少 4 位前缀加 `***`，固定匹配末尾 3 位；逗号分隔最多 20 张完整卡密时批量精确查询。结果默认每页 20 张，最多 100 张；每个管理员和来源 IP 每分钟最多查询 10 次。
-- `POST /visitor/查询时长卡`：提交完整卡密，只返回状态和到期信息，不返回心跳令牌。
+- `POST /visitor/查询卡密`：提交 `center_id` 和完整点卡卡密，返回设备详情和实际设备上限；活动查询见[最近活动记录](#最近活动记录)。
+- `POST /visitor/查询时长卡`：提交 `center_id` 和完整卡密，返回状态、到期信息、最近心跳和活动记录，不返回心跳令牌。
 - `POST /visitor/duration_recharge_card/query`：查询充值卡状态，兼容 `/visitor/查询充值卡`。
 - `POST /visitor/duration_recharge_card/redeem`：提交 `recharge_card` 和目标 `cards`。可给同软件、已激活（含已到期）的正常时长卡续费，也可给仍有剩余时长的暂停卡增加暂停余额；兼容 `/visitor/续费卡密` 和旧字段 `Rechargeable_card`。
 - `POST /visitor/duration_card/pause|resume`：暂停或恢复时长卡；由软件的 `pause_deduct_minutes` 控制，`0` 表示关闭。兼容 `/visitor/暂停时长`、`/visitor/恢复时长`。
+
+## 最近活动记录
+
+点卡按设备、时长卡按卡密记录登录和心跳，每组两种操作合计最多 20 条，按最近记录优先返回，最长保留 24 小时。仅保存在当前服务进程内，重启清空，容量满时可能提前清除。
+
+记录业务成功或失败的结果；验签或参数校验失败的请求可能没有记录。
+
+- 点卡 `/point_card/query` 或 `/visitor/查询卡密` 提交 `activity_only: true` 和可选 `device_id`（省略表示默认设备），仅查询该设备，在响应顶层返回 `activity_records`。
+- 时长卡 `/duration_card/query`、管理端与代理端 `/duration_card/detail`、`/visitor/查询时长卡` 在 `data.activity_records` 返回。
+
+普通卡密列表不附带记录。每项包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `time` | 服务端记录时间，RFC3339 格式 |
+| `ip` | 本次登录或心跳的客户端 IP |
+| `operation` | `login` 或 `heartbeat` |
+| `success` | 业务是否成功 |
+| `message` | 失败原因，最多 128 个字符；成功时省略 |

@@ -82,9 +82,10 @@
         <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="260" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="查看详情(scope.row)">详情</el-button>
+          <el-button link type="primary" @click="查看详情(scope.row)">活动记录</el-button>
           <el-button v-if="可续费状态(scope.row)" link type="success" @click="打开单张续费(scope.row)">续费</el-button>
           <el-button v-if="可编辑状态(scope.row)" link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
           <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
@@ -207,7 +208,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="详情框.显示" title="时长卡详情" width="620px" destroy-on-close>
+    <el-dialog v-model="详情框.显示" title="时长卡详情" width="min(760px, 94vw)" destroy-on-close>
       <el-descriptions v-loading="详情框.加载中" :column="2" border>
         <el-descriptions-item label="卡密">{{ 详情框.data.card }}</el-descriptions-item>
         <el-descriptions-item label="软件">{{ 软件名称(详情框.data.software) }}</el-descriptions-item>
@@ -218,9 +219,11 @@
         <el-descriptions-item label="到期时间">{{ 格式化时间(详情框.data.end_time) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="暂停剩余">{{ 时长文本(详情框.data.paused_remaining_minutes) }}</el-descriptions-item>
         <el-descriptions-item label="在线">{{ 详情框.data.online ? '在线' : '不在线' }}</el-descriptions-item>
+        <el-descriptions-item label="最近心跳">{{ 格式化时间(详情框.data.last_heartbeat_at) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="needle" :span="2">{{ 详情框.data.needle || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ 详情框.data.notes || '-' }}</el-descriptions-item>
       </el-descriptions>
+      <ActivityRecords :rows="详情框.data.activity_records || []" :loading="详情框.加载中" />
     </el-dialog>
   </section>
 </template>
@@ -231,6 +234,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import ActivityRecords from '../components/活动记录.vue'
 import {
   查找软件名称,
   格式化代理归属,
@@ -259,6 +263,7 @@ const 生成框 = reactive({ 显示: false, 加载中: false, 提交中: false, 
 const 编辑框 = reactive({ 显示: false, 加载中: false, card: '', duration_minutes: 0, card_state: 2, notes: '', config_content: '' })
 const 续费框 = reactive({ 显示: false, 加载中: false, cards: [], rows: [], duration_minutes: 1440 })
 const 详情框 = reactive({ 显示: false, 加载中: false, data: {} })
+let 详情请求序号 = 0
 const 可发卡软件列表 = computed(() => {
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
   return 软件列表.value.filter((item) => ids.has(Number(item.ID)))
@@ -504,12 +509,19 @@ const 删除单张 = (row) => ElMessageBox.confirm(`确定删除时长卡“${ro
   .then((res) => { if (!res.data?.state) throw new Error(res.data?.msg || '删除失败'); ElMessage.success('删除成功'); 查询列表(false) })
   .catch((error) => { if (error !== 'cancel' && error !== 'close') 显示错误(error) })
 const 查看详情 = (row) => {
+  const sequence = ++详情请求序号
+  详情框.data = { card: row.card }
   详情框.显示 = true
   详情框.加载中 = true
   post('/duration_card/detail', { card: row.card }).then((res) => {
+    if (sequence !== 详情请求序号) return
     if (!res.data?.state) throw new Error(res.data?.msg || '读取详情失败')
     详情框.data = res.data.data || {}
-  }).catch(显示错误).finally(() => { 详情框.加载中 = false })
+  }).catch((error) => {
+    if (sequence === 详情请求序号) 显示错误(error)
+  }).finally(() => {
+    if (sequence === 详情请求序号) 详情框.加载中 = false
+  })
 }
 const 导出当前页 = () => {
   const text = 列表.value.map((row) => row.card).join('\n')

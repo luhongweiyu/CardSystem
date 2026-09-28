@@ -346,7 +346,7 @@ func 管理员_添加时长卡(ctx *gin.Context) {
 		"操作:新增时长卡",
 		fmt.Sprintf("软件:%d", request.Software),
 		fmt.Sprintf("数量:%d", len(cards)),
-		fmt.Sprintf("时长:%d分钟", request.DurationMinutes),
+		"时长:"+格式化授权时长(分钟转秒(request.DurationMinutes)),
 		"成功卡密:"+strings.Join(cards, ","),
 	)
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张时长卡", len(cards)), "data": strings.Join(cards, "\n")})
@@ -380,7 +380,9 @@ func 时长卡详情(admin, card string, now time.Time) (gin.H, error) {
 	if !found {
 		return nil, fmt.Errorf("时长卡不存在")
 	}
-	return 构建时长卡详情(admin, row, now), nil
+	data := 构建时长卡详情(admin, row, now)
+	data["activity_records"] = 查询时长卡活动(admin, row.Card)
+	return data, nil
 }
 
 // 构建时长卡详情只负责把数据库记录转换为接口结果，管理员、代理和访客
@@ -668,7 +670,7 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 		记录管理员代理业务流水(管理员_用户名(ctx), involvedAgents,
 			"操作:管理员续费时长卡",
 			"卡密:"+strings.Join(success, ","),
-			fmt.Sprintf("变更:+%d分钟", request.DurationMinutes),
+			"变更:+"+格式化授权时长(分钟转秒(request.DurationMinutes)),
 			fmt.Sprintf("数量:%d", len(success)),
 			fmt.Sprintf("失败数量:%d", len(failed)),
 		)
@@ -749,7 +751,7 @@ func durationCardLogin(ctx *gin.Context) {
 		return
 	}
 	if activated {
-		记录管理员代理业务流水(admin, []int{row.AgentID}, "操作:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), fmt.Sprintf("变更:+%d分钟", row.DurationMinutes), "授权截止:"+业务流水时间(*row.EndTime))
+		记录管理员代理业务流水(admin, []int{row.AgentID}, "操作:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), "变更:+"+格式化授权时长(分钟转秒(row.DurationMinutes)), "授权截止:"+业务流水时间(*row.EndTime))
 	}
 	写入时长卡心跳缓存(admin, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "software": row.Software, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})

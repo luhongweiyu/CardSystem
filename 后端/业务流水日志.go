@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const timeLayout = "2006-01-02 15:04:05"
+
 // 业务流水字段按 Tab 分隔；只清理控制字符，不截断卡密清单等回溯信息。
 func 业务流水文本(fields ...string) string {
 	cleaned := make([]string, 0, len(fields))
@@ -66,5 +68,5 @@ func 业务流水时间(value time.Time) string {
 	if value.IsZero() {
 		return "无"
 	}
-	return value.Format(time.RFC3339)
+	return value.Format(timeLayout)
 }

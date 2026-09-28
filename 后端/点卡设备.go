@@ -16,6 +16,25 @@ var (
 	点卡会话清理游标 uint64
 )
 
+func 校验点卡设备上限(limit int64) error {
+	if limit < 0 || limit > 最大卡密设备数 {
+		return fmt.Errorf("单卡设备上限必须为0至%d，0表示跟随软件", 最大卡密设备数)
+	}
+	return nil
+}
+
+// 软件设置随现有计费配置读取，单卡设置随现有卡密行读取，不增加数据库查询。
+// 软件为 0 时禁止新增会话；单卡为 0 时跟随软件，已有会话不在此处限制。
+func 点卡实际设备上限(cardLimit, softwareLimit int64) int64 {
+	if softwareLimit < 0 || softwareLimit > 最大卡密设备数 {
+		softwareLimit = 最大卡密设备数
+	}
+	if cardLimit > 0 && cardLimit < softwareLimit {
+		return cardLimit
+	}
+	return softwareLimit
+}
+
 // 规范化点卡会话令牌限制外部输入长度。needle 由服务器生成，客户端在后续
 // 心跳中原样携带；退出时可以附带校验，但它不是设备的唯一身份。
 func 规范化点卡会话令牌(needle string) (string, bool) {
@@ -126,7 +145,7 @@ func 保存点卡设备会话(tx *gorm.DB, session *点卡设备会话, alias st
 	return nil
 }
 
-func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64) (点卡设备会话, bool, error) {
+func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64, deviceLimit int64) (点卡设备会话, bool, error) {
 	session, found, err := 查询点卡设备会话按设备(tx, admin, card, deviceID, true)
 	if err != nil || found {
 		return session, found, err
@@ -137,8 +156,8 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	if err := tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, card).Count(&deviceCount).Error; err != nil {
 		return 点卡设备会话{}, false, fmt.Errorf("统计卡密设备数量失败")
 	}
-	if deviceCount >= 最大卡密设备数 {
-		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
+	if deviceCount >= deviceLimit {
+		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", deviceLimit)
 	}
 	session, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, alias, renewalPeriod)
 	return session, false, err
@@ -228,21 +247,20 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			return err
 		}
 		// 1. 先读取本设备；只有自身授权不可用且双方开启复用，才会取其他候选。
-		允许复用 := false
-		if 请求优先复用 {
-			settings, err := 读取软件设置(tx, admin, softwareID)
-			if err != nil {
-				return err
-			}
-			允许复用 = settings.PointCardReuseEnabled
+		// 提前复用登录本来就要读取的软件配置，不新增上限专用查询。
+		settings, err := 读取软件设置(tx, admin, softwareID)
+		if err != nil {
+			return err
 		}
+		deviceLimit := 点卡实际设备上限(cardRow.MaxDevices, settings.PointCardMaxDevices)
+		允许复用 := 请求优先复用 && settings.PointCardReuseEnabled
 		var 当前会话 点卡设备会话
 		var 登录前已有会话 bool // 本次新建的会话不算已有会话，不能沿用其续费周期和起点。
 		if 允许复用 {
 			// 已有卡密行锁，不提前锁会话行，保持“候选缓存 -> 心跳缓存 -> 会话行”的顺序。
 			当前会话, 登录前已有会话, err = 查询点卡设备会话按设备(tx, admin, card, deviceID, false)
 		} else {
-			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0)
+			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0, deviceLimit)
 		}
 		if err != nil {
 			return err
@@ -305,8 +323,8 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			if err := tx.Table("point_device_session").Where("admin = ? AND card = ?", admin, card).Count(&设备总数).Error; err != nil {
 				return fmt.Errorf("统计卡密设备数量失败")
 			}
-			if 设备总数 >= 最大卡密设备数 {
-				return fmt.Errorf("卡密授权设备已达到上限%d台", 最大卡密设备数)
+			if 设备总数 >= deviceLimit {
+				return fmt.Errorf("卡密授权设备已达到上限%d台", deviceLimit)
 			}
 			当前会话, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, period)
 			if err != nil {

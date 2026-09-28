@@ -50,7 +50,7 @@ func 写入文件_追加(filePath string, content string) {
 }
 
 func 日志(filePath string, content string) {
-	写入文件_追加(filePath, "\n"+time.Now().Format("2006-01-02 15:04:05")+":"+content)
+	写入文件_追加(filePath, "\n"+time.Now().Format(timeLayout)+":"+content)
 }
 
 // 清理拒绝日志字段防止外部输入伪造日志行，并限制异常请求的日志体积。
@@ -158,6 +158,7 @@ func 计算旧卡密响应签名(timestamp, apiPassword string, code int) string
 // 客户端收到响应后，只需在原始响应文本中把顶层 sign 还原为空即可校验，
 // 不依赖响应头，也不能先解析后重新序列化，以免字段顺序或转义方式变化。
 func 写入卡密响应(ctx *gin.Context, data gin.H) {
+	设置卡密活动结果(ctx, data)
 	if value, exists := ctx.Get(卡密旧签名标记); exists && value == true {
 		// 旧客户端校验的是“客户端 timestamp + 10”，不能改成服务端当前时间。
 		timestamp, err := strconv.ParseInt(input(ctx, "timestamp"), 10, 64)
@@ -376,6 +377,7 @@ func 读取点卡记录(admin string, card string) (点卡表样式, bool, error
 }
 
 type 点卡设备详情 struct {
+	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
 	DeviceID        string    `json:"device_id"`
 	DeviceAlias     string    `json:"device_alias"`
 	Needle          string    `json:"needle"`
@@ -386,12 +388,13 @@ type 点卡设备详情 struct {
 }
 
 type 点卡设备统计 struct {
-	AuthorizedCount int64    `json:"authorized_device_count"`
-	OnlineCount     int64    `json:"online_device_count"`
-	DeviceTotal     int64    `json:"device_total"`
-	DevicePage      int      `json:"device_page"`
-	DevicePageSize  int      `json:"device_page_size"`
-	Devices         []点卡设备详情 `json:"devices"`
+	SoftwareMaxDevices int64    `json:"software_max_devices"`
+	AuthorizedCount    int64    `json:"authorized_device_count"`
+	OnlineCount        int64    `json:"online_device_count"`
+	DeviceTotal        int64    `json:"device_total"`
+	DevicePage         int      `json:"device_page"`
+	DevicePageSize     int      `json:"device_page_size"`
+	Devices            []点卡设备详情 `json:"devices"`
 }
 
 // 读取点卡设备分页参数只允许较小的明细页，避免单个点卡异常累积大量设备时
@@ -429,6 +432,7 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 		return result, err
 	}
 	result.DevicePage = page
+	result.SoftwareMaxDevices = settings.PointCardMaxDevices
 	result.DevicePageSize = pageSize
 	var rows []点卡设备会话
 	query := db_point_device_session.Session(&gorm.Session{}).
@@ -465,7 +469,8 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 			continue
 		}
 		result.Devices = append(result.Devices, 点卡设备详情{
-			DeviceID: row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
+			LastHeartbeatAt: row.LastHeartbeatAt,
+			DeviceID:        row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
 			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online, ForcedOffline: row.ForcedOffline,
 		})
 	}
@@ -488,6 +493,16 @@ func 点卡查询详情(ctx *gin.Context) {
 		失败提示(ctx, "卡密不存在")
 		return
 	}
+	// 只有持完整卡密的详情请求才能读取活动记录；此分支不查询设备表。
+	if input(ctx, "activity_only") == "true" {
+		rows, err := 查询点卡活动(cardContext.Name, cardRow.Card, input(ctx, "device_id"))
+		if err != nil {
+			失败提示(ctx, err.Error())
+			return
+		}
+		成功提示(ctx, gin.H{"activity_records": rows})
+		return
+	}
 	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
 	设备统计, err := 查询点卡设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
@@ -503,7 +518,7 @@ func 点卡查询详情(ctx *gin.Context) {
 		status = "冻结"
 	}
 	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n最近扣点:%s\n授权设备:%d\n在线设备:%d\n状态:%s", cardRow.Card, cardRow.Software, cardRow.Point_balance, lastUse, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
-	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices})
+	成功提示(ctx, gin.H{"data": text, "software": cardRow.Software, "point_balance": cardRow.Point_balance, "card_state": cardRow.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices, "max_devices": cardRow.MaxDevices, "effective_max_devices": 点卡实际设备上限(cardRow.MaxDevices, 设备统计.SoftwareMaxDevices)})
 }
 
 func 解析整数参数(ctx *gin.Context, key string) (int64, bool) {
@@ -672,7 +687,10 @@ func 生成随机卡密文本(softwareID int) string {
 // 校验并准备生成点卡卡密的参数。卡密文本解析、随机值生成和重复预检查都在事务外
 // 完成，避免无效请求或大批量计算持有数据库锁。最终写入仍依赖卡密主键唯一约束，
 // 防止预检查完成后被并发请求抢先创建。
-func 准备生成点卡卡密(admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string) (string, []string, error) {
+func 准备生成点卡卡密(admin string, softwareID int, points int64, count int, customCards string, random bool, notes string, config string, maxDevices int64) (string, []string, error) {
+	if err := 校验点卡设备上限(maxDevices); err != nil {
+		return "", nil, err
+	}
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) || softwareID <= 0 {
 		return "", nil, fmt.Errorf("管理员或软件参数错误")
@@ -750,7 +768,7 @@ func 锁定发卡软件(tx *gorm.DB, admin string, softwareID int) error {
 
 // 创建点卡并记录初始流水只负责持久化已经校验过的点卡。调用方应把它放在自己的
 // 事务中，保证卡密和对应的初始流水同时成功或失败。
-func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, agentDeductionMode string, now time.Time) error {
+func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin string, agentID int, softwareID int, points int64, cards []string, notes string, config string, agentDeductionMode string, maxDevices int64, now time.Time) error {
 	// 准备阶段已经完成校验；这里再次去除首尾空格，确保管理员入口和
 	// 代理入口无论调用路径如何，落库内容保持一致。
 	var valid bool
@@ -771,9 +789,11 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 		remark += fmt.Sprintf("；渠道合伙人ID=%d", agentID)
 	}
 	for _, card := range cards {
-		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID, AgentDeductionMode: mode})
-		// 生成是流水起点，初始点数为 0 也保存一条补点记录；日常扣费仍只记录真实变动。
-		ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, EventType: 点数事件_补点, Change: points, BalanceBefore: 0, BalanceAfter: points, Remark: remark, CreatedAt: now})
+		rows = append(rows, 点卡表样式{Card: card, Create_time: now, Software: softwareID, Card_state: 卡密状态_正常, Point_balance: points, Notes: notes, Config_content: config, AgentID: agentID, AgentDeductionMode: mode, MaxDevices: maxDevices})
+		// 初始点数为零没有真实余额变化；旧的零变动流水保持原样。
+		if points > 0 {
+			ledgers = append(ledgers, 点数流水{Admin: admin, Card: card, Software: softwareID, Change: points, BalanceAfter: points, Remark: remark, CreatedAt: now})
+		}
 	}
 	// 按估算行大小控制每条 INSERT，既减少上千次数据库往返，也避免大配置
 	// 让单条 SQL 超过常见的 max_allowed_packet。事务仍保持整批全成或全退。
@@ -787,8 +807,10 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 	if err := tx.Table(tableName).CreateInBatches(&rows, batchSize).Error; err != nil {
 		return fmt.Errorf("写入卡密失败")
 	}
-	if err := tx.Table("point_ledger").CreateInBatches(&ledgers, 500).Error; err != nil {
-		return fmt.Errorf("写入初始点数流水失败")
+	if len(ledgers) > 0 {
+		if err := tx.Table("point_ledger").CreateInBatches(&ledgers, 500).Error; err != nil {
+			return fmt.Errorf("写入初始点数流水失败")
+		}
 	}
 	return nil
 }
@@ -796,8 +818,8 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 // 生成并保存点卡卡密采用全量事务：任意卡密重复或数据库错误都会全部回滚，
 // 避免管理员得到数量不确定的半成功结果。代理生成点卡时会复用同一
 // 套准备/创建函数，并把渠道余额扣减放进同一事务。
-func 生成并保存点卡卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string, agentDeductionMode string) ([]string, error) {
-	tableName, cards, err := 准备生成点卡卡密(admin, softwareID, points, count, customCards, random, notes, config)
+func 生成并保存点卡卡密(admin string, agentID int, softwareID int, points int64, count int, customCards string, random bool, notes string, config string, agentDeductionMode string, maxDevices int64) ([]string, error) {
+	tableName, cards, err := 准备生成点卡卡密(admin, softwareID, points, count, customCards, random, notes, config, maxDevices)
 	if err != nil {
 		return nil, err
 	}
@@ -805,7 +827,7 @@ func 生成并保存点卡卡密(admin string, agentID int, softwareID int, poin
 		if err := 锁定发卡软件(tx, admin, softwareID); err != nil {
 			return err
 		}
-		if err := 创建点卡并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, agentDeductionMode, time.Now()); err != nil {
+		if err := 创建点卡并记录初始流水(tx, tableName, strings.TrimSpace(admin), agentID, softwareID, points, cards, notes, config, agentDeductionMode, maxDevices, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		return nil
@@ -817,6 +839,7 @@ func 生成并保存点卡卡密(admin string, agentID int, softwareID int, poin
 }
 
 type 点卡卡密生成请求 struct {
+	MaxDevices    int64  `json:"max_devices"`
 	Software      int    `json:"software"`
 	Points        int64  `json:"points"`
 	Num           int    `json:"num"`
@@ -837,7 +860,7 @@ func 管理员_添加点卡卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	cards, err := 生成并保存点卡卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent, 点卡代扣模式_跟随总开关)
+	cards, err := 生成并保存点卡卡密(account.Name, 0, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent, 点卡代扣模式_跟随总开关, request.MaxDevices)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
@@ -853,6 +876,8 @@ func 管理员_添加点卡卡密(ctx *gin.Context) {
 }
 
 type 点卡卡密列表项 struct {
+	MaxDevices            int64      `json:"max_devices"`
+	DeviceTotal           int64      `json:"device_total"`
 	Card                  string     `json:"card"`
 	CreateTime            time.Time  `json:"create_time"`
 	UseTime               *time.Time `json:"use_time"`
@@ -974,28 +999,32 @@ func 查询点卡卡密列表(ctx *gin.Context, admin string, agentID int) {
 		return
 	}
 	counts := make(map[string]int64, len(rows))
+	totals := make(map[string]int64, len(rows))
 	if len(rows) > 0 {
 		type countRow struct {
 			Card  string
 			Count int64
+			Total int64
 		}
 		var grouped []countRow
 		cards := make([]string, 0, len(rows))
 		for _, row := range rows {
 			cards = append(cards, row.Card)
 		}
-		if err := db_point_device_session.Where("admin = ? AND card IN ? AND authorized_until > ?", admin, cards, now).Select("card, COUNT(*) AS count").Group("card").Scan(&grouped).Error; err != nil {
+		// 同一条分组查询同时返回保留会话总数和未到期数，不额外发起 COUNT。
+		if err := db_point_device_session.Where("admin = ? AND card IN ?", admin, cards).Select("card, COUNT(*) AS total, SUM(authorized_until > ?) AS count", now).Group("card").Scan(&grouped).Error; err != nil {
 			失败提示管理端(ctx, "查询授权设备数量失败")
 			return
 		}
 		for _, item := range grouped {
 			counts[item.Card] = item.Count
+			totals[item.Card] = item.Total
 		}
 	}
 	data := make([]点卡卡密列表项, 0, len(rows))
 	for _, row := range rows {
 		mode, _ := 规范化点卡代扣模式(row.AgentDeductionMode)
-		data = append(data, 点卡卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AgentDeductionMode: mode, AuthorizedDeviceCount: counts[row.Card]})
+		data = append(data, 点卡卡密列表项{Card: row.Card, CreateTime: row.Create_time, UseTime: row.Use_time, Software: row.Software, CardState: row.Card_state, PointBalance: row.Point_balance, Notes: row.Notes, ConfigContent: row.Config_content, AgentID: row.AgentID, AgentDeductionMode: mode, AuthorizedDeviceCount: counts[row.Card], DeviceTotal: totals[row.Card], MaxDevices: row.MaxDevices})
 	}
 	成功提示管理端(ctx, gin.H{"data": data, "num": total, "page": page, "page_size": pageSize})
 }
@@ -1138,7 +1167,12 @@ func 管理员_删除点卡卡密(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
 
-func 修改点卡记录(admin string, agentID int, cardValue string, notes *string, config *string, state int, agentDeductionMode *string) error {
+func 修改点卡记录(admin string, agentID int, cardValue string, notes *string, config *string, state int, agentDeductionMode *string, maxDevices *int64) error {
+	if maxDevices != nil {
+		if err := 校验点卡设备上限(*maxDevices); err != nil {
+			return err
+		}
+	}
 	admin = strings.TrimSpace(admin)
 	if !验证管理员名称(admin) {
 		return fmt.Errorf("管理员名称格式不正确")
@@ -1177,6 +1211,9 @@ func 修改点卡记录(admin string, agentID int, cardValue string, notes *stri
 		return err
 	}
 	updates := map[string]interface{}{}
+	if maxDevices != nil {
+		updates["max_devices"] = *maxDevices
+	}
 	if notes != nil {
 		updates["notes"] = *notes
 	}
@@ -1234,6 +1271,7 @@ func 修改点卡记录(admin string, agentID int, cardValue string, notes *stri
 
 func 管理员_修改点卡(ctx *gin.Context) {
 	var request struct {
+		MaxDevices    *int64  `json:"max_devices"`
 		Card          string  `json:"card"`
 		Notes         *string `json:"notes"`
 		ConfigContent *string `json:"config_content"`
@@ -1248,7 +1286,7 @@ func 管理员_修改点卡(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	if err := 修改点卡记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState, nil); err != nil {
+	if err := 修改点卡记录(account.Name, 0, request.Card, request.Notes, request.ConfigContent, request.CardState, nil, request.MaxDevices); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
@@ -1264,7 +1302,7 @@ func 修改点卡_批量(admin string, agentID int, cards []string, state int) (
 	}
 	success, failed := []string{}, []string{}
 	for _, card := range cards {
-		if err := 修改点卡记录(admin, agentID, card, nil, nil, state, nil); err != nil {
+		if err := 修改点卡记录(admin, agentID, card, nil, nil, state, nil, nil); err != nil {
 			failed = append(failed, card)
 		} else {
 			success = append(success, card)

@@ -39,6 +39,8 @@ type 点卡表样式 struct {
 	// AgentDeductionMode 控制卡内点数不足时是否允许从所属代理余额补足：
 	// inherit 跟随代理总开关，allow 始终允许，deny 始终禁止。
 	AgentDeductionMode string `gorm:"column:point_card_auto_deduct_mode;size:8;not null;default:inherit" json:"point_card_auto_deduct_mode"`
+	// 0 跟随软件；非零时与软件上限取较小值，只限制新增设备会话。
+	MaxDevices int64 `gorm:"column:max_devices;not null;default:0" json:"max_devices"`
 }
 
 // software 保存客户端默认授权时长和心跳判定所需的间隔。
@@ -55,7 +57,8 @@ type software struct {
 	// 为 0 的历史数据在读取时按默认 60 分钟处理；新软件创建时会直接写入默认值。
 	OnlineGraceMinutes int64 `gorm:"column:online_grace_minutes;not null;default:60" json:"online_grace_minutes"`
 	// 跨设备复用默认关闭；客户端还必须明确提交 prefer_reuse 才能使用。
-	PointCardReuseEnabled bool `gorm:"column:point_card_reuse_enabled;not null;default:false" json:"point_card_reuse_enabled"`
+	PointCardReuseEnabled bool  `gorm:"column:point_card_reuse_enabled;not null;default:false" json:"point_card_reuse_enabled"`
+	PointCardMaxDevices   int64 `gorm:"column:point_card_max_devices;not null;default:1000" json:"point_card_max_devices"`
 	// PauseDeductMinutes 是时长卡主动暂停时一次性扣除的分钟数。0 表示关闭
 	// 暂停功能；该配置不参与点卡计费和在线判断。
 	PauseDeductMinutes int64 `gorm:"column:pause_deduct_minutes;not null;default:0" json:"pause_deduct_minutes"`

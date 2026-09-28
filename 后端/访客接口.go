@@ -315,6 +315,15 @@ func 访客_查询点卡卡密详情(ctx *gin.Context) {
 		失败提示访客(ctx, err.Error())
 		return
 	}
+	if input(ctx, "activity_only") == "true" {
+		rows, err := 查询点卡活动(admin, card, input(ctx, "device_id"))
+		if err != nil {
+			失败提示访客(ctx, err.Error())
+			return
+		}
+		成功提示访客(ctx, gin.H{"activity_records": rows})
+		return
+	}
 	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
 	设备统计, err := 查询点卡设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页)
 	if err != nil {
@@ -326,7 +335,7 @@ func 访客_查询点卡卡密详情(ctx *gin.Context) {
 		status = "冻结"
 	}
 	text := fmt.Sprintf("卡密:%s\n软件:%d\n点数余额:%d\n授权设备:%d\n在线设备:%d\n状态:%s", row.Card, row.Software, row.Point_balance, 设备统计.AuthorizedCount, 设备统计.OnlineCount, status)
-	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices})
+	成功提示访客(ctx, gin.H{"data": text, "card": row.Card, "software": row.Software, "point_balance": row.Point_balance, "card_state": row.Card_state, "authorized_device_count": 设备统计.AuthorizedCount, "online_device_count": 设备统计.OnlineCount, "device_total": 设备统计.DeviceTotal, "device_page": 设备统计.DevicePage, "device_page_size": 设备统计.DevicePageSize, "devices": 设备统计.Devices, "max_devices": row.MaxDevices, "effective_max_devices": 点卡实际设备上限(row.MaxDevices, 设备统计.SoftwareMaxDevices)})
 }
 
 func 访客_查询点卡流水(ctx *gin.Context) {
@@ -371,7 +380,6 @@ func 访客_查询时长卡(ctx *gin.Context) {
 	}
 	// 访客查询是公开页面，只返回状态所需字段，不返回服务端 needle。
 	delete(data, "needle")
-	delete(data, "last_heartbeat_at")
 	delete(data, "notes")
 	delete(data, "config_content")
 	delete(data, "agent_id")

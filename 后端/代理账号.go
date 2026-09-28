@@ -310,6 +310,7 @@ func 代理账号_查询点卡流水(ctx *gin.Context) {
 }
 
 type 代理生成点卡卡密请求 struct {
+	MaxDevices         int64  `json:"max_devices"`
 	Software           int    `json:"software"`
 	Points             int64  `json:"points"`
 	Num                int    `json:"num"`
@@ -339,7 +340,7 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
-	tableName, cards, err := 准备生成点卡卡密(account.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent)
+	tableName, cards, err := 准备生成点卡卡密(account.Admin, request.Software, request.Points, request.Num, request.Cards, request.Random, request.Notes, request.ConfigContent, request.MaxDevices)
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
@@ -370,7 +371,7 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 				return fmt.Errorf("扣除渠道余额失败")
 			}
 		}
-		if err := 创建点卡并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, mode, time.Now()); err != nil {
+		if err := 创建点卡并记录初始流水(tx, tableName, current.Admin, current.ID, request.Software, request.Points, cards, request.Notes, request.ConfigContent, mode, request.MaxDevices, time.Now()); err != nil {
 			return fmt.Errorf("生成卡密失败: %w", err)
 		}
 		balance := current.Balance - charge
@@ -439,6 +440,7 @@ func 代理账号_删除点卡卡密(ctx *gin.Context) {
 
 func 代理账号_修改点卡(ctx *gin.Context) {
 	var request struct {
+		MaxDevices         *int64  `json:"max_devices"`
 		Card               string  `json:"card"`
 		Notes              *string `json:"notes"`
 		Config             *string `json:"config_content"`
@@ -450,7 +452,7 @@ func 代理账号_修改点卡(ctx *gin.Context) {
 		return
 	}
 	account := 代理账号_取账号信息(ctx)
-	if err := 修改点卡记录(account.Admin, account.ID, request.Card, request.Notes, request.Config, request.CardState, request.AgentDeductionMode); err != nil {
+	if err := 修改点卡记录(account.Admin, account.ID, request.Card, request.Notes, request.Config, request.CardState, request.AgentDeductionMode, request.MaxDevices); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}

@@ -395,22 +395,20 @@ func 处理点卡设备下线(ctx *gin.Context, admin string, agentID int) {
 }
 
 type 点数流水展示 struct {
-	ID            uint64 `json:"id"`
-	Admin         string `json:"admin,omitempty"`
-	Card          string `json:"card"`
-	Software      int    `json:"software"`
-	EventType     string `json:"event_type"`
-	Change        int64  `json:"change"`
-	BalanceBefore int64  `json:"balance_before"`
-	BalanceAfter  int64  `json:"balance_after"`
-	Remark        string `json:"remark"`
-	CreatedAt     string `json:"created_at"`
+	ID           uint64 `json:"id"`
+	Admin        string `json:"admin,omitempty"`
+	Card         string `json:"card"`
+	Software     int    `json:"software"`
+	Change       int64  `json:"change"`
+	BalanceAfter int64  `json:"balance_after"`
+	Remark       string `json:"remark"`
+	CreatedAt    string `json:"created_at"`
 }
 
 func 点卡流水展示列表(rows []点数流水, includeAdmin bool) []点数流水展示 {
 	result := make([]点数流水展示, 0, len(rows))
 	for _, row := range rows {
-		item := 点数流水展示{ID: row.ID, Card: row.Card, Software: row.Software, EventType: row.EventType, Change: row.Change, BalanceBefore: row.BalanceBefore, BalanceAfter: row.BalanceAfter, Remark: row.Remark, CreatedAt: row.CreatedAt.Format(timeLayout)}
+		item := 点数流水展示{ID: row.ID, Card: row.Card, Software: row.Software, Change: row.Change, BalanceAfter: row.BalanceAfter, Remark: row.Remark, CreatedAt: row.CreatedAt.Format(timeLayout)}
 		if includeAdmin {
 			item.Admin = row.Admin
 		}
@@ -418,8 +416,6 @@ func 点卡流水展示列表(rows []点数流水, includeAdmin bool) []点数�
 	}
 	return result
 }
-
-const timeLayout = "2006-01-02 15:04:05"
 
 // 规范化流水分页确保实际查询和响应中的页码完全一致，同时限制极端页码
 // 造成的整数溢出或无意义超大 OFFSET。
@@ -472,12 +468,16 @@ func 管理员_查询点卡流水(ctx *gin.Context) {
 	if card != "" {
 		query = query.Where("card LIKE ?", "%"+转义Like文本(card)+"%")
 	}
-	if eventType := strings.TrimSpace(input(ctx, "event_type")); eventType != "" {
-		if eventType != 点数事件_扣点 && eventType != 点数事件_补点 {
+	if changeType := strings.TrimSpace(input(ctx, "change_type")); changeType != "" {
+		switch changeType {
+		case "debit":
+			query = query.Where("`change` < 0")
+		case "credit":
+			query = query.Where("`change` > 0")
+		default:
 			失败提示管理端(ctx, "流水类型不正确")
 			return
 		}
-		query = query.Where("event_type = ?", eventType)
 	}
 	rows, total, err := 查询点卡流水记录(query, page, pageSize)
 	if err != nil {

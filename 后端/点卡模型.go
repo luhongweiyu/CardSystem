@@ -3,10 +3,6 @@ package main
 import "time"
 
 const (
-	// 点数流水类型只表示余额的真实变化方向。
-	点数事件_扣点 = "debit"
-	点数事件_补点 = "credit"
-
 	默认点卡授权周期分钟 = int64(60)
 	默认心跳周期秒    = int64(300)
 	最小点卡计费周期分钟 = int64(15)
@@ -66,15 +62,13 @@ type 点卡周期价格 struct {
 // change 为有符号值，扣点为负、补点为正；balance_after 是变动完成后的余额。
 // 设备 ID 和别名快照统一写入 remark，避免流水表承担设备状态职责。
 type 点数流水 struct {
-	ID            uint64 `gorm:"column:id;primaryKey;autoIncrement;index:idx_ledger_admin_id,priority:2;index:idx_ledger_card_id,priority:3;index:idx_ledger_software_id,priority:3" json:"id"`
-	Admin         string `gorm:"column:admin;size:32;not null;index:idx_ledger_admin_id,priority:1;index:idx_ledger_card_id,priority:1;index:idx_ledger_software_id,priority:1" json:"admin"`
-	Card          string `gorm:"column:card;size:63;not null;index:idx_ledger_card_id,priority:2" json:"card"`
-	Software      int    `gorm:"column:software;not null;index:idx_ledger_software_id,priority:2" json:"software"`
-	EventType     string `gorm:"column:event_type;size:16;not null" json:"event_type"`
-	Change        int64  `gorm:"column:change;not null" json:"change"`
-	BalanceBefore int64  `gorm:"column:balance_before;not null" json:"balance_before"`
-	BalanceAfter  int64  `gorm:"column:balance_after;not null" json:"balance_after"`
-	Remark        string `gorm:"column:remark;type:text" json:"remark"`
+	ID           uint64 `gorm:"column:id;primaryKey;autoIncrement;index:idx_ledger_admin_id,priority:2;index:idx_ledger_card_id,priority:3;index:idx_ledger_software_id,priority:3" json:"id"`
+	Admin        string `gorm:"column:admin;size:32;not null;index:idx_ledger_admin_id,priority:1;index:idx_ledger_card_id,priority:1;index:idx_ledger_software_id,priority:1" json:"admin"`
+	Card         string `gorm:"column:card;size:63;not null;index:idx_ledger_card_id,priority:2" json:"card"`
+	Software     int    `gorm:"column:software;not null;index:idx_ledger_software_id,priority:2" json:"software"`
+	Change       int64  `gorm:"column:change;not null" json:"change"`
+	BalanceAfter int64  `gorm:"column:balance_after;not null" json:"balance_after"`
+	Remark       string `gorm:"column:remark;type:text" json:"remark"`
 	// 清理任务按创建时间删除过期流水，单独索引避免每天扫描整张审计表。
 	CreatedAt time.Time `gorm:"column:created_at;not null;index:idx_ledger_created_at" json:"created_at"`
 }

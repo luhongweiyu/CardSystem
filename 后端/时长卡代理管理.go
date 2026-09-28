@@ -60,7 +60,9 @@ func 代理账号_查询时长卡详情(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	成功提示管理端(ctx, gin.H{"data": 构建时长卡详情(account.Admin, row, time.Now())})
+	data := 构建时长卡详情(account.Admin, row, time.Now())
+	data["activity_records"] = 查询时长卡活动(account.Admin, row.Card)
+	成功提示管理端(ctx, gin.H{"data": data})
 }
 
 // 修改时长卡范围只允许维护备注、配置和正常/冻结状态。暂停必须走恢复接口，
@@ -379,7 +381,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		fields := []string{
 			"操作:代理续费时长卡",
 			"卡密:" + strings.Join(success, ","),
-			fmt.Sprintf("时长变更:+%d分钟", request.DurationMinutes),
+			"时长变更:+" + 格式化授权时长(分钟转秒(request.DurationMinutes)),
 			fmt.Sprintf("数量:%d", len(success)),
 			fmt.Sprintf("失败数量:%d", len(failed)),
 		}
