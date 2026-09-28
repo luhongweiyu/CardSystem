@@ -120,7 +120,13 @@
           <el-input v-model="生成结果" type="textarea" :rows="5" readonly />
           <el-button class="复制按钮" @click="复制文本(生成结果)">复制</el-button>
         </el-form-item>
-        <el-alert v-if="是代理账号" type="info" :closable="false" title="代理余额会在服务端按充值时长、次数和数量重新计价并一次性扣除。" />
+        <el-alert
+          v-if="是代理账号"
+          :type="代理充值卡报价.error ? 'warning' : 'success'"
+          :closable="false"
+          :title="代理充值卡报价.error || `预计本次消费 ${格式化代理点数(代理充值卡报价.charge)} 点`"
+          description="按每次增加时长、每张次数和生成数量估算，服务端会在生成时复核价格。"
+        />
       </el-form>
       <template #footer>
         <el-button @click="生成框.显示 = false">取消</el-button>
@@ -180,6 +186,7 @@ import {
   最小时长分钟,
   时长预设
 } from '../utils/时长工具.js'
+import { 计算代理时长报价, 格式化代理点数 } from '../utils/代理时长报价.js'
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -197,6 +204,16 @@ const 可发卡软件列表 = computed(() => {
   if (!是代理账号.value) return 软件列表.value
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
   return 软件列表.value.filter((item) => ids.has(Number(item.ID)))
+})
+const 代理充值卡报价 = computed(() => {
+  if (!是代理账号.value) return { charge: 0n }
+  const uses = Number(生成框.uses)
+  const count = Number(生成框.num) * uses
+  if (!Number.isInteger(uses) || uses < 1 || uses > 1000 || !Number.isInteger(生成框.num) || 生成框.num < 1 || 生成框.num > 500) {
+    return { error: '使用次数或生成数量不正确' }
+  }
+  const prices = 代理价格列表.value.filter((item) => Number(item.software) === Number(生成框.software))
+  return 计算代理时长报价(prices, Number(生成框.duration_minutes), count)
 })
 
 const 显示错误 = (error) => ElMessage.error(获取接口错误提示(error))
@@ -260,6 +277,10 @@ const 生成 = () => {
   }
   if (!生成框.random && !生成框.cards.trim()) {
     ElMessage.warning('请输入指定卡密')
+    return
+  }
+  if (是代理账号.value && 代理充值卡报价.value.error) {
+    ElMessage.warning(代理充值卡报价.value.error)
     return
   }
   生成框.提交中 = true

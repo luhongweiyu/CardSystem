@@ -193,6 +193,13 @@
             <el-option v-for="item in 时长预设" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
+        <el-alert
+          v-if="是代理账号"
+          :type="代理续费报价.error ? 'warning' : 'success'"
+          :closable="false"
+          :title="代理续费报价.error || `预计本次消费 ${格式化代理点数(代理续费报价.charge)} 点`"
+          description="按当前已选且可续费的卡片和本地缓存价格估算，实际扣款以服务端为准。"
+        />
       </el-form>
       <template #footer>
         <el-button @click="续费框.显示 = false">取消</el-button>
@@ -233,6 +240,7 @@ import {
   最小时长分钟,
   时长预设
 } from '../utils/时长工具.js'
+import { 计算代理时长报价, 格式化代理点数 } from '../utils/代理时长报价.js'
 
 const stores = use登录状态Store()
 const post = stores.post
@@ -241,6 +249,7 @@ const 是代理账号 = computed(() => Boolean(stores.是代理账号))
 const 加载中 = ref(false)
 const 列表 = ref([])
 const 已选 = ref([])
+const 已选行 = ref([])
 const 生成结果 = ref('')
 const 代理价格软件 = ref(0)
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
@@ -248,7 +257,7 @@ const 筛选 = reactive({ software: '', card_state: '', card: '', notes: '' })
 const 排序 = reactive({ sort_by: '', sort_order: '' })
 const 生成框 = reactive({ 显示: false, 加载中: false, 提交中: false, software: 0, duration_minutes: 1440, num: 1, random: true, cards: '', latest_activation_days: -1, notes: '', config_content: '' })
 const 编辑框 = reactive({ 显示: false, 加载中: false, card: '', duration_minutes: 0, card_state: 2, notes: '', config_content: '' })
-const 续费框 = reactive({ 显示: false, 加载中: false, cards: [], duration_minutes: 1440 })
+const 续费框 = reactive({ 显示: false, 加载中: false, cards: [], rows: [], duration_minutes: 1440 })
 const 详情框 = reactive({ 显示: false, 加载中: false, data: {} })
 const 可发卡软件列表 = computed(() => {
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
@@ -304,6 +313,7 @@ const 查询列表 = (resetPage = false) => {
       列表.value = res.data.data || []
       分页.total = Number(res.data.num || 0)
       已选.value = []
+      已选行.value = []
     })
     .catch(显示错误)
     .finally(() => { 加载中.value = false })
@@ -319,7 +329,10 @@ const 重置筛选 = () => {
   Object.assign(排序, { sort_by: '', sort_order: '' })
   查询列表(true)
 }
-const 选择变化 = (rows) => { 已选.value = rows.map((row) => row.card) }
+const 选择变化 = (rows) => {
+  已选行.value = rows
+  已选.value = rows.map((row) => row.card)
+}
 const 打开生成 = () => {
   const software = 是代理账号.value ? 代理价格软件.value || 可发卡软件列表.value[0]?.ID || 0 : 软件列表.value[0]?.ID || 0
   Object.assign(生成框, { 显示: true, 加载中: false, 提交中: false, software, duration_minutes: 1440, num: 1, random: true, cards: '', latest_activation_days: -1, notes: '', config_content: '' })
@@ -332,50 +345,21 @@ const 代理时长价格提醒 = computed(() => {
   const prices = 代理价格列表.value
     .filter((item) => Number(item.software) === Number(生成框.software))
     .sort((a, b) => Number(a.duration_minutes) - Number(b.duration_minutes))
-  if (!Number.isInteger(duration) || duration < 最小时长分钟 || duration > 最大时长分钟 || !Number.isInteger(count) || count < 1 || count > 500) {
-    return { type: 'danger', text: '时长或数量不正确' }
-  }
-  if (!prices.length) return { type: 'danger', text: '暂无可用价格' }
+  const quote = 计算代理时长报价(prices, duration, count)
+  if (quote.error) return { type: 'danger', text: quote.error }
 
-  let pricePerCardCents
-  let charge
-  const exact = prices.find((item) => Number(item.duration_minutes) === duration)
-  if (exact) {
-    pricePerCardCents = Math.round(Number(exact.price) * 100)
-    charge = Math.ceil(pricePerCardCents * count / 100)
-  } else {
-    if (duration < Number(prices[0].duration_minutes) || duration > Number(prices[prices.length - 1].duration_minutes)) {
-      return { type: 'danger', text: `时长需在${时长文本(prices[0].duration_minutes)}至${时长文本(prices[prices.length - 1].duration_minutes)}之间` }
-    }
-    let lower
-    let upper
-    for (const price of prices) {
-      if (Number(price.duration_minutes) < duration) lower = price
-      if (Number(price.duration_minutes) > duration) {
-        upper = price
-        break
-      }
-    }
-    if (!lower || !upper) return { type: 'danger', text: '没有可用的相邻价格锚点' }
-    const lowerCents = Math.round(Number(lower.price) * 100)
-    const upperCents = Math.round(Number(upper.price) * 100)
-    const source = lowerCents * Number(upper.duration_minutes) >= upperCents * Number(lower.duration_minutes) ? lower : upper
-    const sourceCents = Math.round(Number(source.price) * 100)
-    pricePerCardCents = Math.round(duration * sourceCents / Number(source.duration_minutes))
-    charge = Math.ceil(duration * sourceCents * count / (Number(source.duration_minutes) * 100))
-  }
-  const next = prices.find((item) => Number(item.duration_minutes) > duration)
-  if (next && charge >= Math.ceil(Math.round(Number(next.price) * 100) * count / 100)) {
-    const nextCharge = Math.ceil(Math.round(Number(next.price) * 100) * count / 100)
-    const difference = charge - nextCharge
-    const advantage = difference > 0 ? `还能省${difference}点` : '无需加价'
+  const next = prices.find((item) => item.enabled !== false && Number(item.duration_minutes) > duration)
+  const nextQuote = next ? 计算代理时长报价(prices, Number(next.duration_minutes), count) : null
+  if (nextQuote && !nextQuote.error && quote.charge >= nextQuote.charge) {
+    const difference = quote.charge - nextQuote.charge
+    const advantage = difference > 0n ? `还能省${格式化代理点数(difference)}点` : '无需加价'
     return {
       type: 'danger',
-      text: `当前${时长文本(duration)}共${charge}点，${时长文本(next.duration_minutes)}${nextCharge}点，${advantage}，升级更划算`,
+      text: `当前${时长文本(duration)}预计${格式化代理点数(quote.charge)}点，${时长文本(next.duration_minutes)}预计${格式化代理点数(nextQuote.charge)}点，${advantage}，升级更划算`,
       recommendedDuration: Number(next.duration_minutes)
     }
   }
-  return { type: 'success', text: `单张${(pricePerCardCents / 100).toFixed(2)}点，共${charge}点` }
+  return { type: 'success', text: `单张${quote.pricePerCard.toFixed(2)}点，预计本次消费${格式化代理点数(quote.charge)}点` }
 })
 const 套用推荐时长 = () => {
   if (代理时长价格提醒.value.recommendedDuration) {
@@ -444,6 +428,26 @@ const 可续费状态 = (row) => {
   const state = Number(row.card_state)
   return (state === 2 && row.end_time) || (state === 5 && Number(row.paused_remaining_minutes || 0) > 0)
 }
+const 代理续费报价 = computed(() => {
+  if (!是代理账号.value) return { charge: 0n }
+  const eligible = 续费框.rows.filter(可续费状态)
+  if (!eligible.length) return { charge: 0n }
+
+  const counts = new Map()
+  for (const row of eligible) {
+    const software = Number(row.software)
+    counts.set(software, (counts.get(software) || 0) + 1)
+  }
+  let charge = 0n
+  for (const [software, count] of counts) {
+    const prices = 代理价格列表.value.filter((item) => Number(item.software) === software)
+    const quote = 计算代理时长报价(prices, Number(续费框.duration_minutes), count)
+    if (quote.error) return { error: `软件${software}：${quote.error}` }
+    charge += quote.charge
+    if (charge > 9223372036854775807n) return { error: '预计消费金额超出允许范围' }
+  }
+  return { charge }
+})
 const 打开编辑 = (row) => Object.assign(编辑框, { 显示: true, 加载中: false, card: row.card, duration_minutes: row.duration_minutes, card_state: row.card_state === 4 ? 4 : 2, notes: row.notes || '', config_content: row.config_content || '' })
 const 保存编辑 = () => {
   if (编辑框.加载中) return
@@ -467,12 +471,19 @@ const 批量删除 = () => ElMessageBox.confirm(`确定删除已选的 ${已选.
   .then(() => post('/duration_card/delete', { cards: 已选.value }))
   .then((res) => { if (!res.data?.state) throw new Error(res.data?.msg || '删除失败'); ElMessage.success(res.data.msg || '删除成功'); 查询列表(false) })
   .catch((error) => { if (error !== 'cancel' && error !== 'close') 显示错误(error) })
-const 打开单张续费 = (row) => { Object.assign(续费框, { 显示: true, 加载中: false, cards: [row.card], duration_minutes: 1440 }) }
-const 打开续费 = () => { if (!已选.value.length) return; Object.assign(续费框, { 显示: true, 加载中: false, cards: [...已选.value], duration_minutes: 1440 }) }
+const 打开单张续费 = (row) => { Object.assign(续费框, { 显示: true, 加载中: false, cards: [row.card], rows: [row], duration_minutes: 1440 }) }
+const 打开续费 = () => {
+  if (!已选.value.length) return
+  Object.assign(续费框, { 显示: true, 加载中: false, cards: [...已选.value], rows: [...已选行.value], duration_minutes: 1440 })
+}
 const 续费 = () => {
   if (续费框.加载中) return
   if (!续费框.cards.length || !Number.isInteger(续费框.duration_minutes) || 续费框.duration_minutes < 最小时长分钟 || 续费框.duration_minutes > 最大时长分钟) {
     ElMessage.warning('请填写有效的续费时长')
+    return
+  }
+  if (是代理账号.value && 代理续费报价.value.error) {
+    ElMessage.warning(代理续费报价.value.error)
     return
   }
   续费框.加载中 = true

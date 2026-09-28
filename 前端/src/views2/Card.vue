@@ -246,7 +246,7 @@
         </el-form-item>
         <el-form-item label="生成数量" required>
           <el-input-number v-model="生成框.num" :min="1" :max="500" :precision="0" controls-position="right" />
-          <span v-if="是代理账号" class="费用提示">预计消耗账户余额 {{ 预计代理费用 }} 点</span>
+          <el-tag v-if="是代理账号" size="small" type="warning" effect="plain">预计消费 {{ 预计代理费用 }} 点</el-tag>
         </el-form-item>
         <el-form-item label="生成方式">
           <el-radio-group v-model="生成框.random">
@@ -889,8 +889,7 @@ h2 {
   margin-top: 14px;
   justify-content: flex-end;
 }
-.单位,
-.费用提示 {
+.单位 {
   margin-left: 8px;
   color: #9099a8;
 }

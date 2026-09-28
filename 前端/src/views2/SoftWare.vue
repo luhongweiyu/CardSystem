@@ -763,10 +763,22 @@ const 保存软件 = function () {
       软件框.加载中 = false
     })
 }
-const 删除软件 = function (row) {
-  ElMessageBox.confirm(`删除软件“${row.Software}”会同时删除其点卡、时长卡和设备会话，流水仅保留最近30天。继续？`, '确认删除', {
+const 删除前数字确认 = function (message, title) {
+  const 数字 = String(Math.round(Math.random() * 10000000000))
+  return ElMessageBox.prompt(`${message}\n请输入数字 ${数字} 确认删除。`, title, {
+    inputPlaceholder: '请输入上方数字',
+    inputPattern: new RegExp(`^${数字}$`),
+    inputErrorMessage: '输入的数字错误',
+    confirmButtonText: '确认删除',
+    cancelButtonText: '取消',
     type: 'warning'
   })
+}
+const 删除软件 = function (row) {
+  删除前数字确认(
+    `删除软件“${row.Software}”会同时删除其点卡、时长卡和设备会话，流水仅保留最近30天。`,
+    '确认删除软件'
+  )
     .then(() => post('/user_del_soft', { id: row.ID }))
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除软件失败')
@@ -1225,9 +1237,10 @@ const 代理充值 = function () {
     .finally(() => { 代理充值框.保存中 = false })
 }
 const 删除代理 = function (row) {
-  ElMessageBox.confirm(`确定删除渠道合伙人“${row.name}”？已生成的点卡和流水仅保留最近30天。`, '确认删除', {
-    type: 'warning'
-  })
+  删除前数字确认(
+    `删除渠道合伙人“${row.name}”后无法登录，已生成的点卡和流水仅保留最近30天。`,
+    '确认删除渠道合伙人'
+  )
     .then(() => post('/删除代理账号', { id: row.id }))
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
