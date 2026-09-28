@@ -149,10 +149,9 @@
         <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="320" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="打开详情(scope.row)">详情</el-button>
-          <el-button link type="primary" @click="打开详情(scope.row)">活动记录</el-button>
           <el-button link type="primary" @click="打开流水(scope.row)">流水</el-button>
           <el-button link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
           <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>

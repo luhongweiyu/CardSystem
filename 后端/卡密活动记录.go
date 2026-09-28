@@ -28,6 +28,7 @@ type 卡密活动键 struct {
 type 卡密活动项 struct {
 	Time      time.Time `json:"time"`
 	IP        string    `json:"ip"`
+	Needle    string    `json:"needle,omitempty"`
 	Operation string    `json:"operation"`
 	Success   bool      `json:"success"`
 	Message   string    `json:"message,omitempty"`
@@ -147,9 +148,10 @@ func (store *卡密活动存储) 清理(now time.Time) {
 }
 
 type 卡密活动响应 struct {
-	完成 bool
-	成功 bool
-	原因 string
+	完成     bool
+	成功     bool
+	原因     string
+	Needle string
 }
 
 // 只包裹通过卡端上下文和验签的登录/心跳业务；快缓存和数据库分支都只记一次。
@@ -170,8 +172,15 @@ func 记录卡密活动(mode, operation string) gin.HandlerFunc {
 		ctx.Set(卡密活动结果键, result)
 		ctx.Next()
 		if result.完成 {
+			needle := strings.TrimSpace(result.Needle)
+			if needle == "" {
+				needle = strings.TrimSpace(input(ctx, "needle"))
+			}
+			if needleRunes := []rune(needle); len(needleRunes) > 6 {
+				needle = string(needleRunes[:6])
+			}
 			全局卡密活动.写入(卡密活动键{mode, cardContext.Name, cardContext.Card, deviceID}, 卡密活动项{
-				Time: time.Now(), IP: ctx.ClientIP(),
+				Time: time.Now(), IP: ctx.ClientIP(), Needle: needle,
 				Operation: operation, Success: result.成功, Message: result.原因,
 			})
 		}
@@ -185,6 +194,9 @@ func 设置卡密活动结果(ctx *gin.Context, data gin.H) {
 	}
 	result := value.(*卡密活动响应)
 	result.完成 = true
+	if needle, ok := data["needle"].(string); ok {
+		result.Needle = needle
+	}
 	result.成功, _ = data["state"].(bool)
 	if !result.成功 && data["msg"] != nil {
 		result.原因 = fmt.Sprint(data["msg"])

@@ -82,10 +82,9 @@
         <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="340" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="查看详情(scope.row)">详情</el-button>
-          <el-button link type="primary" @click="查看详情(scope.row)">活动记录</el-button>
           <el-button v-if="可续费状态(scope.row)" link type="success" @click="打开单张续费(scope.row)">续费</el-button>
           <el-button v-if="可编辑状态(scope.row)" link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
           <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
