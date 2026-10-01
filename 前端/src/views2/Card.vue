@@ -131,23 +131,23 @@
         </template>
       </el-table-column>
       <el-table-column
-        prop="create_time"
-        label="生成时间"
-        width="170"
-        sortable="custom"
-        :sort-orders="['ascending', 'descending']"
+      prop="use_time"
+      label="最近扣点"
+      width="170"
+      sortable="custom"
+      :sort-orders="['ascending', 'descending']"
       >
-        <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
-      </el-table-column>
-      <el-table-column
-        prop="use_time"
-        label="最近扣点"
-        width="170"
-        sortable="custom"
-        :sort-orders="['ascending', 'descending']"
-      >
-        <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
-      </el-table-column>
+      <template #default="scope">{{ 格式化时间(scope.row.use_time) }}</template>
+    </el-table-column>
+    <el-table-column
+      prop="create_time"
+      label="生成时间"
+      width="170"
+      sortable="custom"
+      :sort-orders="['ascending', 'descending']"
+    >
+      <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
+    </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="scope">

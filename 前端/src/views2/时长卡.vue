@@ -55,15 +55,6 @@
       <el-table-column v-if="!是代理账号" label="归属代理" width="140">
         <template #default="scope">{{ 代理名称(scope.row.agent_id) }}</template>
       </el-table-column>
-      <el-table-column prop="duration_minutes" label="卡面时长" width="115" sortable="custom">
-        <template #default="scope">{{ 时长文本(scope.row.duration_minutes) }}</template>
-      </el-table-column>
-      <el-table-column label="暂停剩余" width="105">
-        <template #default="scope">
-          <span v-if="Number(scope.row.card_state) === 5">{{ 时长文本(scope.row.paused_remaining_minutes) }}</span>
-          <span v-else class="弱文本">-</span>
-        </template>
-      </el-table-column>
       <el-table-column prop="card_state" label="状态" width="95">
         <template #default="scope">
           <el-tag :type="状态类型(scope.row)">{{ 状态文本(scope.row) }}</el-tag>
@@ -77,6 +68,15 @@
           <el-tag v-if="scope.row.online" type="success">在线</el-tag>
           <span v-else class="弱文本">-</span>
         </template>
+      </el-table-column>
+      <el-table-column label="暂停剩余" width="105">
+        <template #default="scope">
+          <span v-if="Number(scope.row.card_state) === 5">{{ 时长文本(scope.row.paused_remaining_minutes) }}</span>
+          <span v-else class="弱文本">-</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="duration_minutes" label="卡面时长" width="115" sortable="custom">
+        <template #default="scope">{{ 时长文本(scope.row.duration_minutes) }}</template>
       </el-table-column>
       <el-table-column prop="create_time" label="生成时间" width="175" sortable="custom">
         <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
@@ -111,8 +111,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="卡面时长" required>
-          <el-input-number v-model="生成框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" controls-position="right" />
-          <span class="单位">分钟（{{ 时长文本(生成框.duration_minutes) }}）</span>
+          <DurationInput v-model="生成框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" />
           <span v-if="是代理账号" class="价格提醒">
             <el-tag size="small" :type="代理时长价格提醒.type">{{ 代理时长价格提醒.text }}</el-tag>
             <el-button
@@ -179,14 +178,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="续费框.显示" title="续费时长卡" width="430px" destroy-on-close>
+    <el-dialog v-model="续费框.显示" title="续费时长卡" width="min(760px, 94vw)" destroy-on-close>
       <el-form label-width="100px" v-loading="续费框.加载中">
         <el-form-item label="已选择">
-          <span>{{ 续费框.cards.length }} 张时长卡</span>
+          <span>{{ 续费框.cards.length }} 张时长卡，可续费 {{ 续费预览.可续费数量 }} 张</span>
         </el-form-item>
         <el-form-item label="增加时长">
-          <el-input-number v-model="续费框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" controls-position="right" />
-          <span class="单位">分钟</span>
+          <DurationInput v-model="续费框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" />
         </el-form-item>
         <el-form-item label="快捷时长">
           <el-select v-model="续费框.duration_minutes" style="width: 220px">
@@ -200,6 +198,23 @@
           :title="代理续费报价.error || `预计本次消费 ${格式化代理点数(代理续费报价.charge)} 点`"
           description="按当前已选且可续费的卡片和本地缓存价格估算，实际扣款以服务端为准。"
         />
+        <el-alert v-else type="success" :closable="false" title="管理员续费不扣点" />
+        <div class="续费预览标题">续费卡密</div>
+        <el-table :data="续费预览.行" border stripe max-height="260">
+          <el-table-column prop="card" label="卡密" min-width="210" show-overflow-tooltip />
+          <el-table-column label="软件" width="150">
+            <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
+          </el-table-column>
+          <el-table-column label="当前状态" width="110">
+            <template #default="scope">{{ 状态文本(scope.row) }}</template>
+          </el-table-column>
+          <el-table-column label="预计处理" width="110">
+            <template #default="scope">
+              <el-tag v-if="scope.row.可续费" type="success">将续费</el-tag>
+              <el-tag v-else type="info">跳过</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-form>
       <template #footer>
         <el-button @click="续费框.显示 = false">取消</el-button>
@@ -234,6 +249,7 @@ import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
 import ActivityRecords from '../components/活动记录.vue'
+import DurationInput from '../components/时长输入.vue'
 import {
   查找软件名称,
   格式化代理归属,
@@ -432,6 +448,11 @@ const 可续费状态 = (row) => {
   const state = Number(row.card_state)
   return (state === 2 && row.end_time) || (state === 5 && Number(row.paused_remaining_minutes || 0) > 0)
 }
+// 使用与现有报价一致的状态判断；最终续费结果仍由服务端校验。
+const 续费预览 = computed(() => {
+  const 行 = 续费框.rows.map((row) => ({ ...row, 可续费: 可续费状态(row) }))
+  return { 行, 可续费数量: 行.filter((row) => row.可续费).length }
+})
 const 代理续费报价 = computed(() => {
   if (!是代理账号.value) return { charge: 0n }
   const eligible = 续费框.rows.filter(可续费状态)
@@ -488,6 +509,10 @@ const 续费 = () => {
   }
   if (是代理账号.value && 代理续费报价.value.error) {
     ElMessage.warning(代理续费报价.value.error)
+    return
+  }
+  if (!续费预览.value.可续费数量) {
+    ElMessage.warning('当前选择的卡密没有可续费的卡')
     return
   }
   续费框.加载中 = true
@@ -555,6 +580,7 @@ h2 { margin: 0 0 6px; }
 .批量操作 span { margin-right: 4px; }
 .分页 { justify-content: flex-end; margin-top: 16px; }
 .单位, .弱文本 { margin-left: 8px; color: #8c98aa; font-size: 12px; }
+.续费预览标题 { margin: 14px 0 8px; font-weight: 600; }
 .价格提醒 { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; max-width: 100%; flex-wrap: wrap; }
 .页面 :deep(.el-table .cell) { white-space: nowrap; word-break: normal; }
 .卡密文本 { color: #79b4ff; font-family: monospace; }

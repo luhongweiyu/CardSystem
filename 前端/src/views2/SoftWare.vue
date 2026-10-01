@@ -167,15 +167,8 @@
         <el-form-item label="软件名称" required>
           <el-input v-model="软件框.software" maxlength="64" />
         </el-form-item>
-        <el-form-item label="默认授权时长（分钟）" required>
-          <el-input-number
-            v-model="软件框.default_period_minutes"
-            :min="最小计费周期分钟"
-            :max="最大计费周期分钟"
-            :precision="0"
-            controls-position="right"
-          />
-          <div v-if="软件框.default_period_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.default_period_minutes) }}</div>
+        <el-form-item label="默认授权时长" required>
+          <DurationInput v-model="软件框.default_period_minutes" :min="最小计费周期分钟" :max="最大计费周期分钟" />
         </el-form-item>
         <el-form-item label="心跳间隔（分钟）" required>
           <el-input-number
@@ -186,29 +179,15 @@
           />
           <div class="字段说明">可输入小数分钟，最小 1 秒</div>
         </el-form-item>
-        <el-form-item label="自动离线时间（分钟）" required>
-          <el-input-number
-            v-model="软件框.online_grace_minutes"
-            :min="0"
-            :max="最大自动离线时间分钟"
-            :precision="0"
-            controls-position="right"
-          />
+        <el-form-item label="自动离线时间" required>
+          <DurationInput v-model="软件框.online_grace_minutes" :min="最小自动离线时间分钟" :max="最大自动离线时间分钟" allow-zero />
           <div class="字段说明">0 表示默认 60 分钟后自动离线</div>
-          <div v-if="软件框.online_grace_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.online_grace_minutes) }}</div>
           <div v-if="软件框.heartbeat_interval_minutes >= (软件框.online_grace_minutes || 60)" class="字段说明 风险提醒">心跳间隔不小于自动离线时间，设备可能被误判离线。</div>
           <div v-if="(软件框.online_grace_minutes || 60) > 软件框.default_period_minutes" class="字段说明 风险提醒">自动离线时间长于默认授权周期，断线后可能连续多次续费扣点。</div>
         </el-form-item>
-        <el-form-item label="暂停扣除（分钟）" required>
-          <el-input-number
-            v-model="软件框.pause_deduct_minutes"
-            :min="0"
-            :max="最大时长分钟"
-            :precision="0"
-            controls-position="right"
-          />
+        <el-form-item label="暂停扣除" required>
+          <DurationInput v-model="软件框.pause_deduct_minutes" :min="0" :max="最大时长分钟" />
           <div class="字段说明">0 表示不启用时长卡暂停；暂停时从剩余时长中扣除</div>
-          <div v-if="软件框.pause_deduct_minutes >= 60" class="字段说明">{{ 时长卡时长文本(软件框.pause_deduct_minutes) }}</div>
         </el-form-item>
         <el-form-item label="单卡设备上限">
           <el-input-number v-model="软件框.point_card_max_devices" :min="0" :max="1000" :precision="0" controls-position="right" />
@@ -229,7 +208,7 @@
     </el-dialog>
 
     <!-- 点卡计费方案 -->
-    <el-dialog v-model="价格框.显示" title="点卡计费方案" width="760px" destroy-on-close>
+    <el-dialog v-model="价格框.显示" title="点卡计费方案" width="min(850px, 94vw)" destroy-on-close>
       <div class="价格标题">
         <span>{{ 价格框.softwareName }}</span>
         <el-button type="primary" size="small" :disabled="价格框.加载中 || 价格框.保存中 || 价格框.rows.some((item) => !item.id)" @click="新增价格">新增计费方案</el-button>
@@ -242,12 +221,11 @@
         class="代理价格提示"
       />
       <el-table v-loading="价格框.加载中 || 价格框.保存中" :data="价格框.rows" border>
-        <el-table-column label="授权时长" min-width="195">
+        <el-table-column label="授权时长" min-width="285">
           <template #default="scope">
             <template v-if="scope.row.id">{{ 时长卡时长文本(scope.row.period_minutes) }}</template>
             <div v-else>
-              <el-input-number v-model="scope.row.period_minutes" :min="最小计费周期分钟" :max="最大计费周期分钟" :precision="0" :disabled="scope.row.保存中" controls-position="right" class="方案时长输入" />
-              <span class="价格单位">{{ 时长卡时长文本(scope.row.period_minutes) }}</span>
+              <DurationInput v-model="scope.row.period_minutes" :min="最小计费周期分钟" :max="最大计费周期分钟" :disabled="scope.row.保存中" />
             </div>
             <div v-if="scope.row.period_minutes < 价格框.onlineGraceMinutes" class="风险提醒 方案提醒">短于自动离线时间</div>
           </template>
@@ -347,16 +325,9 @@
         title="精确命中锚点使用原价；锚点之间按两侧较高的平均每分钟价格折算。"
       />
       <el-table v-loading="代理时长价格框.加载中" :data="代理时长价格框.rows" border>
-        <el-table-column label="卡面时长" min-width="190">
+        <el-table-column label="卡面时长" min-width="285">
           <template #default="scope">
-            <el-input-number
-              v-model="scope.row.duration_minutes"
-              :min="最小时长分钟"
-              :max="最大时长分钟"
-              :precision="0"
-              controls-position="right"
-            />
-            <span class="价格单位">{{ 时长卡时长文本(scope.row.duration_minutes) }}</span>
+            <DurationInput v-model="scope.row.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" />
           </template>
         </el-table-column>
         <el-table-column label="代理价格（点）" width="190">
@@ -414,8 +385,8 @@
           <template #default="scope">
             <template v-if="scope.row.prices.length">
               <div v-for="(price, priceIndex) in scope.row.prices" :key="price.key" class="总览价格">
-                <el-input-number v-model="price.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" size="small" controls-position="right" />
-                <span>({{ 时长卡时长文本(price.duration_minutes) }})：</span>
+                <DurationInput v-model="price.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" size="small" />
+                <span>：</span>
                 <el-input-number v-model="price.price" :min="0.01" :max="最大代理价格" :precision="2" size="small" controls-position="right" />
                 <span>点</span>
                 <el-switch v-model="price.enabled" size="small" />
@@ -477,6 +448,7 @@ import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
 import { 日志倒序 } from '../utils/日志工具.js'
+import DurationInput from '../components/时长输入.vue'
 import {
   格式化时长 as 时长卡时长文本,
   最大计费周期分钟,
@@ -725,7 +697,7 @@ const 保存软件 = function () {
     return
   }
   if (!点卡计费周期有效(软件框.default_period_minutes)) {
-    ElMessage.warning('默认授权时长必须在15至43200分钟之间')
+    ElMessage.warning('默认授权时长必须在15分钟至30天之间')
     return
   }
   if (
@@ -733,7 +705,7 @@ const 保存软件 = function () {
     (软件框.online_grace_minutes !== 0 && 软件框.online_grace_minutes < 最小自动离线时间分钟) ||
     软件框.online_grace_minutes > 最大自动离线时间分钟
   ) {
-    ElMessage.warning('自动离线时间必须为0或5至4320分钟，0表示默认60分钟')
+    ElMessage.warning('自动离线时间必须为0或5分钟至3天，0表示默认1小时')
     return
   }
   if (
@@ -843,7 +815,7 @@ const 新增价格 = function () {
 const 保存价格 = function (row) {
   if (价格框.保存中 || row.保存中) return
   if (!点卡计费周期有效(row.period_minutes)) {
-    ElMessage.warning('授权时长必须在15至43200分钟之间')
+    ElMessage.warning('授权时长必须在15分钟至30天之间')
     return
   }
   if (!Number.isInteger(row.cost) || row.cost < 1 || row.cost > 1000000000) {
@@ -1376,7 +1348,13 @@ h3 {
 .价格标题 {
   margin-bottom: 12px;
 }
-.方案时长输入,
+.总览价格 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 .方案扣点输入 {
   width: 120px;
 }
@@ -1393,11 +1371,6 @@ h3 {
 }
 .代理价格提示 {
   margin-bottom: 12px;
-}
-.价格单位 {
-  margin-left: 8px;
-  color: #9099a8;
-  font-size: 12px;
 }
 .价格说明 {
   margin-left: 10px;

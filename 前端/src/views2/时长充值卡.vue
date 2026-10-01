@@ -86,8 +86,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="每次增加时长" required>
-          <el-input-number v-model="生成框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" :precision="0" controls-position="right" />
-          <span class="单位">分钟（{{ 时长文本(生成框.duration_minutes) }}）</span>
+          <DurationInput v-model="生成框.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" />
         </el-form-item>
         <el-form-item label="快捷时长">
           <el-select v-model="生成框.duration_minutes" style="width: 220px">
@@ -177,6 +176,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import DurationInput from '../components/时长输入.vue'
 import {
   查找软件名称,
   格式化代理归属,
