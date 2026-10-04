@@ -208,7 +208,7 @@ func 代理账号_删除时长卡(ctx *gin.Context) {
 		success = append(success, card)
 	}
 	if len(success) > 0 {
-		记录管理员代理业务流水(account.Admin, []int{account.ID},
+		记录管理员代理业务流水(account.Admin, account.ID,
 			"操作:删除时长卡",
 			fmt.Sprintf("成功数量:%d", len(success)),
 			"成功卡密:"+strings.Join(success, ","),
@@ -300,6 +300,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 	validCards = readyCards
 	success := make([]string, 0, len(validCards))
 	charge, balance := int64(0), account.Balance
+	var fields []string
 	err = db.Transaction(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
@@ -366,7 +367,12 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 			success = append(success, row.Card)
 		}
 		balance = current.Balance - charge
-		return nil
+		fields = []string{
+			fmt.Sprintf("操作人:代理ID:%d", current.ID), "操作:代理续费时长卡",
+			"卡密:" + strings.Join(success, ","), "时长变更:+" + 格式化授权时长(分钟转秒(request.DurationMinutes)),
+			fmt.Sprintf("数量:%d", len(success)), fmt.Sprintf("失败数量:%d", len(failed)),
+		}
+		return 保存代理余额日志(tx, current.Admin, current.ID, -charge, current.Balance, balance, append([]string{"原因:续费时长卡"}, fields...)...)
 	})
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
@@ -377,18 +383,8 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 			日志("log/启动记录.txt", "代理续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
 		}
 	}
-	if len(success) > 0 {
-		fields := []string{
-			"操作:代理续费时长卡",
-			"卡密:" + strings.Join(success, ","),
-			"时长变更:+" + 格式化授权时长(分钟转秒(request.DurationMinutes)),
-			fmt.Sprintf("数量:%d", len(success)),
-			fmt.Sprintf("失败数量:%d", len(failed)),
-		}
-		if charge > 0 {
-			fields = append([]string{fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:-%d", charge), "原因:续费时长卡"}, fields...)
-		}
-		记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
+	if len(success) > 0 && charge == 0 {
+		记录管理员代理业务流水(account.Admin, account.ID, fields...)
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed, "charge": charge, "balance": balance})
 }

@@ -176,7 +176,7 @@ func 管理员_添加时长充值卡(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	记录管理员代理业务流水(admin, nil,
+	记录管理员代理业务流水(admin, 0,
 		"操作:新增时长充值卡",
 		fmt.Sprintf("软件:%d", normalized.Software),
 		"时长:"+格式化授权时长(分钟转秒(normalized.DurationMinutes)),
@@ -202,6 +202,11 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 		return
 	}
 	result := 生成时长充值卡结果{}
+	fields := []string{
+		fmt.Sprintf("操作人:代理ID:%d", account.ID), "操作:新增时长充值卡",
+		fmt.Sprintf("软件:%d", normalized.Software), "时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
+		fmt.Sprintf("每张次数:%d", normalized.Uses), fmt.Sprintf("数量:%d", len(cards)), "成功卡密:" + strings.Join(cards, ","),
+	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
@@ -230,28 +235,15 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 			return err
 		}
 		result = 生成时长充值卡结果{Cards: cards, Charge: quote.Charge, Balance: current.Balance - quote.Charge}
-		return nil
+		return 保存代理余额日志(tx, current.Admin, current.ID, -result.Charge, current.Balance, result.Balance, append([]string{"原因:生成时长充值卡"}, fields...)...)
 	})
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	fields := []string{
-		"操作:新增时长充值卡",
-		fmt.Sprintf("软件:%d", normalized.Software),
-		"时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
-		fmt.Sprintf("每张次数:%d", normalized.Uses),
-		fmt.Sprintf("数量:%d", len(result.Cards)),
-		"成功卡密:" + strings.Join(result.Cards, ","),
+	if result.Charge == 0 {
+		记录管理员代理业务流水(account.Admin, account.ID, fields...)
 	}
-	if result.Charge > 0 {
-		fields = append([]string{
-			fmt.Sprintf("余额:%d", result.Balance),
-			fmt.Sprintf("变更:-%d", result.Charge),
-			"原因:生成时长充值卡",
-		}, fields...)
-	}
-	记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功生成%d张时长充值卡", len(result.Cards)), "data": strings.Join(result.Cards, "\n"), "charge": result.Charge, "balance": result.Balance})
 }
 
@@ -436,11 +428,7 @@ func 处理时长充值卡删除(ctx *gin.Context, admin string, agentID int) {
 			fmt.Sprintf("失败数量:%d", len(failed)),
 			"失败卡密:" + strings.Join(failed, ","),
 		}
-		var agentIDs []int
-		if agentID > 0 {
-			agentIDs = []int{agentID}
-		}
-		记录管理员代理业务流水(admin, agentIDs, fields...)
+		记录管理员代理业务流水(admin, agentID, fields...)
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
@@ -541,7 +529,6 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 	validCards = readyCards
 	success := make([]string, 0, len(validCards))
 	pausedSuccess := make([]string, 0)
-	agentIDs := make(map[int]struct{})
 	rechargeAgentID := 0
 	rechargeDurationMinutes := int64(0)
 	remaining := 0
@@ -604,9 +591,6 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 					return fmt.Errorf("保存目标时长卡失败")
 				}
 			}
-			if row.AgentID > 0 {
-				agentIDs[row.AgentID] = struct{}{}
-			}
 			success = append(success, row.Card)
 		}
 		remaining = recharge.RemainingUses - len(success)
@@ -630,14 +614,8 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 		}
 	}
 	if len(success) > 0 {
-		if rechargeAgentID > 0 {
-			agentIDs[rechargeAgentID] = struct{}{}
-		}
-		involvedAgents := make([]int, 0, len(agentIDs))
-		for agentID := range agentIDs {
-			involvedAgents = append(involvedAgents, agentID)
-		}
-		记录管理员代理业务流水(admin, involvedAgents,
+		// 使用日志只归属充值卡的代理，目标卡数量和归属不增加日志份数。
+		记录管理员代理业务流水(admin, rechargeAgentID,
 			"操作:使用时长充值卡",
 			"充值卡:"+rechargeCard,
 			"变更:+"+格式化授权时长(分钟转秒(rechargeDurationMinutes)),

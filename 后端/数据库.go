@@ -135,6 +135,9 @@ func 连接数据库() error {
 		return fmt.Errorf("初始化或更新点卡计费方案表结构失败: %w", err)
 	}
 	db_point_ledger = db.Table("point_ledger").Session(&gorm.Session{})
+	if err := db.Table(业务日志表名).AutoMigrate(&业务日志记录{}); err != nil {
+		return fmt.Errorf("初始化或更新业务日志表结构失败: %w", err)
+	}
 	if err := db_point_ledger.AutoMigrate(&点数流水{}); err != nil {
 		return fmt.Errorf("初始化或更新点数流水表结构失败: %w", err)
 	}

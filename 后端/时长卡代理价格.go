@@ -430,7 +430,7 @@ func 管理员_保存时长卡代理价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	日志("log/"+parent.Name+time.Now().Format("200601"), fmt.Sprintf("保存代理时长卡价格;代理ID:%d;软件:%d;锚点数:%d", request.AgentID, request.Software, len(prices)))
+	记录管理员代理业务流水(parent.Name, request.AgentID, "操作:保存代理时长卡价格", "操作人:管理员:"+parent.Name, fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("锚点数:%d", len(prices)))
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "count": len(prices)})
 }
 
@@ -539,6 +539,7 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 	}
 	now := time.Now()
 	var result 代理生成时长卡结果
+	var fields []string
 	err = db.Transaction(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
@@ -572,28 +573,20 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 			PricePerCard: quote.PricePerCard, PricingMode: quote.PricingMode,
 			LowerDurationMinutes: quote.LowerDurationMinutes, UpperDurationMinutes: quote.UpperDurationMinutes,
 			RateSourceDurationMinutes: quote.RateSourceDurationMinutes}
-		return nil
+		fields = []string{
+			fmt.Sprintf("操作人:代理ID:%d", current.ID), "操作:新增时长卡",
+			fmt.Sprintf("软件:%d", normalized.Software), "时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
+			fmt.Sprintf("数量:%d", len(cards)), "成功卡密:" + strings.Join(cards, ","),
+			"计价方式:" + result.PricingMode, "价格来源:" + 格式化授权时长(分钟转秒(result.RateSourceDurationMinutes)),
+		}
+		return 保存代理余额日志(tx, current.Admin, current.ID, -result.Charge, current.Balance, result.Balance, append([]string{"原因:生成时长卡"}, fields...)...)
 	})
 	if err != nil {
 		return 代理生成时长卡结果{}, err
 	}
-	fields := []string{
-		"操作:新增时长卡",
-		fmt.Sprintf("软件:%d", normalized.Software),
-		"时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
-		fmt.Sprintf("数量:%d", len(result.Cards)),
-		"成功卡密:" + strings.Join(result.Cards, ","),
-		"计价方式:" + result.PricingMode,
-		"价格来源:" + 格式化授权时长(分钟转秒(result.RateSourceDurationMinutes)),
+	if result.Charge == 0 {
+		记录管理员代理业务流水(account.Admin, account.ID, fields...)
 	}
-	if result.Charge > 0 {
-		fields = append([]string{
-			fmt.Sprintf("余额:%d", result.Balance),
-			fmt.Sprintf("变更:-%d", result.Charge),
-			"原因:生成时长卡",
-		}, fields...)
-	}
-	记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	return result, nil
 }
 

@@ -48,7 +48,7 @@ const 管理员菜单 = [
   { path: '/point-ledger', label: '点数流水', icon: 'Tickets' },
   { path: '/setting', label: '设置', icon: 'Setting' },
   { path: '/help', label: '接入帮助', icon: 'QuestionFilled' },
-  { path: '/log', label: '运行日志', icon: 'List' },
+  { path: '/log', label: '操作日志', icon: 'List' },
   { path: '/about', label: '关于', icon: 'InfoFilled' }
 ]
 const 代理菜单 = [
@@ -57,7 +57,7 @@ const 代理菜单 = [
   { path: '/duration-card', label: '时长卡', icon: 'Timer' },
   { path: '/duration-recharge-card', label: '充值卡', icon: 'CreditCard' },
   { path: '/help', label: '接入帮助', icon: 'QuestionFilled' },
-  { path: '/log', label: '运行日志', icon: 'List' },
+  { path: '/log', label: '操作日志', icon: 'List' },
   { path: '/about', label: '关于', icon: 'InfoFilled' }
 ]
 const 菜单 = computed(() => (是代理账号.value ? 代理菜单 : 管理员菜单))

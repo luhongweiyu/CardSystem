@@ -342,7 +342,7 @@ func 管理员_添加时长卡(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	记录管理员代理业务流水(admin, nil,
+	记录管理员代理业务流水(admin, 0,
 		"操作:新增时长卡",
 		fmt.Sprintf("软件:%d", request.Software),
 		fmt.Sprintf("数量:%d", len(cards)),
@@ -564,7 +564,7 @@ func 管理员_删除时长卡(ctx *gin.Context) {
 		return
 	}
 	if len(success) > 0 {
-		记录管理员代理业务流水(管理员_用户名(ctx), nil,
+		记录管理员代理业务流水(管理员_用户名(ctx), 0,
 			"操作:删除时长卡",
 			fmt.Sprintf("成功数量:%d", len(success)),
 			"成功卡密:"+strings.Join(success, ","),
@@ -597,7 +597,6 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 		return
 	}
 	success, failed := make([]string, 0, len(request.Cards)), make([]string, 0)
-	agentIDs := make(map[int]struct{})
 	for _, raw := range request.Cards {
 		card := strings.ToLower(strings.TrimSpace(raw))
 		if !卡密格式规则.MatchString(card) {
@@ -608,7 +607,6 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			failed = append(failed, raw)
 			continue
 		}
-		affectedAgentID := 0
 		err := db.Transaction(func(tx *gorm.DB) error {
 			var row 时长卡表样式
 			query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
@@ -629,7 +627,6 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 				if err := tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", remaining).Error; err != nil {
 					return err
 				}
-				affectedAgentID = row.AgentID
 				return nil
 			}
 			if row.CardState != 卡密状态_正常 {
@@ -647,7 +644,6 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			if err := tx.Table(tableName).Where("card = ?", card).Update("end_time", end).Error; err != nil {
 				return err
 			}
-			affectedAgentID = row.AgentID
 			return nil
 		})
 		if err != nil {
@@ -657,17 +653,11 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 				日志("log/启动记录.txt", "续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
 			}
 			success = append(success, card)
-			if affectedAgentID > 0 {
-				agentIDs[affectedAgentID] = struct{}{}
-			}
 		}
 	}
 	if len(success) > 0 {
-		involvedAgents := make([]int, 0, len(agentIDs))
-		for agentID := range agentIDs {
-			involvedAgents = append(involvedAgents, agentID)
-		}
-		记录管理员代理业务流水(管理员_用户名(ctx), involvedAgents,
+		// 管理员批量续费统一记管理员操作，不向涉及的代理复制日志。
+		记录管理员代理业务流水(管理员_用户名(ctx), 0,
 			"操作:管理员续费时长卡",
 			"卡密:"+strings.Join(success, ","),
 			"变更:+"+格式化授权时长(分钟转秒(request.DurationMinutes)),
@@ -751,7 +741,7 @@ func durationCardLogin(ctx *gin.Context) {
 		return
 	}
 	if activated {
-		记录管理员代理业务流水(admin, []int{row.AgentID}, "操作:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), "变更:+"+格式化授权时长(分钟转秒(row.DurationMinutes)), "授权截止:"+业务流水时间(*row.EndTime))
+		记录管理员代理业务流水(admin, row.AgentID, "操作:时长卡激活", "卡密:"+card, fmt.Sprintf("软件:%d", row.Software), "变更:+"+格式化授权时长(分钟转秒(row.DurationMinutes)), "授权截止:"+业务流水时间(*row.EndTime))
 	}
 	写入时长卡心跳缓存(admin, row, settings.HeartbeatIntervalSeconds)
 	成功提示(ctx, gin.H{"needle": row.Needle, "authorized_until": row.EndTime, "software": row.Software, "heartbeat_interval_seconds": settings.HeartbeatIntervalSeconds})

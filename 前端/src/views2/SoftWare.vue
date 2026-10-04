@@ -428,13 +428,8 @@
     </el-dialog>
 
     <el-dialog v-model="代理日志框.显示" :title="`渠道合伙人日志 · ${代理日志框.name}`" width="850px" destroy-on-close>
-      <p class="设置说明">最近两个月的日志；最新记录在上方。</p>
-      <div v-loading="代理日志框.加载中" class="代理日志内容">
-        <pre v-if="代理日志框.content">{{ 代理日志框.content }}</pre>
-        <el-empty v-else-if="!代理日志框.加载中" description="暂无日志" />
-      </div>
+      <BusinessLogViewer v-if="代理日志框.显示" :key="代理日志框.id" :query="查询代理日志" :show-agent="false" />
       <template #footer>
-        <el-button :loading="代理日志框.加载中" @click="查询代理日志">刷新</el-button>
         <el-button @click="代理日志框.显示 = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -447,7 +442,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
-import { 日志倒序 } from '../utils/日志工具.js'
+import BusinessLogViewer from '../components/业务日志查看.vue'
 import DurationInput from '../components/时长输入.vue'
 import {
   格式化时长 as 时长卡时长文本,
@@ -515,7 +510,7 @@ const 代理时长价格框 = reactive({
 })
 const 代理时长价格总览框 = reactive({ 显示: false, 加载中: false, agent_id: 0, software: 0, rows: [] })
 const 代理充值框 = reactive({ 显示: false, 保存中: false, id: 0, name: '', amount: 0, note: '' })
-const 代理日志框 = reactive({ 显示: false, 加载中: false, id: 0, name: '', content: '' })
+const 代理日志框 = reactive({ 显示: false, id: 0, name: '' })
 
 const 代理价格软件列表 = computed(() => {
   const ids = new Set(代理价格列表.value.map((item) => Number(item.software)))
@@ -1175,29 +1170,9 @@ const 打开代理充值 = function (row) {
   Object.assign(代理充值框, { 显示: true, id: row.id, name: row.name, amount: 0, note: '' })
 }
 const 打开代理日志 = function (row) {
-  Object.assign(代理日志框, { 显示: true, 加载中: false, id: row.id, name: row.name, content: '' })
-  查询代理日志()
+  Object.assign(代理日志框, { 显示: true, id: row.id, name: row.name })
 }
-const 查询代理日志 = async function () {
-  if (!代理日志框.id || 代理日志框.加载中) return
-  const id = 代理日志框.id
-  代理日志框.加载中 = true
-  try {
-    const response = await post('/查询代理账号日志', { id })
-    if (代理日志框.id !== id) return
-    if (typeof response.data === 'string') {
-      代理日志框.content = 日志倒序(response.data)
-    } else if (!response.data?.state) {
-      throw new Error(response.data?.msg || '查询渠道合伙人日志失败')
-    } else {
-      代理日志框.content = 日志倒序(response.data.data)
-    }
-  } catch (error) {
-    if (代理日志框.id === id) 显示错误(error)
-  } finally {
-    if (代理日志框.id === id) 代理日志框.加载中 = false
-  }
-}
+const 查询代理日志 = (params) => post('/查询代理账号日志', { ...params, id: 代理日志框.id })
 const 代理充值 = function () {
   if (代理充值框.保存中) return
   if (!Number.isSafeInteger(代理充值框.amount) || 代理充值框.amount === 0) {
@@ -1275,19 +1250,6 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-.代理日志内容 {
-  min-height: 240px;
-  max-height: 60vh;
-  overflow: auto;
-  margin-top: 12px;
-}
-.代理日志内容 pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: #cbd3df;
-  line-height: 1.6;
 }
 .时长价格分组 {
   display: grid;

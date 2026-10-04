@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -199,10 +197,6 @@ func 代理每点价格有效(price float64) bool {
 	return math.Abs(price-rounded) <= 1e-9
 }
 
-func 代理账号日志(accountID int, fields ...string) {
-	日志(fmt.Sprintf("log/代理账号%v_%v", accountID, time.Now().Format("200601")), 业务流水文本(fields...))
-}
-
 // 各扣款路径已在事务中锁定同一代理账号行；用该行最新余额和统一下限校验，
 // 不额外查询数据库。管理员手动调整余额不经过此函数。
 func 检查代理扣款余额(account 代理账号记录, charge int64) (int64, error) {
@@ -345,6 +339,11 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 		return 代理生成点卡卡密结果{}, err
 	}
 	var result 代理生成点卡卡密结果
+	fields := []string{
+		fmt.Sprintf("操作人:代理ID:%d", account.ID), "操作:新增点卡",
+		fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("数量:%d", len(cards)),
+		fmt.Sprintf("点数:%d", request.Points), "成功卡密:" + strings.Join(cards, ","),
+	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var current 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&current)
@@ -376,26 +375,14 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 		}
 		balance := current.Balance - charge
 		result = 代理生成点卡卡密结果{Cards: cards, Charge: charge, Balance: balance}
-		return nil
+		return 保存代理余额日志(tx, current.Admin, current.ID, -charge, current.Balance, balance, append([]string{"原因:生成点卡"}, fields...)...)
 	})
 	if err != nil {
 		return 代理生成点卡卡密结果{}, err
 	}
-	fields := []string{
-		"操作:新增点卡",
-		fmt.Sprintf("软件:%d", request.Software),
-		fmt.Sprintf("数量:%d", len(result.Cards)),
-		fmt.Sprintf("点数:%d", request.Points),
-		"成功卡密:" + strings.Join(result.Cards, ","),
+	if result.Charge == 0 {
+		记录管理员代理业务流水(account.Admin, account.ID, fields...)
 	}
-	if result.Charge > 0 {
-		fields = append([]string{
-			fmt.Sprintf("余额:%d", result.Balance),
-			fmt.Sprintf("变更:-%d", result.Charge),
-			"原因:生成点卡",
-		}, fields...)
-	}
-	记录管理员代理业务流水(account.Admin, []int{account.ID}, fields...)
 	return result, nil
 }
 
@@ -433,7 +420,7 @@ func 代理账号_删除点卡卡密(ctx *gin.Context) {
 		return
 	}
 	if len(success) > 0 {
-		记录管理员代理业务流水(account.Admin, []int{account.ID}, "操作:删除点卡", fmt.Sprintf("成功数量:%d", len(success)), "成功卡密:"+strings.Join(success, ","), fmt.Sprintf("失败数量:%d", len(failed)), "失败卡密:"+strings.Join(failed, ","))
+		记录管理员代理业务流水(account.Admin, account.ID, "操作:删除点卡", fmt.Sprintf("成功数量:%d", len(success)), "成功卡密:"+strings.Join(success, ","), fmt.Sprintf("失败数量:%d", len(failed)), "失败卡密:"+strings.Join(failed, ","))
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }
@@ -537,22 +524,14 @@ func 代理账号_修改点卡代扣设置(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "point_card_auto_deduct": account.PointCardAutoDeduct, "min_balance": account.MinBalance, "balance": account.Balance})
 }
 
-// 管理员和代理共用同一份代理日志读取范围，避免两处的月份规则不一致。
-func 读取代理账号最近两月日志(accountID int) string {
-	now := time.Now()
-	read := func(month time.Time) string {
-		content, err := os.ReadFile(fmt.Sprintf("log/代理账号%v_%v", accountID, month.Format("200601")))
-		if err != nil {
-			return "没有其他内容"
-		}
-		return string(content)
-	}
-	return read(now) + "\n" + read(now.AddDate(0, -1, 0))
-}
-
 func 代理账号_查询操作日志(ctx *gin.Context) {
 	account := 代理账号_取账号信息(ctx)
-	ctx.String(http.StatusOK, 读取代理账号最近两月日志(account.ID))
+	info, ok := 全局_运行状态.读取用户设置(account.Admin)
+	if !ok || info.ID <= 0 || account.ID <= 0 {
+		失败提示管理端(ctx, "日志归属不正确")
+		return
+	}
+	查询业务日志(ctx, info.ID, account.ID)
 }
 
 // 设置代理账号保存密码、软件价格和统一余额下限，不修改代理自己的代扣开关。
@@ -675,19 +654,18 @@ func 代理账号充值(ctx *gin.Context) {
 			return fmt.Errorf("充值后余额超出允许范围")
 		}
 		balance = account.Balance + request.Amount
+		if request.Amount == 0 {
+			return nil
+		}
 		if result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.ID, parent.Name).Update("balance", balance); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("充值失败")
 		}
-		return nil
+		return 保存代理余额日志(tx, parent.Name, account.ID, request.Amount, account.Balance, balance,
+			"操作:管理员调整余额", "操作人:管理员:"+parent.Name, "原因:管理员调整余额", "备注:"+request.Note)
 	})
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
-	}
-	if request.Amount != 0 {
-		fields := []string{fmt.Sprintf("余额:%d", balance), fmt.Sprintf("变更:%+d", request.Amount), "原因:管理员调整余额", "备注:" + request.Note}
-		代理账号日志(request.ID, fields...)
-		记录代理余额充值汇总(parent.Name, request.ID, fields...)
 	}
 	成功提示管理端(ctx, gin.H{"msg": "充值成功", "balance": balance})
 }
@@ -710,7 +688,7 @@ func 查询代理账号(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"data": result})
 }
 
-// 管理员只能按自己名下的代理 ID 读取日志，不能凭文件名访问其他管理员的记录。
+// 指定代理日志需先校验归属，查询仍同时限定管理员 ID，不能跨租户读取。
 func 管理员_查询代理账号日志(ctx *gin.Context) {
 	var request struct {
 		ID int `json:"id"`
@@ -734,7 +712,7 @@ func 管理员_查询代理账号日志(ctx *gin.Context) {
 		失败提示管理端(ctx, "查询渠道合伙人失败")
 		return
 	}
-	ctx.String(http.StatusOK, 读取代理账号最近两月日志(account.ID))
+	查询业务日志(ctx, parent.ID, account.ID)
 }
 
 // 删除代理账号只删除代理登录主体，已经生成的点卡和保留期内的流水继续归管理员所有。
@@ -780,6 +758,6 @@ func 删除代理账号(ctx *gin.Context) {
 		return
 	}
 	全局_登录会话.删除账号会话(agentName, true)
-	日志("log/"+parent.Name+time.Now().Format("200601"), fmt.Sprintf("删除渠道合伙人;ID:%d;账号:%s", request.ID, agentName))
+	记录管理员代理业务流水(parent.Name, request.ID, "操作:删除代理账号", "操作人:管理员:"+parent.Name, "账号:"+agentName)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功"})
 }

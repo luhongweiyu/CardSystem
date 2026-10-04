@@ -865,7 +865,7 @@ func 管理员_添加点卡卡密(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	记录管理员代理业务流水(account.Name, nil,
+	记录管理员代理业务流水(account.Name, 0,
 		"操作:新增点卡",
 		fmt.Sprintf("软件:%d", request.Software),
 		fmt.Sprintf("数量:%d", len(cards)),
@@ -1044,14 +1044,7 @@ func 查询操作日志(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	read := func(month time.Time) string {
-		content, err := os.ReadFile("log/" + account.Name + month.Format("200601"))
-		if err != nil {
-			return "没有其他内容"
-		}
-		return string(content)
-	}
-	ctx.String(http.StatusOK, read(time.Now())+"\n"+read(time.Now().AddDate(0, -1, 0)))
+	查询业务日志(ctx, account.ID, 0)
 }
 
 // 校验代理点卡归属在失效心跳缓存前确认代理确实拥有该卡，避免无权操作请求
@@ -1156,7 +1149,7 @@ func 管理员_删除点卡卡密(ctx *gin.Context) {
 		return
 	}
 	if len(success) > 0 {
-		记录管理员代理业务流水(account.Name, nil,
+		记录管理员代理业务流水(account.Name, 0,
 			"操作:删除点卡",
 			fmt.Sprintf("成功数量:%d", len(success)),
 			"成功卡密:"+strings.Join(success, ","),

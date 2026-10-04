@@ -71,7 +71,7 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "暂停时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
-	记录管理员代理业务流水(admin, []int{agentID}, "操作:暂停时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), "变更:-"+格式化授权时长(分钟转秒(pauseDeductMinutes)), "暂停剩余:"+格式化授权时长(分钟转秒(remainingMinutes)), "原授权截止:"+业务流水时间(beforeEnd))
+	记录管理员代理业务流水(admin, agentID, "操作:暂停时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), "变更:-"+格式化授权时长(分钟转秒(pauseDeductMinutes)), "暂停剩余:"+格式化授权时长(分钟转秒(remainingMinutes)), "原授权截止:"+业务流水时间(beforeEnd))
 	return remainingMinutes, nil
 }
 
@@ -112,7 +112,7 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		日志("log/启动记录.txt", "恢复时长卡后同步心跳缓存失败:"+cacheErr.Error())
 	}
-	记录管理员代理业务流水(admin, []int{agentID}, "操作:恢复时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), "变更:+"+格式化授权时长(分钟转秒(beforeRemaining)), "授权截止:"+业务流水时间(end))
+	记录管理员代理业务流水(admin, agentID, "操作:恢复时长卡", "卡密:"+card, fmt.Sprintf("软件:%d", softwareID), "变更:+"+格式化授权时长(分钟转秒(beforeRemaining)), "授权截止:"+业务流水时间(end))
 	return end, nil
 }
 
@@ -170,7 +170,7 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 	}
 	var end time.Time
 	var added int64
-	var softwareID, targetAgentID, sourceAgentID int
+	var softwareID, sourceAgentID int
 	var targetBeforeEnd time.Time
 	var targetBeforePaused, targetAfterPaused int64
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -212,7 +212,7 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 		if source.DurationMinutes < 时长卡最小时长分钟 || source.DurationMinutes > 时长卡永久分钟 {
 			return fmt.Errorf("充值来源时长不正确")
 		}
-		softwareID, targetAgentID, sourceAgentID = target.Software, target.AgentID, source.AgentID
+		softwareID, sourceAgentID = target.Software, source.AgentID
 		targetBeforePaused = target.PausedRemainingMinutes
 		if target.EndTime != nil {
 			targetBeforeEnd = *target.EndTime
@@ -262,7 +262,8 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 			日志("log/启动记录.txt", "时长卡充值后同步心跳缓存失败:"+cacheErr.Error())
 		}
 	}
-	记录管理员代理业务流水(admin, []int{targetAgentID, sourceAgentID}, "操作:时长卡充值", "目标卡:"+targetCard, "来源卡:"+sourceCard, fmt.Sprintf("软件:%d", softwareID), "变更:+"+格式化授权时长(分钟转秒(added)), "原授权截止:"+业务流水时间(targetBeforeEnd), "新授权截止:"+业务流水时间(end), "原暂停剩余:"+格式化授权时长(分钟转秒(targetBeforePaused)), "新暂停剩余:"+格式化授权时长(分钟转秒(targetAfterPaused)))
+	// 充值只归属来源卡的代理，目标卡所属代理不再重复收到操作日志。
+	记录管理员代理业务流水(admin, sourceAgentID, "操作:时长卡充值", "目标卡:"+targetCard, "来源卡:"+sourceCard, fmt.Sprintf("软件:%d", softwareID), "变更:+"+格式化授权时长(分钟转秒(added)), "原授权截止:"+业务流水时间(targetBeforeEnd), "新授权截止:"+业务流水时间(end), "原暂停剩余:"+格式化授权时长(分钟转秒(targetBeforePaused)), "新暂停剩余:"+格式化授权时长(分钟转秒(targetAfterPaused)))
 	return end, added, nil
 }
 

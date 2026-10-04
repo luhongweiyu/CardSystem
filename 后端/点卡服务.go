@@ -268,13 +268,14 @@ func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, 
 	return charge, after, nil
 }
 
-// 记录点卡代扣日志只能在事务提交后调用，避免回滚扣款留下虚假记录。
-// 即使卡内余额为零、没有点数流水，代理仍能在操作日志中核对每次扣款。
-func 记录点卡代扣日志(charge 点卡扣费结果, session 点卡设备会话) {
+// 代扣记录跟随扣款和授权更新的现有事务，任一步失败都会回滚。
+// 全额代理代扣没有点数流水，也必须留下代理余额日志。
+func 记录点卡代扣日志(tx *gorm.DB, charge 点卡扣费结果, session 点卡设备会话) error {
 	if charge.AgentCharged <= 0 {
-		return
+		return nil
 	}
-	代理账号日志(charge.AgentID, fmt.Sprintf("余额:%d", charge.AgentBalanceAfter), fmt.Sprintf("变更:-%d", charge.AgentCharged), "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+业务流水时间(session.AuthorizedUntil))
+	return 保存代理余额日志(tx, session.Admin, charge.AgentID, -charge.AgentCharged, charge.AgentBalanceAfter+charge.AgentCharged, charge.AgentBalanceAfter,
+		"操作:点卡代扣", "操作人:系统", "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "设备ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+业务流水时间(session.AuthorizedUntil))
 }
 
 // 调整点卡余额供管理员补点或扣回点数。余额不能变成负数，且每次真实变更

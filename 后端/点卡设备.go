@@ -372,6 +372,9 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			return fmt.Errorf("保存授权时长失败")
 		}
 		charge.AuthorizedUntil = until
+		if err := 记录点卡代扣日志(tx, charge, 当前会话); err != nil {
+			return err
+		}
 		cardRow.Point_balance = charge.Balance
 		result = 点卡登录结果{Card: cardRow, Session: 当前会话, Charge: charge, PeriodSeconds: period, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
 		return nil
@@ -383,7 +386,6 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		完成复用缓存变更(true)
 		完成复用缓存变更 = nil
 	}
-	记录点卡代扣日志(result.Charge, result.Session)
 	// 初次失效与事务之间可能有并发心跳重新建立缓存；事务提交后再清理一次，
 	// 保证后续请求一定从本次登录提交的数据库状态重新加载。
 	if cacheErr := 同步并删除点卡心跳缓存(admin, card, deviceID, ""); cacheErr != nil {
@@ -493,6 +495,9 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if err := 保存点卡设备会话(tx, &session, "", period, now); err != nil {
 			return err
 		}
+		if err := 记录点卡代扣日志(tx, charge, session); err != nil {
+			return err
+		}
 		result = 点卡心跳结果{Session: session, Charge: charge, HeartbeatSeconds: settings.HeartbeatIntervalSeconds}
 		return nil
 	})
@@ -502,7 +507,6 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 	if terminalErr != nil {
 		return 点卡心跳结果{}, terminalErr
 	}
-	记录点卡代扣日志(result.Charge, result.Session)
 	// 续费已经改变授权状态，按统一规则保持缓存为空；普通未到期心跳则缓存
 	// 已经提交的数据库结果，后续心跳无需再次读取或更新数据库。
 	if !result.Charge.Charged {
@@ -638,8 +642,6 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	var charge 点卡扣费结果
-	var chargedSession 点卡设备会话
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var card 点卡表样式
 		cardQuery := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", hint.Card).First(&card)
@@ -705,13 +707,10 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 		if err := tx.Table("point_device_session").Where("id = ?", session.ID).Updates(map[string]interface{}{"authorized_until": until, "renewal_period_seconds": period}).Error; err != nil {
 			return err
 		}
-		charge = settled
-		chargedSession = session
-		chargedSession.AuthorizedUntil = until
-		return nil
+		session.AuthorizedUntil = until
+		return 记录点卡代扣日志(tx, settled, session)
 	})
 	if err == nil {
-		记录点卡代扣日志(charge, chargedSession)
 		// 清理事务期间可能有并发请求重新建立缓存，提交后再次失效即可保证
 		// 删除或续费后的数据库状态成为下一次心跳的唯一来源。
 		if cacheErr := 同步并删除点卡心跳缓存(hint.Admin, hint.Card, hint.DeviceID, hint.Needle); cacheErr != nil {

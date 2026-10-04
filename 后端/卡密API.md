@@ -74,6 +74,17 @@
 
 代理只能查询自己生成的卡及流水：`POST /agent/point_card/ledger`。点卡列表支持按 `card`、`software`、`point_balance`、`card_state`、`create_time`、`use_time` 排序。
 
+### 操作日志
+
+- `POST /admin/query_log`、`POST /agent/query_log`：读取当前账号的操作日志。
+- `POST /admin/查询代理账号日志`：提交所属代理的 `id`，读取该代理日志。
+- 可选参数 `type` 为 `operation`（普通操作）或 `agent_balance`（代理余额变化），省略或空字符串查询全部；`page` 默认 1，`page_size` 默认 50，最多 200。
+- 返回分页 JSON，顶层包含 `state`、`code`、`data`、`num`、`page`、`page_size`；`data` 按日志 ID 倒序排列，每项包含 `id`、`admin_id`、`agent_id`、`type`、`log`、`created_at`（RFC3339）。`agent_id = 0` 表示不涉及代理。
+
+管理员只能读取自己所属的日志，代理只能读取自身相关的日志。代理余额变化与日志共同提交或回滚，零变动不写余额日志；普通日志失败不影响已成功的业务。日志目前不自动清理，旧文件日志不通过这些接口返回。
+
+充值使用记录归属充值卡或来源时长卡的代理，不复制给目标卡代理；管理员批量续费时长卡只记录管理员操作。
+
 ## 时长卡客户端与管理
 
 时长卡独立保存固定时长和到期时间，不使用点卡余额或点卡流水。
