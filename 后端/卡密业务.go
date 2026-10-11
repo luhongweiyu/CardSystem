@@ -290,8 +290,25 @@ func 获取卡密请求签名内容(ctx *gin.Context) ([]byte, string, error) {
 	return []byte(unsignedQuery), sign, nil
 }
 
+var 卡密签名关键参数 = [...]string{"card", "name", "center_id", "timestamp", "needle", "device_id"}
+
+// JSON POST 的业务参数只从已签名正文读取；其他请求逐项核对 URL 与 input。
+// URL 缺失时 Query 返回空值，仍能拦截只在未签名正文中提交的关键参数。
+func 核对卡密签名关键参数(ctx *gin.Context) error {
+	if ctx.Request.Method == http.MethodPost && strings.Contains(strings.ToLower(ctx.GetHeader("Content-Type")), "application/json") {
+		return nil
+	}
+	for _, key := range 卡密签名关键参数 {
+		if ctx.Query(key) != input(ctx, key) {
+			return fmt.Errorf("%s与签名参数不一致", key)
+		}
+	}
+	return nil
+}
+
 // 卡密md5验证始终校验时间戳和新协议 nonce；只有 api_safe 开启时才比较 sign。
-// JSON POST 签正文；GET 和无 JSON 正文的 POST 签去除 sign 后的原始查询字符串。
+// JSON POST 签正文；GET 和无 JSON 正文的 POST 签去除 sign 后的原始查询字符串，
+// 验签通过后再核对关键参数，避免业务读取未签名正文中的不同值。
 // 服务端不保存 nonce，因此同一原始请求在时间窗口内仍可被重复发送。
 func 卡密md5验证(ctx *gin.Context) {
 	value, _ := ctx.Get("card")
@@ -350,6 +367,13 @@ func 卡密md5验证(ctx *gin.Context) {
 		失败提示(ctx, "sign错误")
 		拒绝日志(ctx)
 		ctx.Abort()
+		return
+	}
+	if err := 核对卡密签名关键参数(ctx); err != nil {
+		失败提示(ctx, err.Error())
+		拒绝日志(ctx)
+		ctx.Abort()
+		return
 	}
 }
 
