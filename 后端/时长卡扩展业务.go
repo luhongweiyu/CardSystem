@@ -14,11 +14,13 @@ import (
 // 暂停时长卡把扣除手续费后的剩余时间转成整数分钟保存，并清空当前到期
 // 时间和在线凭证。暂停状态下登录和心跳会被拒绝；续费或充值只累加暂停
 // 剩余分钟，仍需显式恢复后才能继续使用。
-func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
+func 暂停时长卡(admin, card string) (int64, error) {
 	tableName, err := 时长卡数据表名(admin)
 	if err != nil {
 		return 0, err
 	}
+	unlock := 锁定时长卡业务(admin, card)
+	defer unlock()
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		return 0, cacheErr
 	}
@@ -31,6 +33,7 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 		if err != nil {
 			return err
 		}
+		now := time.Now()
 		if row.CardState != 卡密状态_正常 || row.EndTime == nil || !row.EndTime.After(now) {
 			return fmt.Errorf("只有尚未到期的已激活时长卡可以暂停")
 		}
@@ -77,11 +80,13 @@ func 暂停时长卡(admin, card string, now time.Time) (int64, error) {
 
 // 恢复时长卡从当前时间重新计算到期时间，成功后立即清空暂停余额，确保
 // 后续重复调用不能再次获得同一段时长。
-func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
+func 恢复时长卡(admin, card string) (time.Time, error) {
 	tableName, err := 时长卡数据表名(admin)
 	if err != nil {
 		return time.Time{}, err
 	}
+	unlock := 锁定时长卡业务(admin, card)
+	defer unlock()
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		return time.Time{}, cacheErr
 	}
@@ -98,7 +103,7 @@ func 恢复时长卡(admin, card string, now time.Time) (time.Time, error) {
 		}
 		softwareID, agentID = row.Software, row.AgentID
 		beforeRemaining = row.PausedRemainingMinutes
-		end = now.Add(time.Duration(row.PausedRemainingMinutes) * time.Minute)
+		end = time.Now().Add(time.Duration(row.PausedRemainingMinutes) * time.Minute)
 		updates := map[string]interface{}{"card_state": 卡密状态_正常, "paused_remaining_minutes": 0, "end_time": end}
 		result := tx.Table(tableName).Where("card = ?", row.Card).Updates(updates)
 		if result.Error != nil || result.RowsAffected != 1 {
@@ -124,7 +129,7 @@ func 访客_暂停时长卡(ctx *gin.Context) {
 		失败提示访客(ctx, "访客上下文错误")
 		return
 	}
-	remaining, err := 暂停时长卡(admin, input(ctx, "card"), time.Now())
+	remaining, err := 暂停时长卡(admin, input(ctx, "card"))
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
@@ -139,7 +144,7 @@ func 访客_恢复时长卡(ctx *gin.Context) {
 		失败提示访客(ctx, "访客上下文错误")
 		return
 	}
-	end, err := 恢复时长卡(admin, input(ctx, "card"), time.Now())
+	end, err := 恢复时长卡(admin, input(ctx, "card"))
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
@@ -150,7 +155,7 @@ func 访客_恢复时长卡(ctx *gin.Context) {
 // 时长卡给时长卡充值使用一张未激活时长卡作为一次性充值来源。目标卡可以
 // 是已激活卡，也可以是暂停卡；两张卡按卡密顺序加锁，避免两个并发互充请求
 // 以相反顺序等待形成死锁。
-func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.Time, int64, error) {
+func 时长卡互充(admin, targetCard, sourceCard string) (time.Time, int64, error) {
 	targetCard = strings.ToLower(strings.TrimSpace(targetCard))
 	sourceCard = strings.ToLower(strings.TrimSpace(sourceCard))
 	if !卡密格式规则.MatchString(targetCard) || !卡密格式规则.MatchString(sourceCard) || targetCard == sourceCard {
@@ -160,6 +165,8 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 	if err != nil {
 		return time.Time{}, 0, err
 	}
+	unlock := 锁定时长卡业务(admin, targetCard, sourceCard)
+	defer unlock()
 	// 目标卡可能有尚未落库的最新心跳；来源卡通常未激活没有缓存，
 	// 但一并处理可以保证异常数据或并发登录不会留下旧快照。
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, targetCard, ""); cacheErr != nil {
@@ -186,6 +193,7 @@ func 时长卡互充(admin, targetCard, sourceCard string, now time.Time) (time.
 		if len(rows) != 2 {
 			return fmt.Errorf("目标卡密或充值卡密不存在")
 		}
+		now := time.Now()
 		byCard := make(map[string]时长卡表样式, 2)
 		for _, row := range rows {
 			byCard[row.Card] = row
@@ -280,7 +288,7 @@ func durationCardRecharge(ctx *gin.Context) {
 	if source == "" {
 		source = input(ctx, "card2")
 	}
-	end, added, err := 时长卡互充(cardContext.Name, cardContext.Card, source, time.Now())
+	end, added, err := 时长卡互充(cardContext.Name, cardContext.Card, source)
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return

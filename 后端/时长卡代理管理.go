@@ -99,6 +99,8 @@ func 修改时长卡范围(admin string, agentID int, cardValue string, notes, c
 	if err != nil {
 		return err
 	}
+	unlock := 锁定时长卡业务(admin, cardValue)
+	defer unlock()
 	// 备注、配置和状态修改都可能与在线会话同时发生。先把缓存中的
 	// 最新心跳同步到数据库并失效，事务提交后再做一次失效兜底。
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, cardValue, ""); cacheErr != nil {
@@ -193,19 +195,23 @@ func 代理账号_删除时长卡(ctx *gin.Context) {
 			failed = append(failed, raw)
 			continue
 		}
-		if cacheErr := 同步并删除时长卡心跳缓存(account.Admin, card, ""); cacheErr != nil {
-			failed = append(failed, raw)
-			continue
-		}
-		result := db.Table(tableName).Where("card = ? AND agent_id = ?", card, account.ID).Delete(&时长卡表样式{})
-		if result.Error != nil || result.RowsAffected != 1 {
-			failed = append(failed, raw)
-			continue
-		}
-		if cacheErr := 同步并删除时长卡心跳缓存(account.Admin, card, ""); cacheErr != nil {
-			日志("log/启动记录.txt", "删除代理时长卡后同步心跳缓存失败:"+cacheErr.Error())
-		}
-		success = append(success, card)
+		func() {
+			unlock := 锁定时长卡业务(account.Admin, card)
+			defer unlock()
+			if cacheErr := 同步并删除时长卡心跳缓存(account.Admin, card, ""); cacheErr != nil {
+				failed = append(failed, raw)
+				return
+			}
+			result := db.Table(tableName).Where("card = ? AND agent_id = ?", card, account.ID).Delete(&时长卡表样式{})
+			if result.Error != nil || result.RowsAffected != 1 {
+				failed = append(failed, raw)
+				return
+			}
+			if cacheErr := 同步并删除时长卡心跳缓存(account.Admin, card, ""); cacheErr != nil {
+				日志("log/启动记录.txt", "删除代理时长卡后同步心跳缓存失败:"+cacheErr.Error())
+			}
+			success = append(success, card)
+		}()
 	}
 	if len(success) > 0 {
 		记录管理员代理业务流水(account.Admin, account.ID,
@@ -287,6 +293,8 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		seen[card] = struct{}{}
 		validCards = append(validCards, card)
 	}
+	unlock := 锁定时长卡业务(account.Admin, validCards...)
+	defer unlock()
 	// 先同步所有待续费卡的脏心跳，再锁定代理余额和卡密。同步失败的
 	// 单卡不参与本次续费，其他卡仍按原有逐卡结果继续处理。
 	readyCards := make([]string, 0, len(validCards))

@@ -537,6 +537,8 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 	if err != nil {
 		return 代理生成时长卡结果{}, err
 	}
+	unlock := 锁定时长卡业务(account.Admin, cards...)
+	defer unlock()
 	now := time.Now()
 	var result 代理生成时长卡结果
 	var fields []string

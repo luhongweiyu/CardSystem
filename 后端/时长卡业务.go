@@ -205,6 +205,8 @@ func 生成并保存时长卡(admin string, agentID int, request 时长卡生成
 	if err != nil {
 		return nil, err
 	}
+	unlock := 锁定时长卡业务(admin, cards...)
+	defer unlock()
 	now := time.Now()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := 锁定发卡软件(tx, admin, request.Software); err != nil {
@@ -466,26 +468,31 @@ func 处理时长卡批量状态(admin string, cards []string, state int) ([]str
 			failed = append(failed, raw)
 			continue
 		}
-		if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
-			failed = append(failed, raw)
-			continue
-		}
-		updates := map[string]interface{}{"card_state": state}
-		if state == 卡密状态_冻结 {
-			updates["needle"] = ""
-			updates["last_heartbeat_at"] = nil
-		}
-		// 暂停和已用于充值属于专用状态，只能由对应业务接口转换，不能
-		// 通过批量冻结/解冻把一次性充值来源重新恢复为可用卡。
-		result := db.Table(tableName).Where("card = ? AND card_state IN ?", card, []int{卡密状态_正常, 卡密状态_冻结}).Updates(updates)
-		if result.Error == nil && (result.RowsAffected == 1 || 时长卡记录存在(tableName, card)) {
+		// 每张卡独立释放，不能把 defer 放在批次外层而一直占用已经处理完的卡。
+		func() {
+			unlock := 锁定时长卡业务(admin, card)
+			defer unlock()
 			if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
-				日志("log/启动记录.txt", "修改时长卡状态后同步心跳缓存失败:"+cacheErr.Error())
+				failed = append(failed, raw)
+				return
 			}
-			success = append(success, card)
-		} else {
-			failed = append(failed, raw)
-		}
+			updates := map[string]interface{}{"card_state": state}
+			if state == 卡密状态_冻结 {
+				updates["needle"] = ""
+				updates["last_heartbeat_at"] = nil
+			}
+			// 暂停和已用于充值属于专用状态，只能由对应业务接口转换，不能
+			// 通过批量冻结/解冻把一次性充值来源重新恢复为可用卡。
+			result := db.Table(tableName).Where("card = ? AND card_state IN ?", card, []int{卡密状态_正常, 卡密状态_冻结}).Updates(updates)
+			if result.Error == nil && (result.RowsAffected == 1 || 时长卡记录存在(tableName, card)) {
+				if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+					日志("log/启动记录.txt", "修改时长卡状态后同步心跳缓存失败:"+cacheErr.Error())
+				}
+				success = append(success, card)
+			} else {
+				failed = append(failed, raw)
+			}
+		}()
 	}
 	return success, failed, nil
 }
@@ -532,19 +539,23 @@ func 删除时长卡记录(admin string, cards []string) ([]string, []string, er
 			failed = append(failed, raw)
 			continue
 		}
-		if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
-			failed = append(failed, raw)
-			continue
-		}
-		result := db.Table(tableName).Where("card = ?", card).Delete(&时长卡表样式{})
-		if result.Error == nil && result.RowsAffected == 1 {
+		func() {
+			unlock := 锁定时长卡业务(admin, card)
+			defer unlock()
 			if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
-				日志("log/启动记录.txt", "删除时长卡后同步心跳缓存失败:"+cacheErr.Error())
+				failed = append(failed, raw)
+				return
 			}
-			success = append(success, card)
-		} else {
-			failed = append(failed, raw)
-		}
+			result := db.Table(tableName).Where("card = ?", card).Delete(&时长卡表样式{})
+			if result.Error == nil && result.RowsAffected == 1 {
+				if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
+					日志("log/启动记录.txt", "删除时长卡后同步心跳缓存失败:"+cacheErr.Error())
+				}
+				success = append(success, card)
+			} else {
+				failed = append(failed, raw)
+			}
+		}()
 	}
 	return success, failed, nil
 }
@@ -603,57 +614,61 @@ func 管理员_续费时长卡(ctx *gin.Context) {
 			failed = append(failed, raw)
 			continue
 		}
-		if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
-			failed = append(failed, raw)
-			continue
-		}
-		err := db.Transaction(func(tx *gorm.DB) error {
-			var row 时长卡表样式
-			query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
-			if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("不存在")
+		func() {
+			unlock := 锁定时长卡业务(管理员_用户名(ctx), card)
+			defer unlock()
+			if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
+				failed = append(failed, raw)
+				return
 			}
-			if query.Error != nil {
-				return query.Error
-			}
-			if row.CardState == 卡密状态_冻结 {
-				return fmt.Errorf("已冻结")
-			}
-			if row.CardState == 时长卡状态_暂停 && row.EndTime == nil && row.PausedRemainingMinutes > 0 {
-				if request.DurationMinutes > math.MaxInt64-row.PausedRemainingMinutes {
-					return fmt.Errorf("暂停剩余时长溢出")
+			err := db.Transaction(func(tx *gorm.DB) error {
+				var row 时长卡表样式
+				query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&row)
+				if errors.Is(query.Error, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("不存在")
 				}
-				remaining := row.PausedRemainingMinutes + request.DurationMinutes
-				if err := tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", remaining).Error; err != nil {
+				if query.Error != nil {
+					return query.Error
+				}
+				if row.CardState == 卡密状态_冻结 {
+					return fmt.Errorf("已冻结")
+				}
+				if row.CardState == 时长卡状态_暂停 && row.EndTime == nil && row.PausedRemainingMinutes > 0 {
+					if request.DurationMinutes > math.MaxInt64-row.PausedRemainingMinutes {
+						return fmt.Errorf("暂停剩余时长溢出")
+					}
+					remaining := row.PausedRemainingMinutes + request.DurationMinutes
+					if err := tx.Table(tableName).Where("card = ?", card).Update("paused_remaining_minutes", remaining).Error; err != nil {
+						return err
+					}
+					return nil
+				}
+				if row.CardState != 卡密状态_正常 {
+					return fmt.Errorf("状态不正常")
+				}
+				if row.EndTime == nil {
+					return fmt.Errorf("尚未激活")
+				}
+				base := *row.EndTime
+				now := time.Now()
+				if base.Before(now) {
+					base = now
+				}
+				end := base.Add(time.Duration(request.DurationMinutes) * time.Minute)
+				if err := tx.Table(tableName).Where("card = ?", card).Update("end_time", end).Error; err != nil {
 					return err
 				}
 				return nil
+			})
+			if err != nil {
+				failed = append(failed, raw)
+			} else {
+				if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
+					日志("log/启动记录.txt", "续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
+				}
+				success = append(success, card)
 			}
-			if row.CardState != 卡密状态_正常 {
-				return fmt.Errorf("状态不正常")
-			}
-			if row.EndTime == nil {
-				return fmt.Errorf("尚未激活")
-			}
-			base := *row.EndTime
-			now := time.Now()
-			if base.Before(now) {
-				base = now
-			}
-			end := base.Add(time.Duration(request.DurationMinutes) * time.Minute)
-			if err := tx.Table(tableName).Where("card = ?", card).Update("end_time", end).Error; err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			failed = append(failed, raw)
-		} else {
-			if cacheErr := 同步并删除时长卡心跳缓存(管理员_用户名(ctx), card, ""); cacheErr != nil {
-				日志("log/启动记录.txt", "续费时长卡后同步心跳缓存失败:"+cacheErr.Error())
-			}
-			success = append(success, card)
-		}
+		}()
 	}
 	if len(success) > 0 {
 		// 管理员批量续费统一记管理员操作，不向涉及的代理复制日志。
@@ -683,8 +698,10 @@ func durationCardLogin(ctx *gin.Context) {
 		失败提示(ctx, err.Error())
 		return
 	}
-	// 登录会刷新服务端 needle。先同步并删除旧缓存，避免旧心跳在
-	// 登录事务之后重新覆盖新会话的状态。
+	unlock := 锁定时长卡业务(admin, card)
+	defer unlock()
+	// 业务锁覆盖旧缓存同步、登录事务和新缓存发布。旧心跳必须先完成，
+	// 或等本次登录完成后再校验，不能在提交新 needle 后发布旧快照。
 	if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
 		失败提示(ctx, cacheErr.Error())
 		return
@@ -761,6 +778,10 @@ func durationCardPing(ctx *gin.Context) {
 		失败提示(ctx, "needle不能为空")
 		return
 	}
+	unlock := 锁定时长卡业务(cardContext.Name, cardContext.Card)
+	defer unlock()
+	// 命中缓存的心跳也参与同卡互斥；时间在拿到锁后读取，避免等待锁后
+	// 仍以旧时间接受已经到期的授权。未命中时持锁到数据库和缓存都更新完。
 	now := time.Now()
 	if row, heartbeatSeconds, handled, cacheErr := 尝试记录时长卡缓存心跳(cardContext.Name, cardContext.Card, needle, now); handled {
 		if cacheErr != nil {
@@ -836,6 +857,8 @@ func durationCardLogout(ctx *gin.Context) {
 		return
 	}
 	needle := strings.TrimSpace(input(ctx, "needle"))
+	unlock := 锁定时长卡业务(cardContext.Name, cardContext.Card)
+	defer unlock()
 	if cacheErr := 同步并删除时长卡心跳缓存(cardContext.Name, cardContext.Card, needle); cacheErr != nil {
 		失败提示(ctx, cacheErr.Error())
 		return
@@ -917,6 +940,8 @@ func durationCardConfig(ctx *gin.Context) {
 		失败提示(ctx, err.Error())
 		return
 	}
+	unlock := 锁定时长卡业务(cardContext.Name, cardContext.Card)
+	defer unlock()
 	operation := input(ctx, "type")
 	if operation == "write" {
 		content := input(ctx, "value")

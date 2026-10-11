@@ -518,6 +518,8 @@ func 访客_使用时长充值卡(ctx *gin.Context) {
 	}
 	// 充值会改变目标时长卡的剩余授权，先同步并失效其心跳快照；
 	// 同步失败的目标不参与本次充值，避免缓存中的旧时间被后续查询使用。
+	unlock := 锁定时长卡业务(admin, validCards...)
+	defer unlock()
 	readyCards := make([]string, 0, len(validCards))
 	for _, card := range validCards {
 		if cacheErr := 同步并删除时长卡心跳缓存(admin, card, ""); cacheErr != nil {
