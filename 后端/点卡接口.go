@@ -381,13 +381,12 @@ func 处理点卡设备下线(ctx *gin.Context, admin string, agentID int) {
 	var request struct {
 		Card     string `json:"card"`
 		DeviceID string `json:"device_id"`
-		Needle   string `json:"needle"`
 	}
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
 		失败提示管理端(ctx, "数据错误")
 		return
 	}
-	if err := 下线点卡设备(admin, agentID, request.Card, request.DeviceID, request.Needle); err != nil {
+	if err := 下线点卡设备(admin, agentID, request.Card, request.DeviceID); err != nil {
 		失败提示管理端(ctx, err.Error())
 		return
 	}

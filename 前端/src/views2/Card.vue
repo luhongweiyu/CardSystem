@@ -180,30 +180,30 @@
         <span>在线设备：{{ 详情框.online_device_count }}</span>
         <span>设备数 / 上限：{{ 详情框.total }} / {{ 详情框.effective_max_devices }}</span>
       </div>
-      <el-table :data="详情框.devices" border stripe v-loading="详情框.加载中" empty-text="暂无设备会话">
-        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
-        <el-table-column label="最近心跳" width="180">
+      <el-table :data="详情框.devices" border stripe v-loading="详情框.加载中" empty-text="暂无设备会话" @sort-change="详情设备排序变化">
+        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip sortable="custom" :sort-orders="['ascending', 'descending']" />
+        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip sortable="custom" :sort-orders="['ascending', 'descending']" />
+        <el-table-column prop="last_heartbeat_at" label="最近心跳" width="180" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">{{ 格式化时间(scope.row.last_heartbeat_at) || '-' }}</template>
         </el-table-column>
-        <el-table-column label="授权到期" width="180">
+        <el-table-column prop="authorized_until" label="授权到期" width="180" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">{{ 格式化时间(scope.row.authorized_until) }}</template>
         </el-table-column>
-        <el-table-column label="授权状态" width="90">
+        <el-table-column prop="authorized" label="授权状态" width="110" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">
             <el-tag :type="scope.row.authorized ? 'success' : 'info'">
               {{ scope.row.authorized ? '未到期' : '已到期' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="在线状态" width="90">
+        <el-table-column prop="online" label="在线状态" width="110" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">
             <el-tag :type="scope.row.online ? 'success' : 'info'">
               {{ scope.row.forced_offline ? '已下线' : scope.row.online ? '在线' : '离线' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="needle" label="needle 前 6 位" width="130" />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="scope">
             <el-button link type="primary" @click="查看活动(scope.row)">活动记录</el-button>
@@ -211,7 +211,7 @@
               link
               type="danger"
               :disabled="scope.row.forced_offline || !!详情框.下线中"
-              :loading="详情框.下线中 === scope.row.needle"
+              :loading="详情框.下线中 === `${详情框.card}:${scope.row.device_id}`"
               @click="下线设备(scope.row)"
             >下线</el-button>
           </template>
@@ -222,8 +222,10 @@
         v-model:current-page="详情框.page"
         v-model:page-size="详情框.page_size"
         class="分页"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next"
         :total="详情框.total"
+        :page-sizes="[10, 20, 50, 100]"
+        @size-change="详情设备每页数量改变"
         @current-change="查询详情(false)"
       />
     </el-dialog>
@@ -481,11 +483,14 @@ const 详情框 = reactive({
   devices: [],
   page: 1,
   page_size: 50,
-  total: 0
+  total: 0,
+  sort_by: '',
+  sort_order: ''
 })
 
 const 活动框 = reactive({ 显示: false, 加载中: false, title: '', rows: [] })
 let 活动请求序号 = 0
+let 详情请求序号 = 0
 const 软件设备上限 = (id) => Number(软件列表.value.find((item) => Number(item.ID) === Number(id))?.point_card_max_devices ?? 1000)
 const 实际设备上限 = (row) => Math.min(Number(row.max_devices) || 1000, 软件设备上限(row.software))
 const 设备上限有效 = (value) => Number.isInteger(value) && value >= 0 && value <= 1000
@@ -754,7 +759,9 @@ const 打开详情 = function (row) {
     online_device_count: 0,
     devices: [],
     page: 1,
-    total: 0
+    total: 0,
+    sort_by: '',
+    sort_order: ''
   })
   查询详情(true)
 }
@@ -765,16 +772,19 @@ const 查询详情 = function (resetPage = false) {
     ElMessage.error('点卡卡密查询参数不完整')
     return
   }
+  const sequence = ++详情请求序号
+  const card = 详情框.card
   详情框.加载中 = true
-  // 公开详情接口会合并尚未同步的心跳缓存，管理端看到的在线状态与持卡查询页一致。
-  return apiClient
-    .post('/visitor/查询卡密', {
-      center_id: centerID,
-      card: 详情框.card,
-      page: 详情框.page,
-      page_size: 详情框.page_size
-    })
+  return apiClient.post('/visitor/查询卡密', {
+    center_id: centerID,
+    card,
+    page: 详情框.page,
+    page_size: 详情框.page_size,
+    sort_by: 详情框.sort_by,
+    sort_order: 详情框.sort_order
+  })
     .then((res) => {
+      if (sequence !== 详情请求序号 || 详情框.card !== card) return
       if (!res.data?.state) throw new Error(res.data?.msg || '查询设备详情失败')
       详情框.software = Number(res.data.software || 详情框.software)
       详情框.authorized_device_count = Number(res.data.authorized_device_count || 0)
@@ -785,10 +795,22 @@ const 查询详情 = function (resetPage = false) {
       详情框.page = Number(res.data.device_page || 详情框.page)
       详情框.page_size = Number(res.data.device_page_size || 详情框.page_size)
     })
-    .catch(显示错误)
-    .finally(() => {
-      详情框.加载中 = false
+    .catch((error) => {
+      if (sequence === 详情请求序号) 显示错误(error)
     })
+    .finally(() => {
+      if (sequence === 详情请求序号) 详情框.加载中 = false
+    })
+}
+const 详情设备每页数量改变 = function (size) {
+  详情框.page_size = Number(size)
+  查询详情(true)
+}
+const 详情设备排序变化 = function ({ prop, order }) {
+  if (!prop || !order) return
+  详情框.sort_by = prop
+  详情框.sort_order = order === 'ascending' ? 'asc' : 'desc'
+  查询详情(true)
 }
 const 查看活动 = async function (row) {
   const sequence = ++活动请求序号
@@ -815,8 +837,8 @@ const 下线设备 = function (row) {
     type: 'warning'
   })
     .then(async () => {
-      详情框.下线中 = row.needle
-      const res = await post('/point_card/device/offline', { card, device_id: row.device_id, needle: row.needle })
+      详情框.下线中 = `${card}:${row.device_id}`
+      const res = await post('/point_card/device/offline', { card, device_id: row.device_id })
       if (!res.data?.state) throw new Error(res.data?.msg || '下线失败')
       ElMessage.success(res.data.msg || '设备已下线')
       if (详情框.显示 && 详情框.card === card) await 查询详情(false)

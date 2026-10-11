@@ -128,15 +128,11 @@ func 尝试复用点卡授权(tx *gorm.DB, 参数 点卡扣费参数, 当前会�
 }
 
 // 下线不是删除或封禁：保留授权和真实心跳，撤销凭证并停止后台续费。
-// 归属校验在卡密行锁内完成，代理不能通过指定其他卡密操作别人的设备。
-func 下线点卡设备(admin string, agentID int, card string, deviceID string, needle string) error {
+// 管理端已验证账号；归属校验在卡密行锁内完成，强制下线不依赖客户端持有的 needle。
+func 下线点卡设备(admin string, agentID int, card string, deviceID string) error {
 	admin, card, deviceID, err := 规范化点卡设备参数(admin, card, deviceID, "")
 	if err != nil {
 		return err
-	}
-	needle, valid := 规范化点卡会话令牌(needle)
-	if !valid {
-		return fmt.Errorf("设备凭证不正确，请刷新详情")
 	}
 	tableName, err := 点卡数据表名(admin)
 	if err != nil {
@@ -164,9 +160,6 @@ func 下线点卡设备(admin string, agentID int, card string, deviceID string,
 		if !found || session.ForcedOffline {
 			return nil
 		}
-		if session.Needle != needle {
-			return fmt.Errorf("设备已重新登录，请刷新详情")
-		}
 		key := 生成点卡心跳缓存键(admin, card, deviceID)
 		entry := 锁定点卡心跳缓存(key)
 		finish = func(committed bool) { 结束点卡心跳缓存变更(key, entry, committed) }
@@ -175,7 +168,7 @@ func 下线点卡设备(admin string, agentID int, card string, deviceID string,
 			// 只向前同步真实心跳，与下线状态原子提交，不伪造离线时间。
 			updates["last_heartbeat_at"] = gorm.Expr("GREATEST(last_heartbeat_at, ?)", entry.会话.LastHeartbeatAt)
 		}
-		query = tx.Table("point_device_session").Where("id = ? AND needle = ?", session.ID, needle).
+		query = tx.Table("point_device_session").Where("id = ?", session.ID).
 			Updates(updates)
 		if query.Error != nil || query.RowsAffected != 1 {
 			return fmt.Errorf("下线设备失败，请刷新详情")

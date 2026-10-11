@@ -325,11 +325,12 @@ func 访客_查询点卡卡密详情(ctx *gin.Context) {
 		return
 	}
 	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
-	设备统计, err := 查询点卡设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页)
+	设备统计, err := 查询点卡设备统计(admin, card, row.Software, time.Now(), 设备页, 设备每页, 读取点卡设备排序参数(ctx))
 	if err != nil {
 		失败提示访客(ctx, err.Error())
 		return
 	}
+	隐藏公开点卡设备令牌(设备统计.Devices)
 	status := "正常"
 	if row.Card_state == 卡密状态_冻结 {
 		status = "冻结"

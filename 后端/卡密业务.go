@@ -421,6 +421,32 @@ type 点卡设备统计 struct {
 	Devices            []点卡设备详情 `json:"devices"`
 }
 
+type 点卡设备排序参数 struct {
+	字段 string
+	倒序 bool
+}
+
+func 读取点卡设备排序参数(ctx *gin.Context) 点卡设备排序参数 {
+	字段 := input(ctx, "sort_by")
+	方向 := input(ctx, "sort_order")
+	switch 字段 {
+	case "device_id", "device_alias", "last_heartbeat_at", "authorized_until", "authorized", "online":
+		if 方向 == "asc" || 方向 == "desc" {
+			return 点卡设备排序参数{字段: 字段, 倒序: 方向 == "desc"}
+		}
+	}
+	return 点卡设备排序参数{字段: "authorized_until", 倒序: true}
+}
+
+// 公开点卡设备详情只展示令牌前缀，服务端保存的完整令牌不受影响。
+func 隐藏公开点卡设备令牌(devices []点卡设备详情) {
+	for i := range devices {
+		if len(devices[i].Needle) > 6 {
+			devices[i].Needle = devices[i].Needle[:6]
+		}
+	}
+}
+
 // 读取点卡设备分页参数只允许较小的明细页，避免单个点卡异常累积大量设备时
 // 直接返回超大响应；设备总数仍由服务端单独统计。
 func 读取点卡设备分页参数(ctx *gin.Context) (int, int) {
@@ -447,9 +473,9 @@ func 读取点卡设备分页参数(ctx *gin.Context) (int, int) {
 }
 
 // 查询点卡设备统计同时返回数量和设备明细。查询不会扣点、续费或删除会话；
-// 在线状态严格按计费规则使用最后心跳推断窗口，needle 按业务要求随设备明细返回。
-// 一次查询并合并缓存后统计、分页，避免按设备逐条查询。
-func 查询点卡设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int) (点卡设备统计, error) {
+// 在线状态严格按计费规则使用最后心跳推断窗口。先合并全部心跳缓存并排序，
+// 再分页，保证最近心跳和在线状态的排序不会只作用于当前页。
+func 查询点卡设备统计(admin string, card string, softwareID int, now time.Time, page int, pageSize int, sorting 点卡设备排序参数) (点卡设备统计, error) {
 	var result 点卡设备统计
 	settings, err := 读取软件设置(db, admin, softwareID)
 	if err != nil {
@@ -462,24 +488,13 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 	query := db_point_device_session.Session(&gorm.Session{}).
 		Where("admin = ? AND card = ? AND software = ?", admin, card, softwareID).
 		Select("id", "admin", "card", "software", "device_id", "device_alias", "needle", "authorized_until", "last_heartbeat_at", "forced_offline").
-		Order("authorized_until DESC, device_id ASC").
 		Find(&rows)
 	if query.Error != nil {
 		return result, fmt.Errorf("查询设备会话失败")
 	}
 	result.DeviceTotal = int64(len(rows))
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > len(rows) {
-		start = len(rows)
-	}
-	if end > len(rows) {
-		end = len(rows)
-	}
-	result.Devices = make([]点卡设备详情, 0, end-start)
-	for index, row := range rows {
-		// 一次查询全部设备后统一合并尚未落库的心跳缓存，保证统计和当前页
-		// 明细使用同一份最新状态，同时避免复用 GORM 查询对象造成状态污染。
+	devices := make([]点卡设备详情, 0, len(rows))
+	for _, row := range rows {
 		合并点卡心跳缓存(&row)
 		authorized := row.AuthorizedUntil.After(now)
 		online := 点卡设备在线(row, settings.OnlineGraceMinutes, now)
@@ -489,15 +504,63 @@ func 查询点卡设备统计(admin string, card string, softwareID int, now tim
 		if online {
 			result.OnlineCount++
 		}
-		if index < start || index >= end {
-			continue
-		}
-		result.Devices = append(result.Devices, 点卡设备详情{
+		devices = append(devices, 点卡设备详情{
 			LastHeartbeatAt: row.LastHeartbeatAt,
 			DeviceID:        row.DeviceID, DeviceAlias: row.DeviceAlias, Needle: row.Needle,
 			AuthorizedUntil: row.AuthorizedUntil, Authorized: authorized, Online: online, ForcedOffline: row.ForcedOffline,
 		})
 	}
+	sort.Slice(devices, func(i, j int) bool {
+		a, b := devices[i], devices[j]
+		比较 := 0
+		switch sorting.字段 {
+		case "device_id":
+			比较 = strings.Compare(a.DeviceID, b.DeviceID)
+		case "device_alias":
+			比较 = strings.Compare(strings.ToLower(a.DeviceAlias), strings.ToLower(b.DeviceAlias))
+		case "last_heartbeat_at":
+			比较 = a.LastHeartbeatAt.Compare(b.LastHeartbeatAt)
+		case "authorized":
+			if a.Authorized != b.Authorized {
+				if a.Authorized {
+					比较 = 1
+				} else {
+					比较 = -1
+				}
+			}
+		case "online":
+			// 显示状态依次为已下线、离线、在线，排序与页面文字一致。
+			状态值 := func(device 点卡设备详情) int {
+				if device.ForcedOffline {
+					return 0
+				}
+				if device.Online {
+					return 2
+				}
+				return 1
+			}
+			比较 = 状态值(a) - 状态值(b)
+		default:
+			比较 = a.AuthorizedUntil.Compare(b.AuthorizedUntil)
+		}
+		if 比较 == 0 {
+			return a.DeviceID < b.DeviceID
+		}
+		if sorting.倒序 {
+			return 比较 > 0
+		}
+		return 比较 < 0
+	})
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(devices) {
+		start = len(devices)
+	}
+	if end > len(devices) {
+		end = len(devices)
+	}
+	result.Devices = make([]点卡设备详情, end-start)
+	copy(result.Devices, devices[start:end])
 	return result, nil
 }
 
@@ -528,11 +591,12 @@ func 点卡查询详情(ctx *gin.Context) {
 		return
 	}
 	设备页, 设备每页 := 读取点卡设备分页参数(ctx)
-	设备统计, err := 查询点卡设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页)
+	设备统计, err := 查询点卡设备统计(cardContext.Name, cardRow.Card, cardRow.Software, time.Now(), 设备页, 设备每页, 读取点卡设备排序参数(ctx))
 	if err != nil {
 		失败提示(ctx, err.Error())
 		return
 	}
+	隐藏公开点卡设备令牌(设备统计.Devices)
 	lastUse := ""
 	if cardRow.Use_time != nil {
 		lastUse = cardRow.Use_time.Format(timeLayout)

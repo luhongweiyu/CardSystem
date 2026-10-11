@@ -36,7 +36,7 @@
 ### 退出、查询和流水
 
 - `GET/POST /point_card/card_logout`：提交 `center_id/name`、`card`，可选 `device_id`、`needle`。删除对应设备会话，不退款；省略 `device_id` 按空字符串处理。
-- `GET/POST /point_card/query`：查询余额、状态和设备会话；支持 `page`、`page_size`，默认每页 50 条，最多 100 条。返回 `device_total`、单卡设置 `max_devices` 和实际生效的 `effective_max_devices`；设备项包含设备标识、授权截止时间、在线状态、最近心跳 `last_heartbeat_at` 和心跳令牌。活动查询见[最近活动记录](#最近活动记录)。
+- `GET/POST /point_card/query`：查询余额、状态和设备会话；支持 `page`、`page_size`，默认每页 50 条，最多 100 条。设备排序可提交 `sort_by`（`device_id`、`device_alias`、`last_heartbeat_at`、`authorized_until`、`authorized`、`online`）和 `sort_order`（`asc` 或 `desc`），默认按授权到期时间倒序，设备 ID 升序打破并列。返回 `device_total`、单卡设置 `max_devices` 和实际生效的 `effective_max_devices`；设备项包含设备标识、授权截止时间、在线状态、最近心跳 `last_heartbeat_at` 和心跳令牌前 6 位。活动查询见[最近活动记录](#最近活动记录)。
 - `GET/POST /point_card/point_ledger/query`：查询当前卡密流水，支持分页；流水保留 30 天。
 - `GET/POST /point_card/bulletin`：读取软件公告。
 - `GET/POST /point_card/config`：读写卡密配置，最多 200 个字符。
@@ -49,7 +49,7 @@
 
 - 点卡方案：`/point_card/price/list|save|delete`。
 - 点卡管理：`/point_card/create|list|save|delete|state`；管理员可用 `/point_card/adjust` 调整余额、`/point_card/ledger` 查询流水。
-- 设备下线：`POST /point_card/device/offline`，提交 `card`、`device_id`、详情中的 `needle`。下线停止后台续费并使旧凭证失效；未到期授权仍保留，设备可重新登录。
+- 设备下线：`POST /point_card/device/offline`，提交 `card`、`device_id`。管理员可强制下线自己的点卡设备，代理只能操作自己生成的点卡；无需提交 `needle`。下线停止后台续费并使旧凭证失效；未到期授权仍保留，设备可重新登录。
 - 代理账号：`/创建代理账号`、`/设置代理账号`、`/查询代理账号`、`/删除代理账号`、`/代理账号充值`。
 
 每次最多生成 500 张点卡，允许 0 点。代理价格以软件 ID 为键，表示生成 1 点卡点数所需的余额；未配置价格的软件不能发卡。价格最多两位小数，批次总额向上取整。
@@ -109,7 +109,7 @@
 ## 访客与充值
 
 - `POST /visitor/查询所有卡密`：提交 `center_id`、`mode`（`point` 或 `duration`，默认 `point`）和 `card`。完整卡密精确查询；前缀查询格式为至少 4 位前缀加 `***`，固定匹配末尾 3 位；逗号分隔最多 20 张完整卡密时批量精确查询。结果默认每页 20 张，最多 100 张；每个管理员和来源 IP 每分钟最多查询 10 次。
-- `POST /visitor/查询卡密`：提交 `center_id` 和完整点卡卡密，返回设备详情和实际设备上限；活动查询见[最近活动记录](#最近活动记录)。
+- `POST /visitor/查询卡密`：提交 `center_id` 和完整点卡卡密，返回设备详情和实际设备上限；设备分页、排序与 `/point_card/query` 一致，`needle` 只返回前 6 位。活动查询见[最近活动记录](#最近活动记录)。
 - `POST /visitor/查询时长卡`：提交 `center_id` 和完整卡密，返回状态、到期信息、最近心跳和活动记录，不返回心跳令牌。
 - `POST /visitor/duration_recharge_card/query`：查询充值卡状态，兼容 `/visitor/查询充值卡`。
 - `POST /visitor/duration_recharge_card/redeem`：提交 `recharge_card` 和目标 `cards`。可给同软件、已激活（含已到期）的正常时长卡续费，也可给仍有剩余时长的暂停卡增加暂停余额；兼容 `/visitor/续费卡密` 和旧字段 `Rechargeable_card`。

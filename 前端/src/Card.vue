@@ -77,30 +77,30 @@
         </el-table-column>
       </el-table>
       <el-divider content-position="left">设备授权</el-divider>
-      <el-table :data="详情.devices" border stripe empty-text="暂无设备会话">
-        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip />
-        <el-table-column label="最近心跳" width="180">
+      <el-table :data="详情.devices" border stripe empty-text="暂无设备会话" @sort-change="设备排序变化">
+        <el-table-column prop="device_id" label="设备 ID" min-width="180" show-overflow-tooltip sortable="custom" :sort-orders="['ascending', 'descending']" />
+        <el-table-column prop="device_alias" label="设备别名" min-width="130" show-overflow-tooltip sortable="custom" :sort-orders="['ascending', 'descending']" />
+        <el-table-column prop="last_heartbeat_at" label="最近心跳" width="180" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">{{ 格式化时间(scope.row.last_heartbeat_at) || '-' }}</template>
         </el-table-column>
-        <el-table-column label="授权到期" width="180">
+        <el-table-column prop="authorized_until" label="授权到期" width="180" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">{{ 格式化时间(scope.row.authorized_until) || '-' }}</template>
         </el-table-column>
-        <el-table-column label="授权状态" width="90">
+        <el-table-column prop="authorized" label="授权状态" width="110" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">
             <el-tag :type="scope.row.authorized ? 'success' : 'info'">
               {{ scope.row.authorized ? '未到期' : '已到期' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="在线状态" width="90">
+        <el-table-column prop="online" label="在线状态" width="110" sortable="custom" :sort-orders="['ascending', 'descending']">
           <template #default="scope">
             <el-tag :type="scope.row.online ? 'success' : 'info'">
               {{ scope.row.forced_offline ? '已下线' : scope.row.online ? '在线' : '离线' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="needle" label="needle" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="needle" label="needle 前 6 位" width="130" />
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="scope"><el-button link type="primary" @click="查看点卡活动(scope.row)">活动记录</el-button></template>
         </el-table-column>
@@ -110,8 +110,10 @@
         v-model:current-page="设备分页.page"
         v-model:page-size="设备分页.page_size"
         class="分页"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next"
         :total="设备分页.total"
+        :page-sizes="[10, 20, 50, 100]"
+        @size-change="设备每页数量改变"
         @current-change="page => 选择点卡(详情.card, page)"
       />
     </el-card>
@@ -268,6 +270,7 @@ const 操作中 = ref('')
 const 查卡分页 = reactive({ page: 1, page_size: 20, total: 0 })
 const 流水框 = reactive({ 显示: false, 加载中: false, card: '', software: 0, rows: [], balance: 0, page: 1, page_size: 20, total: 0 })
 const 设备分页 = reactive({ page: 1, page_size: 50, total: 0 })
+const 设备排序 = reactive({ sort_by: '', sort_order: '' })
 const 充值卡查询 = reactive({ card: '', 加载中: false, detail: null })
 const 充值框 = reactive({ 显示: false, 加载中: false, card: '', cards: [], rows: [], result: null })
 let 查询序号 = 0
@@ -290,6 +293,7 @@ const 切换模式 = function () {
   批量未找到.value = []
   查卡分页.page = 1
   查卡分页.total = 0
+  Object.assign(设备排序, { sort_by: '', sort_order: '' })
   时长卡表版本.value++
   详情.value = null
   流水框.显示 = false
@@ -297,7 +301,9 @@ const 切换模式 = function () {
 }
 
 const 读取点卡详情 = async function (card, page, sequence) {
-  const res = await apiClient.post('/point_card/query', { center_id: centerID, card, page, page_size: 设备分页.page_size })
+  const res = await apiClient.post('/point_card/query', {
+    center_id: centerID, card, page, page_size: 设备分页.page_size, ...设备排序
+  })
   if (!res.data?.state) throw new Error(res.data?.msg || '查询点卡失败')
   if (sequence !== 查询序号 || 模式.value !== 'point') return
   详情.value = {
@@ -351,6 +357,7 @@ const 查询卡密 = async function (page = 1, 保留当前结果 = false) {
     批量未找到.value = []
     查卡分页.page = 1
     查卡分页.total = 0
+    Object.assign(设备排序, { sort_by: '', sort_order: '' })
     时长卡表版本.value++
     详情.value = null
   }
@@ -385,6 +392,18 @@ const 每页数量改变 = function (size) {
   查卡分页.page_size = Number(size)
   查卡分页.page = 1
   查询卡密(1, true)
+}
+
+const 设备每页数量改变 = function (size) {
+  设备分页.page_size = Number(size)
+  选择点卡(详情.value?.card, 1)
+}
+
+const 设备排序变化 = function ({ prop, order }) {
+  if (!prop || !order) return
+  设备排序.sort_by = prop
+  设备排序.sort_order = order === 'ascending' ? 'asc' : 'desc'
+  选择点卡(详情.value?.card, 1)
 }
 
 const 选择点卡 = async function (row, page = 1) {
