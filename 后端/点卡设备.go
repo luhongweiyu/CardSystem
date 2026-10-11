@@ -443,8 +443,15 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		if err != nil {
 			return err
 		}
-		if !found || session.ForcedOffline || session.DeviceID != deviceID || session.Needle != needle || session.Software != cardRow.Software {
-			return fmt.Errorf("登录会话不存在或已失效")
+		if !found || session.DeviceID != deviceID || session.Software != cardRow.Software {
+			return fmt.Errorf("登录已失效!")
+		}
+		// 后台下线也会更换凭证，须优先提示下线原因。
+		if session.ForcedOffline {
+			return fmt.Errorf("设备已被下线!")
+		}
+		if session.Needle != needle {
+			return fmt.Errorf("卡密可能在别处登录!")
 		}
 		// 会话行已经锁定，此时生成的时间不会被更早进入但仍在等待锁的请求倒写。
 		now := time.Now()
@@ -560,7 +567,7 @@ func 退出点卡设备会话(admin string, card string, deviceID string, needle
 			return nil // 会话已经退出时重复调用仍然成功。
 		}
 		if normalizedNeedle != "" && session.Needle != normalizedNeedle {
-			return fmt.Errorf("登录令牌与设备会话不匹配")
+			return fmt.Errorf("卡密可能在别处登录!")
 		}
 		result := tx.Table("point_device_session").Where("id = ?", session.ID).Delete(&点卡设备会话{})
 		if result.Error != nil || result.RowsAffected != 1 {

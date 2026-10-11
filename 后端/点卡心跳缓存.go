@@ -143,8 +143,15 @@ func 尝试记录点卡缓存心跳(admin string, card string, deviceID string, 
 	if entry.已失效 || entry.会话.ID == 0 {
 		return 点卡心跳结果{}, false, nil
 	}
-	if entry.会话.ForcedOffline || entry.会话.Admin != key.管理员 || entry.会话.Card != key.卡密 || entry.会话.DeviceID != key.设备ID || entry.会话.Needle != needle {
-		return 点卡心跳结果{}, true, fmt.Errorf("登录会话不存在或已失效")
+	if entry.会话.Admin != key.管理员 || entry.会话.Card != key.卡密 || entry.会话.DeviceID != key.设备ID {
+		return 点卡心跳结果{}, true, fmt.Errorf("登录已失效!")
+	}
+	// 与数据库路径一致，先判断后台下线，再判断凭证变化。
+	if entry.会话.ForcedOffline {
+		return 点卡心跳结果{}, true, fmt.Errorf("设备已被下线!")
+	}
+	if entry.会话.Needle != needle {
+		return 点卡心跳结果{}, true, fmt.Errorf("卡密可能在别处登录!")
 	}
 	if !entry.会话.AuthorizedUntil.After(now) {
 		return 点卡心跳结果{}, false, nil
@@ -223,7 +230,7 @@ func 同步并删除点卡心跳缓存(admin string, card string, deviceID strin
 	}
 	if entry.会话.ID != 0 && expectedNeedle != "" && entry.会话.Needle != expectedNeedle {
 		entry.Unlock()
-		return fmt.Errorf("登录令牌与设备会话不匹配")
+		return fmt.Errorf("卡密可能在别处登录!")
 	}
 	syncErr := 同步点卡心跳缓存条目(entry)
 	entry.已失效 = true

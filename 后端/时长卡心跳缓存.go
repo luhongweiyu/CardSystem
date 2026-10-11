@@ -103,8 +103,11 @@ func 尝试记录时长卡缓存心跳(admin, card, needle string, now time.Time
 	if entry.已失效 {
 		return 时长卡表样式{}, 0, false, nil
 	}
-	if entry.管理员 != key.管理员 || entry.记录.Card != key.卡密 || entry.记录.Needle != needle {
-		return 时长卡表样式{}, 0, true, fmt.Errorf("needle验证失败，可能已在其他设备登录")
+	if entry.管理员 != key.管理员 || entry.记录.Card != key.卡密 || entry.记录.Needle == "" {
+		return 时长卡表样式{}, 0, true, fmt.Errorf("登录已失效!")
+	}
+	if entry.记录.Needle != needle {
+		return 时长卡表样式{}, 0, true, fmt.Errorf("卡密可能在别处登录!")
 	}
 	if entry.记录.CardState != 卡密状态_正常 || entry.记录.EndTime == nil || !entry.记录.EndTime.After(now) {
 		return 时长卡表样式{}, 0, false, nil
@@ -186,7 +189,7 @@ func 同步并删除时长卡心跳缓存(admin, card, expectedNeedle string) er
 	}
 	if expectedNeedle != "" && entry.记录.Needle != expectedNeedle {
 		entry.Unlock()
-		return fmt.Errorf("登录令牌与时长卡会话不匹配")
+		return fmt.Errorf("卡密可能在别处登录!")
 	}
 	syncErr := 同步时长卡心跳缓存条目(entry)
 	entry.已失效 = true

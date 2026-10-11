@@ -820,8 +820,13 @@ func durationCardPing(ctx *gin.Context) {
 		失败提示(ctx, "时长卡状态不正常")
 		return
 	}
-	if row.Needle == "" || row.Needle != needle {
-		失败提示(ctx, "needle验证失败，可能已在其他设备登录")
+	// 空凭证表示当前没有有效登录，与凭证被新登录替换分别提示。
+	if row.Needle == "" {
+		失败提示(ctx, "登录已失效!")
+		return
+	}
+	if row.Needle != needle {
+		失败提示(ctx, "卡密可能在别处登录!")
 		return
 	}
 	if row.EndTime == nil || !row.EndTime.After(now) {
