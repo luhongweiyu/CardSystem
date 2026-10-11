@@ -33,7 +33,7 @@ func 查询点卡登录设备(tx *gorm.DB, admin string, card string) ([]点卡�
 
 // 按缓存顺序逐个检查，不预先过滤整批。候选锁和被接手设备的心跳锁都保持到
 // 事务结束；提交后才消费候选，回滚则保留，避免并发登录重复接手或丢掉剩余授权。
-func 尝试复用点卡授权(tx *gorm.DB, 参数 点卡扣费参数, 当前会话 点卡设备会话, 续费周期秒 int64, 自动离线分钟 int64) (点卡设备会话, bool, func(bool), error) {
+func 尝试复用点卡授权(tx *gorm.DB, 参数 点卡扣费参数, 当前会话 点卡设备会话, 新凭证 string, 续费周期秒 int64, 自动离线分钟 int64) (点卡设备会话, bool, func(bool), error) {
 	候选缓存, err := 锁定点卡复用候选缓存(tx, 参数.Admin, 参数.Card)
 	if err != nil {
 		return 点卡设备会话{}, false, nil, err
@@ -82,7 +82,6 @@ func 尝试复用点卡授权(tx *gorm.DB, 参数 点卡扣费参数, 当前会�
 			候选缓存.Unlock()
 		}
 		由事务结束解锁 = true
-		新凭证 := GetRandomString(32, "a")
 		更新字段 := map[string]interface{}{
 			"device_id": 参数.DeviceID, "device_alias": 参数.DeviceAlias, "needle": 新凭证,
 			"renewal_period_seconds": 续费周期秒, "last_heartbeat_at": 当前时间, "forced_offline": false,

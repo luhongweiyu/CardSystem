@@ -145,7 +145,7 @@ func 保存点卡设备会话(tx *gorm.DB, session *点卡设备会话, alias st
 	return nil
 }
 
-func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64, deviceLimit int64) (点卡设备会话, bool, error) {
+func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, needle string, renewalPeriod int64, deviceLimit int64) (点卡设备会话, bool, error) {
 	session, found, err := 查询点卡设备会话按设备(tx, admin, card, deviceID, true)
 	if err != nil || found {
 		return session, found, err
@@ -159,14 +159,14 @@ func 获取或创建点卡设备会话(tx *gorm.DB, admin string, card string, s
 	if deviceCount >= deviceLimit {
 		return 点卡设备会话{}, false, fmt.Errorf("卡密授权设备已达到上限%d台", deviceLimit)
 	}
-	session, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, alias, renewalPeriod)
+	session, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, alias, needle, renewalPeriod)
 	return session, false, err
 }
 
-func 创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, renewalPeriod int64) (点卡设备会话, error) {
+func 创建点卡设备会话(tx *gorm.DB, admin string, card string, softwareID int, deviceID string, alias string, needle string, renewalPeriod int64) (点卡设备会话, error) {
 	now := time.Now()
 	session := 点卡设备会话{Admin: admin, Card: card, Software: softwareID, DeviceID: deviceID,
-		DeviceAlias: alias, Needle: GetRandomString(32, "a"), RenewalPeriodSeconds: renewalPeriod,
+		DeviceAlias: alias, Needle: needle, RenewalPeriodSeconds: renewalPeriod,
 		AuthorizedUntil: now, LastHeartbeatAt: now}
 	if err := tx.Table("point_device_session").Create(&session).Error; err != nil {
 		// 登录事务已先锁定卡密行，正常登录路径不会并发创建同一卡密设备；
@@ -254,17 +254,21 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		}
 		deviceLimit := 点卡实际设备上限(cardRow.MaxDevices, settings.PointCardMaxDevices)
 		允许复用 := 请求优先复用 && settings.PointCardReuseEnabled
+		// 每次登录只在此生成一次 needle，创建、重登和授权复用共用。
+		// 凭证随会话变更在同一事务中提交，失败回滚后保留原凭证。
+		登录令牌 := GetRandomString(32, "a")
 		var 当前会话 点卡设备会话
 		var 登录前已有会话 bool // 本次新建的会话不算已有会话，不能沿用其续费周期和起点。
 		if 允许复用 {
 			// 已有卡密行锁，不提前锁会话行，保持“候选缓存 -> 心跳缓存 -> 会话行”的顺序。
 			当前会话, 登录前已有会话, err = 查询点卡设备会话按设备(tx, admin, card, deviceID, false)
 		} else {
-			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 0, deviceLimit)
+			当前会话, 登录前已有会话, err = 获取或创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 登录令牌, 0, deviceLimit)
 		}
 		if err != nil {
 			return err
 		}
+		当前会话.Needle = 登录令牌
 		// 卡密行已锁定后再取时间，避免排队等待锁的旧请求
 		// 用较早时间覆盖已经完成的新心跳，导致在线推断窗口意外缩短。
 		now := time.Now()
@@ -292,10 +296,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 					period = settings.DefaultPeriodSeconds
 				}
 			}
-			if 当前会话.ForcedOffline {
-				当前会话.ForcedOffline = false
-				当前会话.Needle = GetRandomString(32, "a")
-			}
+			当前会话.ForcedOffline = false
 			if err := 保存点卡设备会话(tx, &当前会话, params.DeviceAlias, period, now); err != nil {
 				return err
 			}
@@ -307,7 +308,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		if 允许复用 {
 			var 复用成功 bool
 			var 接手会话 点卡设备会话
-			接手会话, 复用成功, 完成复用缓存变更, err = 尝试复用点卡授权(tx, params, 当前会话, period, settings.OnlineGraceMinutes)
+			接手会话, 复用成功, 完成复用缓存变更, err = 尝试复用点卡授权(tx, params, 当前会话, 登录令牌, period, settings.OnlineGraceMinutes)
 			if err != nil {
 				return err
 			}
@@ -326,7 +327,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			if 设备总数 >= deviceLimit {
 				return fmt.Errorf("卡密授权设备已达到上限%d台", deviceLimit)
 			}
-			当前会话, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, period)
+			当前会话, err = 创建点卡设备会话(tx, admin, card, softwareID, deviceID, params.DeviceAlias, 登录令牌, period)
 			if err != nil {
 				return err
 			}
@@ -357,13 +358,8 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 		当前会话.AuthorizedUntil = until
 		当前会话.RenewalPeriodSeconds = period
 		当前会话.LastHeartbeatAt = now
-		updates := map[string]interface{}{"authorized_until": until, "renewal_period_seconds": period, "last_heartbeat_at": now}
-		if 当前会话.ForcedOffline {
-			当前会话.ForcedOffline = false
-			当前会话.Needle = GetRandomString(32, "a")
-			updates["forced_offline"] = false
-			updates["needle"] = 当前会话.Needle
-		}
+		当前会话.ForcedOffline = false
+		updates := map[string]interface{}{"authorized_until": until, "renewal_period_seconds": period, "last_heartbeat_at": now, "forced_offline": false, "needle": 当前会话.Needle}
 		if params.DeviceAlias != "" {
 			updates["device_alias"] = params.DeviceAlias
 			当前会话.DeviceAlias = params.DeviceAlias
