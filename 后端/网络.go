@@ -232,6 +232,7 @@ func 启动网络() error {
 		admin.POST("/user_change_password", user_change_password)
 		admin.POST("/user_get_info", user_get_info)
 		admin.POST("/user_update_info", user_update_info)
+		admin.POST("/recharge/settings", 管理员_保存代理充值设置)
 		admin.POST("/point_card/list", 管理员_查询点卡卡密列表)
 		admin.POST("/point_card/create", 管理员_添加点卡卡密)
 		admin.POST("/point_card/delete", 管理员_删除点卡卡密)
@@ -277,6 +278,8 @@ func 启动网络() error {
 	agent := router.Group("/agent", 代理账号验证)
 	{
 		agent.POST("/user_login", 代理账号登录)
+		agent.POST("/recharge/info", 代理账号_查询充值设置)
+		agent.POST("/recharge/verify", 代理账号_自动充值)
 		agent.POST("/user_logout", user_logout)
 		agent.POST("/point_card/list", 代理账号_查询点卡卡密列表)
 		agent.POST("/point_card/create", 代理账号_添加点卡卡密)

@@ -20,6 +20,7 @@
       <el-link v-if="访客链接" :href="访客链接" target="_blank" type="success">卡密查询页</el-link>
       <span>{{ 是代理账号 ? '小伙伴' : '管理员' }}：{{ 账号 }}({{ 用户id }})</span>
       <span v-if="是代理账号">余额：{{ 账号信息.balance ?? 0 }} 点</span>
+      <RechargeDialog v-if="是代理账号" />
       <span v-else>本小时请求：{{ api次数 }}</span>
       <el-button type="danger" plain size="small" @click="退出登录">退出登录</el-button>
     </div>
@@ -31,6 +32,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import Cookies from 'js-cookie'
+import RechargeDialog from '../components/代理充值.vue'
 import { use登录状态Store } from '../stores/登录状态.js'
 
 const route = useRoute()

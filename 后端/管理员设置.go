@@ -23,6 +23,8 @@ type user_info struct {
 	Contact_information string
 	// 开发者公告
 	Notice string
+	// 自动充值配置沿用管理员设置表；不创建充值订单表。
+	Recharge 代理充值设置 `gorm:"embedded;embeddedPrefix:recharge_" json:"-"`
 }
 
 // user_info_创建与管理员主账号放在同一事务中，避免只创建其中一张表的数据。
@@ -46,6 +48,7 @@ type 管理员设置响应 struct {
 	ApiPassword        string `json:"api_password"`
 	ContactInformation string `json:"contact_information"`
 	Notice             string `json:"notice"`
+	Recharge           代理充值设置 `json:"recharge"`
 }
 
 // 设置文本校验保留用户输入的空格；公告允许换行，密码和联系方式不允许
@@ -79,7 +82,7 @@ func user_get_info(ctx *gin.Context) {
 	}
 	data := 管理员设置响应{
 		Name: current.Name, ApiSafe: current.Api_safe, ApiPasswordSet: current.Api_password != "", ApiPassword: current.Api_password,
-		ContactInformation: current.Contact_information, Notice: current.Notice,
+		ContactInformation: current.Contact_information, Notice: current.Notice, Recharge: current.Recharge,
 	}
 	ctx.JSON(http.StatusOK, gin.H{"state": true, "data": data})
 }

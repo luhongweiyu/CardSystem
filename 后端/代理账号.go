@@ -619,6 +619,34 @@ func 设置代理账号(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "修改成功"})
 }
 
+// 调整代理余额供手动调整和自动充值共用。调用方必须传入执行余额事务的 tx，
+// 账户行锁、余额更新、流水共同提交或回滚；零变动不写流水，统计由流水函数收集。
+func 调整代理余额(tx *gorm.DB, admin string, agentID int, amount int64, fields ...string) (int64, error) {
+	var account 代理账号记录
+	if err := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND admin = ?", agentID, admin).First(&account).Error; err != nil {
+		return 0, fmt.Errorf("渠道合伙人不存在")
+	}
+	if amount > 0 && account.Balance > math.MaxInt64-amount {
+		return 0, fmt.Errorf("充值后余额超出允许范围")
+	}
+	if amount < 0 && account.Balance < math.MinInt64-amount {
+		return 0, fmt.Errorf("充值后余额超出允许范围")
+	}
+	balance := account.Balance + amount
+	if amount == 0 {
+		return balance, nil
+	}
+	result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", agentID, admin).Update("balance", balance)
+	if result.Error != nil || result.RowsAffected != 1 {
+		return 0, fmt.Errorf("充值失败")
+	}
+	if err := 保存代理余额日志(tx, admin, agentID, amount, account.Balance, balance, fields...); err != nil {
+		return 0, err
+	}
+	return balance, nil
+}
+
 func 代理账号充值(ctx *gin.Context) {
 	var request struct {
 		ID     int    `json:"id"`
@@ -642,26 +670,10 @@ func 代理账号充值(ctx *gin.Context) {
 	}
 	var balance int64
 	err := 执行余额事务(func(tx *gorm.DB) error {
-		var account 代理账号记录
-		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", request.ID, parent.Name).First(&account)
-		if query.Error != nil {
-			return fmt.Errorf("渠道合伙人不存在")
-		}
-		if request.Amount > 0 && account.Balance > math.MaxInt64-request.Amount {
-			return fmt.Errorf("充值后余额超出允许范围")
-		}
-		if request.Amount < 0 && account.Balance < math.MinInt64-request.Amount {
-			return fmt.Errorf("充值后余额超出允许范围")
-		}
-		balance = account.Balance + request.Amount
-		if request.Amount == 0 {
-			return nil
-		}
-		if result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.ID, parent.Name).Update("balance", balance); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("充值失败")
-		}
-		return 保存代理余额日志(tx, parent.Name, account.ID, request.Amount, account.Balance, balance,
+		var err error
+		balance, err = 调整代理余额(tx, parent.Name, request.ID, request.Amount,
 			"操作:管理员调整余额", "操作人:管理员:"+parent.Name, "原因:管理员调整余额", "备注:"+request.Note)
+		return err
 	})
 	if err != nil {
 		失败提示管理端(ctx, err.Error())

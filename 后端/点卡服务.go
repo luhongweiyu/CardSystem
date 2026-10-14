@@ -281,7 +281,7 @@ func 记录点卡代扣日志(tx *gorm.DB, charge 点卡扣费结果, session �
 
 // 调整点卡余额供管理员补点或扣回点数。余额不能变成负数，且每次真实变更
 // 都会留下可追溯的流水记录。
-func 调整点卡余额(admin string, cardValue string, amount int64, reason string, clientIP string) (int64, error) {
+func 调整点卡余额(admin string, cardValue string, amount int64, reason string) (int64, error) {
 	if amount == 0 || amount < -最大单次点数 || amount > 最大单次点数 {
 		return 0, fmt.Errorf("单次调整点数必须在负%d至%d之间且不能为0", 最大单次点数, 最大单次点数)
 	}
@@ -296,9 +296,6 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 	}
 	if reason == "" {
 		reason = "管理员调整"
-	}
-	if len([]rune(clientIP)) > 64 {
-		clientIP = clientIP[:64]
 	}
 	tableName, err := 点卡数据表名(admin)
 	if err != nil {
@@ -332,11 +329,7 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		if result := tx.Table(tableName).Where("card = ?", card.Card).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
 			return fmt.Errorf("调整点卡余额失败")
 		}
-		remark := reason
-		if clientIP != "" {
-			remark += "；操作IP=" + clientIP
-		}
-		_, err := 保存点数流水(tx, admin, card.Card, card.Software, card.AgentID, amount, card.Point_balance, balance, remark, time.Now())
+		_, err := 保存点数流水(tx, admin, card.Card, card.Software, card.AgentID, amount, card.Point_balance, balance, reason, time.Now())
 		return err
 	})
 	if err != nil {

@@ -377,7 +377,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
-        <el-table-column prop="remark" label="备注（含设备信息）" min-width="330" show-overflow-tooltip />
+        <el-table-column prop="remark" label="备注（含设备信息）" :formatter="格式化流水备注" min-width="330" show-overflow-tooltip />
       </el-table>
       <el-pagination
         v-model:current-page="流水框.page"
@@ -413,6 +413,7 @@ import { use登录状态Store } from '../stores/登录状态.js'
 import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
 import ActivityRecords from '../components/活动记录.vue'
 import { 查找软件名称, 格式化代理归属, 格式化时间 } from '../utils/时长工具.js'
+import { 格式化流水备注 } from '../utils/日志工具.js'
 
 const router = useRouter()
 const 查看统计 = (row) => router.push({

@@ -71,6 +71,36 @@
       </el-col>
 
       <el-col :xs="24" :sm="12" :lg="8">
+        <InfoCard 标题="代理自动充值" 帮助="收款码必须对应核对服务的支付宝账户；核对成功时按当前倍率入账，小数部分向下取整。">
+          <el-form label-position="top" @submit.prevent>
+            <el-form-item label="自动充值">
+              <el-switch v-model="设置.recharge.enabled" />
+            </el-form-item>
+            <el-form-item label="收款码图片地址">
+              <el-input v-model="设置.recharge.qr_code" maxlength="1000" placeholder="https://… 或 /payment.png" />
+            </el-form-item>
+            <el-form-item label="收款查询接口地址">
+              <el-input v-model="设置.recharge.verify_url" maxlength="1000" placeholder="http://127.0.0.1:8080/verify" />
+            </el-form-item>
+            <el-form-item label="共享密钥">
+              <el-input v-model="设置.recharge.shared_secret" type="password" show-password maxlength="1000"
+                autocomplete="off" placeholder="与收款服务中的共享密钥一致" />
+            </el-form-item>
+            <el-form-item label="每支付1元增加的余额">
+              <el-input v-model="设置.recharge.rate" inputmode="decimal" maxlength="20" placeholder="例如：100，最多两位小数" />
+            </el-form-item>
+            <el-form-item label="起充金额（元）">
+              <el-input v-model="设置.recharge.min_amount" inputmode="decimal" maxlength="20" placeholder="默认0.01，最多两位小数" />
+            </el-form-item>
+            <el-form-item v-if="充值配置提示">
+              <el-alert :title="充值配置提示" type="warning" :closable="false" />
+            </el-form-item>
+            <el-button type="primary" :loading="加载中" @click="保存充值设置">保存充值设置</el-button>
+          </el-form>
+        </InfoCard>
+      </el-col>
+
+      <el-col :xs="24" :sm="12" :lg="8">
         <InfoCard 标题="修改登录密码" 帮助="修改成功后旧登录令牌立即失效，当前页面会自动换成新令牌。">
           <el-form label-position="top" @submit.prevent>
             <el-form-item label="当前密码">
@@ -109,7 +139,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import InfoCard from '../components/卡片.vue'
 import { use登录状态Store } from '../stores/登录状态.js'
@@ -123,7 +153,17 @@ const 设置 = reactive({
   notice: '',
   api_password: '',
   api_password_set: false,
-  api_safe: 0
+  api_safe: 0,
+  recharge: { enabled: false, qr_code: '', rate: '1', min_amount: '0.01', verify_url: '', shared_secret: '' }
+})
+// 缺少配置只提示补充，不阻止管理员保存开关。
+const 充值配置提示 = computed(() => {
+  if (!设置.recharge.enabled) return ''
+  const missing = []
+  if (!设置.recharge.qr_code?.trim()) missing.push('收款码图片地址')
+  if (!设置.recharge.verify_url?.trim()) missing.push('收款查询接口地址')
+  if (!设置.recharge.shared_secret) missing.push('共享密钥')
+  return missing.length ? `尚未填写：${missing.join('、')}。设置可以保存，补齐后才能正常充值。` : ''
 })
 const 密码表单 = reactive({ current: '', next: '', confirm: '' })
 
@@ -140,7 +180,8 @@ const 获取设置 = async function (onlyField = '') {
       // 管理端需要找回安全码以兼容旧客户端，因此回填当前 API 安全码。
       api_password: data.api_password || '',
       api_password_set: Boolean(data.api_password_set),
-      api_safe: Number(data.api_safe) ? 1 : 0
+      api_safe: Number(data.api_safe) ? 1 : 0,
+      recharge: { enabled: false, qr_code: '', rate: '1', min_amount: '0.01', verify_url: '', shared_secret: '', ...data.recharge }
     }
     // 单项保存只回填这一项，保留其他卡片尚未保存的输入。
     if (onlyField) {
@@ -171,6 +212,21 @@ const 上传设置 = async function (type, value) {
     if (!response.data?.state) throw new Error(response.data?.msg || '保存设置失败')
     ElMessage.success('保存成功')
     await 获取设置(type)
+  } catch (error) {
+    ElMessage.error(获取接口错误提示(error))
+  } finally {
+    加载中.value = false
+  }
+}
+
+const 保存充值设置 = async function () {
+  if (加载中.value) return
+  加载中.value = true
+  try {
+    const response = await post('/recharge/settings', { ...设置.recharge })
+    if (!response.data?.state) throw new Error(response.data?.msg || '保存充值设置失败')
+    ElMessage.success('保存成功')
+    await 获取设置('recharge')
   } catch (error) {
     ElMessage.error(获取接口错误提示(error))
   } finally {

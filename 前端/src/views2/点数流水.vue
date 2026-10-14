@@ -37,7 +37,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
-      <el-table-column prop="remark" label="备注（含设备信息）" min-width="360" show-overflow-tooltip />
+      <el-table-column prop="remark" label="备注（含设备信息）" :formatter="格式化流水备注" min-width="360" show-overflow-tooltip />
     </el-table>
     <el-pagination
       v-model:current-page="分页.page"
@@ -59,6 +59,7 @@ import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
+import { 格式化流水备注 } from '../utils/日志工具.js'
 import { 查找软件名称 } from '../utils/时长工具.js'
 
 const stores = use登录状态Store()

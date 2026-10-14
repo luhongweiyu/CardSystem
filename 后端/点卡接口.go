@@ -351,7 +351,7 @@ func 管理员_调整点卡余额(ctx *gin.Context) {
 		失败提示管理端(ctx, "登录状态错误")
 		return
 	}
-	balance, err := 调整点卡余额(account.Name, request.Card, request.Amount, request.Reason, ctx.ClientIP())
+	balance, err := 调整点卡余额(account.Name, request.Card, request.Amount, request.Reason)
 	if err != nil {
 		失败提示管理端(ctx, err.Error())
 		return

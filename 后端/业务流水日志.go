@@ -123,6 +123,20 @@ func 查询业务日志(ctx *gin.Context, adminID, agentID int) {
 		失败提示管理端(ctx, "查询日志失败")
 		return
 	}
+	// 旧充值流水可能带订单尾号，查询时去掉该字段，不改写历史数据库记录。
+	for i := range rows {
+		if rows[i].Type != 业务日志类型_代理余额 {
+			continue
+		}
+		fields := strings.Split(rows[i].Log, "\t")
+		visible := fields[:0]
+		for _, field := range fields {
+			if !strings.HasPrefix(field, "订单尾号:") {
+				visible = append(visible, field)
+			}
+		}
+		rows[i].Log = strings.Join(visible, "\t")
+	}
 	成功提示管理端(ctx, gin.H{"data": rows, "num": total, "page": page, "page_size": pageSize})
 }
 

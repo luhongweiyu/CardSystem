@@ -210,7 +210,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="balance_after" label="变动后余额" width="110" align="right" />
-        <el-table-column prop="remark" label="备注（含设备信息）" min-width="340" show-overflow-tooltip />
+        <el-table-column prop="remark" label="备注（含设备信息）" :formatter="格式化流水备注" min-width="340" show-overflow-tooltip />
       </el-table>
       <el-pagination
         v-model:current-page="流水框.page"
@@ -246,6 +246,7 @@ import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiClient, { 获取接口错误提示, 规范化卡密 } from './api/请求客户端.js'
 import { 格式化时间, 格式化时长 as 时长文本 } from './utils/时长工具.js'
+import { 格式化流水备注 } from './utils/日志工具.js'
 import ActivityRecords from './components/活动记录.vue'
 
 const centerID = new URLSearchParams(window.location.search).get('center_id') || ''

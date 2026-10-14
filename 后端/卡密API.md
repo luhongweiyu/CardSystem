@@ -74,6 +74,15 @@
 
 代理只能查询自己生成的卡及流水：`POST /agent/point_card/ledger`。点卡列表支持按 `card`、`software`、`point_balance`、`card_state`、`create_time`、`use_time` 排序。
 
+### 代理自动充值
+
+- `POST /admin/recharge/settings`：保存 `enabled`（布尔）、`qr_code`（收款码图片地址）、`rate`（每支付1元增加的余额，正数文本、最多两位小数）、`verify_url`（完整HTTP(S)核对接口地址）、`shared_secret`（共享密钥）。配置随 `/admin/user_get_info` 的 `data.recharge` 返回。地址和密钥允许留空，留空会清除原配置；开关保存不依赖配置齐全或服务在线，实际充值时才检查配置和调用服务。
+- `/admin/recharge/settings` 另支持 `min_amount`（起充金额，单位元，正数文本、最多两位小数，默认及省略或留空时均为 `0.01`）。设置随 `data.recharge` 返回。
+- `POST /agent/recharge/info`：返回 `enabled`、`qr_code`、`min_amount`，不返回倍率、查询地址或共享密钥。以上接口沿用管理员或代理登录认证。
+- `POST /agent/recharge/verify`：提交 `amount`（元，正数文本、最多两位小数）和 `suffix`（支付宝订单号后6位数字文本，保留前导零）。身份由登录状态取得，不能指定充值对象或到账余额。
+- 核对成功后读取服务器当前倍率，到账余额向下取整。成功返回 `state: true`、`balance`、`credited`（后两项为整数文本）；本次未确认返回 `state: false`、`msg`，收款服务返回冷却时另有 `cooldown`（秒）。冷却期间仍可核对收款服务已有缓存。
+- 付款低于起充金额、到账不足1或溢出的金额在核对前拒绝；核对期间倍率变化以成功后的服务器配置为准。余额和流水共同提交或回滚；已认领但入账失败、网络结果不明时联系管理员人工处理，无自动重试或补偿。
+
 ### 余额统计
 
 - `POST /admin/balance_stats`、`POST /agent/balance_stats`：使用后台账号令牌查询增加、扣除总额和曲线；代理范围由登录态限定。

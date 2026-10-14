@@ -30,7 +30,7 @@ export const use登录状态Store = defineStore('登录状态', () => {
   const 账号字段版本 = {}
 
   // 每次请求复制业务参数，避免向页面中的响应式表单对象写入账号或令牌字段。
-  const post = function (链接, 参数) {
+  const post = function (链接, 参数, timeout = 15000) {
     const 请求参数 = { ...(参数 || {}) }
     if (!Object.prototype.hasOwnProperty.call(请求参数, 'name') && 账号.value) {
       请求参数.name = 账号.value
@@ -43,7 +43,7 @@ export const use登录状态Store = defineStore('登录状态', () => {
     const requestVersion = 公共缓存版本
     const sequence = ++请求序号
     const agent = 是代理账号.value
-    return apiClient.post(前缀 + 链接, 请求参数).then((response) => {
+    return apiClient.post(前缀 + 链接, 请求参数, { timeout }).then((response) => {
       // 只清理发出此请求的会话，避免旧请求的失败响应踢掉刚登录的新账号。
       if (token.value === 请求参数.token && requestVersion === 公共缓存版本 &&
           response.data?.state === false &&
