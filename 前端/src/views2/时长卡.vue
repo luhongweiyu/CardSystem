@@ -36,6 +36,7 @@
           <el-button size="small" type="success" :disabled="!已选.length" @click="批量修改状态(2)">解冻</el-button>
           <el-button size="small" type="danger" :disabled="!已选.length" @click="批量删除">删除</el-button>
           <el-button size="small" type="success" :disabled="!已选.length" @click="打开续费">批量续费</el-button>
+          <ChangeCardOwner v-if="!是代理账号" :cards="已选" kind="duration_card" @changed="查询列表(false)" />
           <el-button size="small" :disabled="!列表.length" @click="导出当前页">导出当前页</el-button>
         </div>
       </div>
@@ -250,6 +251,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import DeleteCardConfirm from '../components/删除卡密确认.vue'
+import ChangeCardOwner from '../components/修改卡密归属.vue'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
 import ActivityRecords from '../components/活动记录.vue'

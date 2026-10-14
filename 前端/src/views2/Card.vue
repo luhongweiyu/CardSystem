@@ -59,6 +59,7 @@
             解冻
           </el-button>
           <el-button size="small" type="danger" :disabled="!已选点卡卡密.length" @click="批量删除">删除</el-button>
+          <ChangeCardOwner v-if="!是代理账号" :cards="已选点卡卡密" kind="point_card" @changed="查询点卡卡密(false)" />
           <el-button v-if="是代理账号" size="small" :disabled="!已选点卡卡密.length" @click="打开批量代扣">设置账户代扣</el-button>
           <el-button size="small" :disabled="!点卡卡密列表.length" @click="导出当前页">导出当前页</el-button>
         </div>
@@ -408,6 +409,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import DeleteCardConfirm from '../components/删除卡密确认.vue'
+import ChangeCardOwner from '../components/修改卡密归属.vue'
 import { useRouter } from 'vue-router'
 import { use登录状态Store } from '../stores/登录状态.js'
 import apiClient, { 获取接口错误提示 } from '../api/请求客户端.js'
