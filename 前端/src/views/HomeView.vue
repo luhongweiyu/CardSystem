@@ -1,32 +1,5 @@
 <template>
   <section class="导航页">
-    <div class="欢迎区">
-      <div class="欢迎内容">
-        <div class="产品标识">
-          <span class="产品图标"><el-icon><Postcard /></el-icon></span>
-          <span>卡密管理工作台</span>
-        </div>
-        <h1>{{ 是代理账号 ? '小伙伴工作台' : '卡密管理工作台' }}</h1>
-        <p>
-          {{
-            是代理账号
-              ? '从这里管理名下点卡、查看接入方式和运行记录。'
-              : '从这里快速进入点卡、时长卡、软件计费和系统设置。'
-          }}
-        </p>
-      </div>
-
-      <div class="账号摘要">
-        <el-avatar class="账号头像" :size="46">
-          <el-icon><UserFilled /></el-icon>
-        </el-avatar>
-        <div>
-          <span>{{ 是代理账号 ? '小伙伴账号' : '管理员账号' }}</span>
-          <strong>{{ 账号 || '未命名账号' }}</strong>
-        </div>
-      </div>
-    </div>
-
     <div class="概览区">
       <div class="概览项">
         <span class="概览标签">当前身份</span>
@@ -81,7 +54,7 @@ import { use登录状态Store } from '../stores/登录状态.js'
 
 const router = useRouter()
 const stores = use登录状态Store()
-const { 账号, api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
+const { api次数, 是代理账号, 账号信息 } = storeToRefs(stores)
 
 const 功能菜单 = computed(() => {
   const 通用入口 = [
@@ -119,116 +92,9 @@ const 前往 = function (path) {
   color: #e6eaf2;
 }
 
-.欢迎区 {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  max-width: 1180px;
-  margin: 0 auto 14px;
-  padding: clamp(20px, 3vw, 30px);
-  overflow: hidden;
-  border: 1px solid rgba(130, 156, 201, 0.25);
-  border-radius: 20px;
-  background: linear-gradient(135deg, rgba(46, 62, 88, 0.86), rgba(31, 37, 49, 0.86));
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
-}
-
-.欢迎区::after {
-  position: absolute;
-  right: -90px;
-  bottom: -135px;
-  width: 300px;
-  height: 300px;
-  border: 1px solid rgba(116, 170, 255, 0.18);
-  border-radius: 50%;
-  box-shadow: 0 0 0 28px rgba(116, 170, 255, 0.04), 0 0 0 58px rgba(116, 170, 255, 0.025);
-  content: '';
-  pointer-events: none;
-}
-
-.欢迎内容,
-.账号摘要 {
-  position: relative;
-  z-index: 1;
-}
-
-.产品标识 {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #a9c8f5;
-  font-size: 13px;
-  letter-spacing: 0.08em;
-}
-
-.产品图标 {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 27px;
-  height: 27px;
-  border-radius: 8px;
-  color: #fff;
-  background: #4b8fe8;
-}
-
-h1,
 h2,
 p {
   margin: 0;
-}
-
-h1 {
-  margin-top: 9px;
-  color: #fff;
-  font-size: clamp(26px, 4vw, 38px);
-  line-height: 1.2;
-}
-
-.欢迎内容 p {
-  max-width: 620px;
-  margin-top: 8px;
-  color: #bdc8d8;
-  line-height: 1.8;
-}
-
-.账号摘要 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 180px;
-  padding: 10px 14px;
-  border: 1px solid rgba(174, 198, 232, 0.18);
-  border-radius: 13px;
-  background: rgba(13, 18, 27, 0.72);
-}
-
-.账号头像 {
-  flex: none;
-  color: #dceaff;
-  background: #386ba9;
-}
-
-.账号摘要 div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 2px;
-}
-
-.账号摘要 span {
-  color: #aab8cd;
-  font-size: 12px;
-}
-
-.账号摘要 strong {
-  overflow: hidden;
-  color: #fff;
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .概览区 {
@@ -388,15 +254,6 @@ h1 {
 }
 
 @media (max-width: 850px) {
-  .欢迎区 {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .账号摘要 {
-    align-self: flex-start;
-  }
-
   .功能网格 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -405,11 +262,6 @@ h1 {
 @media (max-width: 600px) {
   .导航页 {
     padding: 16px;
-  }
-
-  .欢迎区 {
-    padding: 20px 18px;
-    border-radius: 16px;
   }
 
   .概览区,

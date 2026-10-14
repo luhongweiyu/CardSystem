@@ -542,7 +542,7 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 	now := time.Now()
 	var result 代理生成时长卡结果
 	var fields []string
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
 			return err

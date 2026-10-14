@@ -899,6 +899,9 @@ func 创建点卡并记录初始流水(tx *gorm.DB, tableName string, admin stri
 		if err := tx.Table("point_ledger").CreateInBatches(&ledgers, 500).Error; err != nil {
 			return fmt.Errorf("写入初始点数流水失败")
 		}
+		for _, card := range cards {
+			暂存余额统计(tx, admin, "point", agentID, softwareID, card, points, now)
+		}
 	}
 	return nil
 }
@@ -911,7 +914,7 @@ func 生成并保存点卡卡密(admin string, agentID int, softwareID int, poin
 	if err != nil {
 		return nil, err
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		if err := 锁定发卡软件(tx, admin, softwareID); err != nil {
 			return err
 		}

@@ -1,6 +1,5 @@
 <template>
   <section class="页面">
-    <h2>操作日志</h2>
     <BusinessLogViewer :query="查询日志" :show-agent="!stores.是代理账号" :agents="代理列表" />
   </section>
 </template>

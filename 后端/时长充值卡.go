@@ -207,7 +207,7 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 		fmt.Sprintf("软件:%d", normalized.Software), "时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
 		fmt.Sprintf("每张次数:%d", normalized.Uses), fmt.Sprintf("数量:%d", len(cards)), "成功卡密:" + strings.Join(cards, ","),
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
 			return err

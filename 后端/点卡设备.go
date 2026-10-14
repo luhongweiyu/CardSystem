@@ -226,7 +226,7 @@ func 点卡登录并扣费(admin string, card string, deviceID string, deviceAli
 			完成复用缓存变更(false)
 		}
 	}()
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		var cardRow 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
@@ -424,7 +424,7 @@ func 点卡设备心跳(admin string, card string, needle string, deviceID strin
 		return result, err
 	}
 	var terminalErr error
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		var cardRow 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", card).First(&cardRow)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
@@ -645,7 +645,7 @@ func 结算过期点卡会话(sessionID uint64, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		var card 点卡表样式
 		cardQuery := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", hint.Card).First(&card)
 		if errors.Is(cardQuery.Error, gorm.ErrRecordNotFound) {

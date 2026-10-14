@@ -163,7 +163,7 @@ func 生成扣点备注(params 点卡扣费参数, period int64) string {
 
 // 保存点数流水必须和余额更新在同一事务中调用。
 // 调用方负责跳过零变动并保证点卡余额非负；这里只校验流水金额一致性。
-func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID int, change int64, before int64, after int64, remark string, now time.Time) (点数流水, error) {
+func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID, agentID int, change int64, before int64, after int64, remark string, now time.Time) (点数流水, error) {
 	if after-before != change {
 		return 点数流水{}, fmt.Errorf("流水余额变动不一致")
 	}
@@ -175,6 +175,7 @@ func 保存点数流水(tx *gorm.DB, admin string, card string, softwareID int, 
 	if err := tx.Table("point_ledger").Create(&流水).Error; err != nil {
 		return 点数流水{}, fmt.Errorf("保存点数流水失败")
 	}
+	暂存余额统计(tx, admin, "point", agentID, softwareID, card, change, now)
 	return 流水, nil
 }
 
@@ -215,7 +216,7 @@ func 扣除点数事务(tx *gorm.DB, tableName string, card *点卡表样式, pa
 	params.CardCharged, params.AgentCharged = cardCharged, agentCharged
 	var ledgerID uint64
 	if cardCharged > 0 {
-		流水, err := 保存点数流水(tx, params.Admin, card.Card, card.Software, -cardCharged, card.Point_balance, after, 生成扣点备注(params, period), now)
+		流水, err := 保存点数流水(tx, params.Admin, card.Card, card.Software, card.AgentID, -cardCharged, card.Point_balance, after, 生成扣点备注(params, period), now)
 		if err != nil {
 			return 点卡扣费结果{}, err
 		}
@@ -304,7 +305,7 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		return 0, err
 	}
 	var balance int64
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		var card 点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card = ?", cardValue).First(&card)
 		if errors.Is(query.Error, gorm.ErrRecordNotFound) {
@@ -335,7 +336,7 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		if clientIP != "" {
 			remark += "；操作IP=" + clientIP
 		}
-		_, err := 保存点数流水(tx, admin, card.Card, card.Software, amount, card.Point_balance, balance, remark, time.Now())
+		_, err := 保存点数流水(tx, admin, card.Card, card.Software, card.AgentID, amount, card.Point_balance, balance, remark, time.Now())
 		return err
 	})
 	if err != nil {

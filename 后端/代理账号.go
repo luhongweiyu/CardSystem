@@ -344,7 +344,7 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 		fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("数量:%d", len(cards)),
 		fmt.Sprintf("点数:%d", request.Points), "成功卡密:" + strings.Join(cards, ","),
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		var current 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", account.ID, account.Admin).First(&current)
 		if query.Error != nil {
@@ -641,7 +641,7 @@ func 代理账号充值(ctx *gin.Context) {
 		return
 	}
 	var balance int64
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := 执行余额事务(func(tx *gorm.DB) error {
 		var account 代理账号记录
 		query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", request.ID, parent.Name).First(&account)
 		if query.Error != nil {

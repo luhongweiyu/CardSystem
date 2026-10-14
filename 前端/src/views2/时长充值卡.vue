@@ -1,13 +1,5 @@
 <template>
-  <section class="页面" v-loading="加载中">
-    <div class="标题行">
-      <div>
-        <h2>时长充值卡</h2>
-        <p class="说明">充值卡不能登录，只能给同软件的已激活或已暂停时长卡增加时长。</p>
-      </div>
-      <el-button type="primary" @click="打开生成">生成充值卡</el-button>
-    </div>
-
+  <section class="页面 卡密页面" v-loading="加载中">
     <el-card shadow="never" class="筛选卡片">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="软件">
@@ -29,10 +21,17 @@
           <el-button @click="重置筛选">重置</el-button>
         </el-form-item>
       </el-form>
-      <div class="提示行">当前账号：{{ 是代理账号 ? '小伙伴' : '管理员' }}；充值卡使用后会扣减剩余次数，不能恢复。</div>
+      <div class="表格操作栏">
+        <el-button class="生成按钮" type="primary" @click="打开生成">生成充值卡</el-button>
+        <div class="批量操作">
+          <span>已选 {{ 已选.length }} 张</span>
+          <el-button size="small" type="danger" :disabled="!已选.length" @click="批量删除">删除</el-button>
+        </div>
+      </div>
     </el-card>
 
-    <el-table :data="列表" border stripe row-key="card">
+    <el-table :data="列表" border stripe row-key="card" @selection-change="选择变化">
+      <el-table-column type="selection" width="44" />
       <el-table-column prop="card" label="卡密" min-width="190" show-overflow-tooltip />
       <el-table-column prop="software" label="软件" width="150" show-overflow-tooltip>
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
@@ -57,11 +56,10 @@
         <template #default="scope">{{ 格式化时间(scope.row.create_time) }}</template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="190" fixed="right">
+      <el-table-column label="操作" width="88" fixed="right" class-name="卡密操作列">
         <template #default="scope">
-          <el-button link type="primary" @click="查看详情(scope.row)">详情</el-button>
-          <el-button link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
-          <el-button link type="danger" @click="删除单张(scope.row)">删除</el-button>
+          <el-button size="small" link type="primary" @click="查看详情(scope.row)">详情</el-button>
+          <el-button size="small" link type="warning" @click="打开编辑(scope.row)">编辑</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -167,13 +165,23 @@
         </el-descriptions-item>
       </el-descriptions>
     </el-dialog>
+    <DeleteCardConfirm
+      v-model="删除框.显示"
+      :rows="删除框.rows"
+      :columns="删除列"
+      :加载中="删除框.加载中"
+      卡片名称="充值卡"
+      说明="显示的是列表中的卡片信息，请核对卡密、状态和备注。已消耗的充值次数不会恢复。"
+      @confirm="确认删除"
+    />
   </section>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
+import DeleteCardConfirm from '../components/删除卡密确认.vue'
 import { use登录状态Store } from '../stores/登录状态.js'
 import { 获取接口错误提示 } from '../api/请求客户端.js'
 import DurationInput from '../components/时长输入.vue'
@@ -194,6 +202,8 @@ const { 软件列表, 代理列表, 代理时长价格列表: 代理价格列表
 const 是代理账号 = computed(() => Boolean(stores.是代理账号))
 const 加载中 = ref(false)
 const 列表 = ref([])
+const 已选 = ref([])
+const 选择变化 = (rows) => { 已选.value = rows.map((row) => row.card) }
 const 生成结果 = ref('')
 const 筛选 = reactive({ software: '', card_state: '', card: '' })
 const 分页 = reactive({ page: 1, page_size: 50, total: 0 })
@@ -251,6 +261,7 @@ const 查询列表 = (resetPage = false) => {
     .then((res) => {
       if (!res.data?.state) throw new Error(res.data?.msg || '查询充值卡失败')
       列表.value = res.data.data || []
+      已选.value = []
       分页.total = Number(res.data.num || 0)
     })
     .catch(显示错误)
@@ -337,14 +348,42 @@ const 查看详情 = (row) => {
     .catch(显示错误)
     .finally(() => { 详情框.加载中 = false })
 }
-const 删除单张 = (row) => ElMessageBox.confirm(`确定删除时长充值卡“${row.card}”？已消耗的充值记录不会恢复。`, '确认删除', { type: 'warning' })
-  .then(() => post('/duration_recharge_card/delete', { cards: [row.card] }))
-  .then((res) => {
+const 删除框 = reactive({ 显示: false, 加载中: false, rows: [] })
+const 删除列 = computed(() => [
+  { label: '卡密', minWidth: 190, text: (row) => row.card },
+  { label: '软件', width: 150, text: (row) => 软件名称(row.software) },
+  ...(!是代理账号.value ? [{ label: '归属代理', width: 140, text: (row) => 代理名称(row.agent_id) }] : []),
+  { label: '每次增加', width: 115, text: (row) => 时长文本(row.duration_minutes) },
+  { label: '初始次数', width: 90, text: (row) => row.initial_uses },
+  { label: '剩余次数', width: 90, text: (row) => row.remaining_uses },
+  { label: '状态', width: 95, text: (row) => 状态文本(row) },
+  { label: '有效期', width: 180, text: (row) => 格式化时间(row.expires_at) || '长期有效' },
+  { label: '生成时间', width: 175, text: (row) => 格式化时间(row.create_time) },
+  { label: '备注', minWidth: 160, text: (row) => row.notes }
+])
+const 批量删除 = () => {
+  if (!已选.value.length || 删除框.加载中) return
+  // 固定本次卡片及顺序，确认和提交均使用同一份快照，避免列表刷新后删错卡。
+  const cards = new Set(已选.value)
+  删除框.rows = 列表.value.filter((row) => cards.has(row.card)).map((row) => ({ ...row }))
+  删除框.显示 = 删除框.rows.length > 0
+}
+const 确认删除 = async () => {
+  if (删除框.加载中 || !删除框.rows.length) return
+  删除框.加载中 = true
+  try {
+    const res = await post('/duration_recharge_card/delete', { cards: 删除框.rows.map((row) => row.card) })
     if (!res.data?.state) throw new Error(res.data?.msg || '删除失败')
-    ElMessage.success(res.data.msg || '删除成功')
-    查询列表(false)
-  })
-  .catch((error) => { if (error !== 'cancel' && error !== 'close') 显示错误(error) })
+    ElMessage.success(res.data.msg || '删除完成')
+    删除框.显示 = false
+    await 查询列表(false)
+  } catch (error) {
+    显示错误(error)
+  } finally {
+    删除框.加载中 = false
+  }
+}
+
 const 复制文本 = async (value) => {
   try {
     await navigator.clipboard.writeText(value || '')
@@ -361,11 +400,7 @@ onMounted(() => {
 
 <style scoped>
 .页面 { padding: 16px; color: #e6eaf2; }
-.标题行 { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-h2 { margin: 0 0 6px; }
-.说明 { margin: 0; color: #aeb6c3; font-size: 13px; }
 .筛选卡片 { margin-bottom: 14px; }
-.提示行 { color: #8f9bad; font-size: 12px; }
 .分页 { justify-content: flex-end; margin-top: 16px; }
 .页面 :deep(.el-table .cell) { white-space: nowrap; word-break: normal; }
 .单位 { margin-left: 8px; color: #8c98aa; font-size: 12px; }

@@ -85,7 +85,11 @@ func 保存代理余额日志(tx *gorm.DB, admin string, agentID int, change, be
 	}
 	// 日志只展示变更后余额；变动前余额可由上一条余额日志推导，避免重复占用展示空间。
 	allFields := append([]string{fmt.Sprintf("余额:%d", after), fmt.Sprintf("变更:%+d", change)}, fields...)
-	return 保存业务日志(tx, admin, agentID, 业务日志类型_代理余额, allFields...)
+	if err := 保存业务日志(tx, admin, agentID, 业务日志类型_代理余额, allFields...); err != nil {
+		return err
+	}
+	暂存余额统计(tx, admin, "agent", agentID, 0, "", change, time.Now())
+	return nil
 }
 
 // adminID、agentID 由认证和归属校验决定，不能使用客户端参数替换租户范围。

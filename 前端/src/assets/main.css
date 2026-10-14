@@ -27,13 +27,6 @@ html.dark body .el-card:not(.登录卡片) {
   --el-card-bg-color: rgba(24, 28, 36, 0.86);
 }
 
-html.dark body .内容 > .页面 > .页面标题行 {
-  padding: 10px 14px;
-  border: 1px solid rgba(160, 174, 192, 0.24);
-  border-radius: 6px;
-  background: rgba(24, 28, 36, 0.84);
-}
-
 /* 全站表格统一使用深色半透明底，保持文字对比度并透出页面背景。 */
 html.dark .el-table {
   --el-table-bg-color: rgba(24, 28, 36, 0.84);
@@ -99,7 +92,25 @@ textarea {
   .el-dialog .el-form-item__content {
     margin-left: 0 !important;
   }
-  .页面标题行, .标题行, .批量操作, .操作行 {
+  .批量操作, .操作行 {
     flex-wrap: wrap;
   }
 }
+
+/* 后台筛选与操作分行：查询紧邻条件，生成是操作行第一个按钮。 */
+.内容 > .卡密页面 { padding: 12px; }
+.内容 .筛选卡片 { --el-card-padding: 12px; margin-bottom: 10px; }
+.内容 .筛选卡片 .el-form--inline { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.内容 .筛选卡片 .el-form-item { margin: 0; max-width: 100%; }
+.内容 .筛选卡片 .el-form-item__content { min-width: 0; }
+.内容 .筛选卡片 .el-input, .内容 .筛选卡片 .el-select { max-width: 100%; }
+.内容 .表格操作栏 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
+.内容 .批量操作 { display: flex; flex-wrap: wrap; gap: 8px; }
+.内容 .批量操作 .el-button + .el-button { margin-left: 0; }
+.内容 .生成按钮 { flex: none; }
+.内容 .页面操作栏 { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
+
+/* 仅收紧卡密主表操作列，保留按钮高度和少量横向点击空间。 */
+.内容 .卡密操作列 .cell { padding: 0 4px; }
+.内容 .卡密操作列 .el-button.is-link { padding: 4px 2px; min-height: 28px; }
+.内容 .卡密操作列 .el-button + .el-button { margin-left: 4px; }

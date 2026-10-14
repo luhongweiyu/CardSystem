@@ -1,10 +1,6 @@
 <template>
   <section class="页面" v-loading="加载中">
-    <div class="页面标题行">
-      <div>
-        <h2>{{ 是代理账号 ? '软件设置' : '软件管理' }}</h2>
-        <p class="说明">{{ 是代理账号 ? '查看管理员配置的软件和时长卡价格，设置自己的点卡代扣总开关。' : '客户端按分钟选择授权时长，实际扣点价格始终由服务端决定。' }}</p>
-      </div>
+    <div class="页面操作栏">
       <div>
         <el-button :loading="加载中" :disabled="代理代扣.保存中" @click="刷新页面">刷新</el-button>
         <el-button v-if="!是代理账号" type="primary" @click="打开软件编辑">新增软件</el-button>
@@ -1226,7 +1222,6 @@ onMounted(() => {
   padding: 16px;
   color: #e6eaf2;
 }
-.页面标题行,
 .子标题行,
 .价格标题 {
   display: flex;
@@ -1234,7 +1229,6 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
 }
-h2,
 h3 {
   margin: 0 0 6px;
 }

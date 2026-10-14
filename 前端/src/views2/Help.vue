@@ -1,8 +1,5 @@
 <template>
   <section class="页面">
-    <h2>接入帮助</h2>
-    <p class="说明">下面只列出客户接入和管理员自动化会用到的接口；展开接口即可查看参数和返回值。</p>
-
     <el-card shadow="never" class="说明卡片">
       <h3>通用返回与签名</h3>
       <p class="接口文字">成功响应包含 <code>state: true</code>、<code>code: 1</code> 和业务字段；失败响应包含 <code>state: false</code>、<code>code: 0</code>、<code>msg</code>。</p>

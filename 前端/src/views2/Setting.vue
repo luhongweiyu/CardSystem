@@ -1,10 +1,6 @@
 <template>
   <section class="页面" v-loading="加载中">
-    <div class="标题行">
-      <div>
-        <h2>账号设置</h2>
-        <p class="说明">管理联系方式、公告和接口安全选项。</p>
-      </div>
+    <div class="页面操作栏">
       <el-button :loading="加载中" @click="获取设置()">刷新设置</el-button>
     </div>
 
@@ -248,24 +244,6 @@ onMounted(() => 获取设置())
   color: #e6eaf2;
 }
 
-.标题行 {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-h2 {
-  margin: 0 0 6px;
-}
-
-.说明 {
-  margin: 0;
-  color: #aeb6c3;
-  font-size: 13px;
-}
-
 .保存按钮 {
   display: block;
   margin-top: 12px;
@@ -281,10 +259,6 @@ h2 {
 @media (max-width: 600px) {
   .页面 {
     padding: 10px;
-  }
-
-  .标题行 {
-    align-items: flex-start;
   }
 }
 </style>

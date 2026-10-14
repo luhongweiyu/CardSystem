@@ -309,7 +309,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 	success := make([]string, 0, len(validCards))
 	charge, balance := int64(0), account.Balance
 	var fields []string
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = 执行余额事务(func(tx *gorm.DB) error {
 		current, err := 锁定时长卡代理账号(tx, account.Admin, account.ID)
 		if err != nil {
 			return err

@@ -1,11 +1,5 @@
 <template>
   <section class="页面" v-loading="加载中">
-    <div class="标题行">
-      <div>
-        <h2>点数流水</h2>
-        <p class="说明">每一行代表一次真实余额变动；设备 ID 和别名保存在备注快照中。</p>
-      </div>
-    </div>
     <el-card shadow="never" class="筛选卡片">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="软件">
@@ -105,18 +99,6 @@ onMounted(() => {
 .页面 {
   padding: 16px;
   color: #e6eaf2;
-}
-.标题行 {
-  display: flex;
-  justify-content: space-between;
-}
-h2 {
-  margin: 0 0 6px;
-}
-.说明 {
-  margin: 0 0 12px;
-  color: #aeb6c3;
-  font-size: 13px;
 }
 .筛选卡片 {
   margin-bottom: 12px;

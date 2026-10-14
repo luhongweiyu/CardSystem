@@ -74,6 +74,15 @@
 
 代理只能查询自己生成的卡及流水：`POST /agent/point_card/ledger`。点卡列表支持按 `card`、`software`、`point_balance`、`card_state`、`create_time`、`use_time` 排序。
 
+### 余额统计
+
+- `POST /admin/balance_stats`、`POST /agent/balance_stats`：使用后台账号令牌查询增加、扣除总额和曲线；代理范围由登录态限定。
+- JSON 参数：`kind` 为 `point`（卡内点数）或 `agent`（代理账户余额）；`start_date`、`end_date` 为北京时间日期 `YYYY-MM-DD`，包含结束当天；`granularity` 为 `hour` 或 `day`。每次最多366天，小时曲线最多31天。
+- 可选 `software`、`card`（完整卡密）仅用于点卡统计；管理员可指定 `agent_id`，省略或0表示全部代理及管理员自有点卡。代理提交的 `agent_id` 不改变自身权限范围。
+- 成功响应 `data` 包含 `increase`、`decrease`、`started_at`（首次启用的 Unix 秒时间戳）及 `trend`。每个曲线点包含 `time`（时段起始 Unix 秒时间戳）、`increase`、`decrease`。金额均为非负十进制整数字符串，避免大整数精度损失。
+- 增加包括生成点卡的初始点数和手工补点，扣除包括真实扣费和手工扣点。点卡只统计卡内余额变化，代理代扣单独计入代理账户，两个对象的单位不可混加。
+- 仅统计首次启用后的变动，不补算旧流水。正常情况下约延迟一分钟，查询结果缓存30秒；保存失败或进程退出时，尚未落库的统计可能丢失，仅供趋势参考。统计长期保留，按变动时归属筛选；删除并重用同名卡密时，相同筛选范围内的历史统计会合并展示。启用前及未来时段不补零，启用当日只包含启用后的数据。
+
 ### 操作日志
 
 - `POST /admin/query_log`、`POST /agent/query_log`：读取当前账号的操作日志。
