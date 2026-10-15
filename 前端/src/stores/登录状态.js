@@ -98,7 +98,7 @@ export const use登录状态Store = defineStore('登录状态', () => {
     const requestVersion = 公共缓存版本
     const request = post('/查询代理账号', {})
       .then((response) => {
-        if (!response.data?.state) throw new Error(response.data?.msg || '查询代理账号失败')
+        if (!response.data?.state) throw new Error(response.data?.msg || '查询小伙伴账号失败')
         if (requestVersion !== 公共缓存版本 || 代理列表请求 !== request) return 代理列表.value
         代理列表.value = response.data.data || []
         代理列表已加载.value = true

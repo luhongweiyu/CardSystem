@@ -71,7 +71,7 @@
       </el-col>
 
       <el-col :xs="24" :sm="12" :lg="8">
-        <InfoCard 标题="代理自动充值" 帮助="收款码必须对应核对服务的支付宝账户；核对成功时按当前倍率入账，小数部分向下取整。">
+        <InfoCard 标题="自动充值" 帮助="收款码必须对应核对服务的支付宝账户；核对成功时按当前倍率入账，小数部分向下取整。">
           <el-form label-position="top" @submit.prevent>
             <el-form-item label="自动充值">
               <el-switch v-model="设置.recharge.enabled" />
@@ -86,10 +86,10 @@
               <el-input v-model="设置.recharge.shared_secret" type="password" show-password maxlength="1000"
                 autocomplete="off" placeholder="与收款服务中的共享密钥一致" />
             </el-form-item>
-            <el-form-item label="每支付1元增加的余额">
+            <el-form-item label="充值倍率">
               <el-input v-model="设置.recharge.rate" inputmode="decimal" maxlength="20" placeholder="例如：100，最多两位小数" />
             </el-form-item>
-            <el-form-item label="起充金额（元）">
+            <el-form-item label="起充金额">
               <el-input v-model="设置.recharge.min_amount" inputmode="decimal" maxlength="20" placeholder="默认0.01，最多两位小数" />
             </el-form-item>
             <el-form-item v-if="充值配置提示">

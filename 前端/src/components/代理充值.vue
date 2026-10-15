@@ -10,9 +10,9 @@
           </el-image>
           <div class="充值表单">
             <div class="充值表单内容">
-              <p class="充值说明">扫码付款后，填写实际金额和支付宝订单号后 6 位。<br>最低充值 {{ 起充金额 }} 元。</p>
+              <p class="充值说明">扫码付款后，填写实际金额和支付宝订单号后 6 位。<br>最低充值 {{ 起充金额 }}。</p>
               <el-form label-position="top" @submit.prevent="确认充值">
-                <el-form-item label="付款金额（元）">
+                <el-form-item label="付款金额">
                   <el-input v-model="金额" class="充值输入框" inputmode="decimal" maxlength="20" placeholder="例如：10.00" :disabled="提交中" />
                 </el-form-item>
                 <el-form-item label="支付宝订单号后 6 位">
@@ -83,7 +83,7 @@ const 当前输入提示 = computed(() => {
   if (金额.value.trim()) {
     if (输入金额分.value === null || 输入金额分.value <= 0n) return '请输入大于0的金额，最多两位小数。'
     if (输入金额分.value > 最大金额分) return '金额超出可充值范围。'
-    if (输入金额分.value < 起充金额分.value) return `最低充值 ${起充金额.value} 元。`
+    if (输入金额分.value < 起充金额分.value) return `最低充值 ${起充金额.value}。`
   }
   if (尾号.value && !/^[0-9]{6}$/.test(尾号.value.trim())) return '订单号后6位需要填写6个数字。'
   return ''

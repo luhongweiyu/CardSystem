@@ -146,7 +146,7 @@ func 代理账号验证(ctx *gin.Context) {
 		}
 		var account 代理账号记录
 		if err := db_代理账号.Where("name = ?", session.AccountName).First(&account).Error; err != nil {
-			失败提示管理端(ctx, "代理账号不存在")
+			失败提示管理端(ctx, "小伙伴账号不存在")
 			ctx.Abort()
 			return
 		}
@@ -156,7 +156,7 @@ func 代理账号验证(ctx *gin.Context) {
 	}
 	account, ok := 验证代理账号(credentials.Name, credentials.Password)
 	if !ok {
-		失败提示管理端(ctx, "代理账号密码错误")
+		失败提示管理端(ctx, "小伙伴账号密码错误")
 		ctx.Abort()
 		return
 	}

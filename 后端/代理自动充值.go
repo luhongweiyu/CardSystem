@@ -184,7 +184,7 @@ func 代理账号_自动充值(ctx *gin.Context) {
 		return
 	}
 	if cents < minimum {
-		失败提示管理端(ctx, fmt.Sprintf("充值金额至少%d.%02d元", minimum/100, minimum%100))
+		失败提示管理端(ctx, fmt.Sprintf("充值金额至少%d.%02d", minimum/100, minimum%100))
 		return
 	}
 	// 先拒绝已知无法入账的金额，避免认领付款后才发现到账不足1。
@@ -247,7 +247,7 @@ func 代理账号_自动充值(ctx *gin.Context) {
 			return err
 		}
 		balance, err = 调整代理余额(tx, account.Admin, account.ID, credited,
-			"操作:代理自动充值", fmt.Sprintf("支付金额:%d.%02d元", cents/100, cents%100))
+			"操作:自动充值")
 		return err
 	})
 	if err != nil {

@@ -81,7 +81,7 @@ func 保存代理余额日志(tx *gorm.DB, admin string, agentID int, change, be
 		return nil
 	}
 	if agentID <= 0 || (change > 0 && after <= before) || (change < 0 && after >= before) || after-before != change {
-		return fmt.Errorf("代理余额日志金额不一致")
+		return fmt.Errorf("小伙伴余额日志金额不一致")
 	}
 	// 日志只展示变更后余额；变动前余额可由上一条余额日志推导，避免重复占用展示空间。
 	allFields := append([]string{fmt.Sprintf("余额:%d", after), fmt.Sprintf("变更:%+d", change)}, fields...)
@@ -122,20 +122,6 @@ func 查询业务日志(ctx *gin.Context, adminID, agentID int) {
 	if err := query.Order("id DESC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&rows).Error; err != nil {
 		失败提示管理端(ctx, "查询日志失败")
 		return
-	}
-	// 旧充值流水可能带订单尾号，查询时去掉该字段，不改写历史数据库记录。
-	for i := range rows {
-		if rows[i].Type != 业务日志类型_代理余额 {
-			continue
-		}
-		fields := strings.Split(rows[i].Log, "\t")
-		visible := fields[:0]
-		for _, field := range fields {
-			if !strings.HasPrefix(field, "订单尾号:") {
-				visible = append(visible, field)
-			}
-		}
-		rows[i].Log = strings.Join(visible, "\t")
 	}
 	成功提示管理端(ctx, gin.H{"data": rows, "num": total, "page": page, "page_size": pageSize})
 }

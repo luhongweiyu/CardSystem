@@ -247,7 +247,7 @@ func user_del_soft(ctx *gin.Context) {
 	// 时长卡代理价格不属于卡密流水，软件删除后也必须一并清理；否则
 	// 旧软件编号被重新使用时，代理可能意外继承旧价格锚点。
 	if err := db.Table(时长卡代理价格表名).Where("admin = ? AND software = ?", admin, request.ID).Delete(&时长卡代理价格{}).Error; err != nil {
-		失败提示管理端(ctx, "删除时长卡代理价格失败")
+		失败提示管理端(ctx, "删除时长卡渠道价格失败")
 		return
 	}
 	if err := db.Table(时长充值卡表名).Where("admin = ? AND software = ?", admin, request.ID).Delete(&时长充值卡{}).Error; err != nil {

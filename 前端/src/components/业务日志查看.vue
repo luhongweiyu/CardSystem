@@ -6,15 +6,15 @@
         v-model="代理ID"
         :disabled="加载中"
         clearable
-        placeholder="全部代理"
-        aria-label="代理筛选"
+        placeholder="全部小伙伴"
+        aria-label="小伙伴筛选"
       >
-        <el-option label="全部代理" :value="0" />
+        <el-option label="全部小伙伴" :value="0" />
         <el-option v-for="agent in agents" :key="agent.id" :label="`${agent.name}（ID:${agent.id}）`" :value="agent.id" />
       </el-select>
       <el-select v-model="类型" :disabled="加载中" clearable placeholder="全部类型" aria-label="日志类型">
         <el-option label="普通操作" value="operation" />
-        <el-option label="代理余额" value="agent_balance" />
+        <el-option label="小伙伴余额" value="agent_balance" />
       </el-select>
       <el-button type="primary" :icon="Search" :loading="加载中" @click="查询(true)">查询</el-button>
       <el-tooltip content="刷新日志">
@@ -26,9 +26,9 @@
         <template #default="{ row }">{{ 格式化时间(row.created_at) }}</template>
       </el-table-column>
       <el-table-column label="类型" width="100">
-        <template #default="{ row }">{{ row.type === 'agent_balance' ? '代理余额' : '普通操作' }}</template>
+        <template #default="{ row }">{{ row.type === 'agent_balance' ? '小伙伴余额' : '普通操作' }}</template>
       </el-table-column>
-      <el-table-column v-if="showAgent" label="代理 ID" width="90">
+      <el-table-column v-if="showAgent" label="小伙伴 ID" width="90">
         <template #default="{ row }">{{ row.agent_id || '-' }}</template>
       </el-table-column>
       <el-table-column label="内容" min-width="280">

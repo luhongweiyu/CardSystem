@@ -203,7 +203,7 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 	}
 	result := 生成时长充值卡结果{}
 	fields := []string{
-		fmt.Sprintf("操作人:代理ID:%d", account.ID), "操作:新增时长充值卡",
+		fmt.Sprintf("操作人:小伙伴ID:%d", account.ID), "操作:新增时长充值卡",
 		fmt.Sprintf("软件:%d", normalized.Software), "时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
 		fmt.Sprintf("每张次数:%d", normalized.Uses), fmt.Sprintf("数量:%d", len(cards)), "成功卡密:" + strings.Join(cards, ","),
 	}
@@ -229,7 +229,7 @@ func 代理账号_添加时长充值卡(ctx *gin.Context) {
 		}
 		if update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", current.ID, current.Admin).
 			UpdateColumn("balance", gorm.Expr("balance - ?", quote.Charge)); update.Error != nil || update.RowsAffected != 1 {
-			return fmt.Errorf("扣除代理余额失败")
+			return fmt.Errorf("扣除小伙伴余额失败")
 		}
 		if err := 保存时长充值卡批次(tx, current.Admin, current.ID, normalized, cards, time.Now()); err != nil {
 			return err

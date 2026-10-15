@@ -1,8 +1,8 @@
-// 仅在页面展示时去掉旧流水附加的操作 IP，保留接口返回的原始记录。
+// 仅在页面展示时去掉旧流水附加的操作 IP，并统一历史称呼，保留原始记录。
 export function 格式化流水备注(row) {
   const remark = String(row.remark || '')
   const index = remark.lastIndexOf('；操作IP=')
-  return index >= 0 ? remark.slice(0, index) : remark
+  return (index >= 0 ? remark.slice(0, index) : remark).replaceAll('代理', '小伙伴')
 }
 
 // 服务端按“本月、上月”拼接正序文本；按时间排序才能让跨月日志也保持最新在前。

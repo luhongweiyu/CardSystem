@@ -350,7 +350,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		}
 		if result := tx.Table(代理账号表名).Where("id = ? AND admin = ?", current.ID, current.Admin).
 			UpdateColumn("balance", gorm.Expr("balance - ?", charge)); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("扣除代理余额失败")
+			return fmt.Errorf("扣除小伙伴余额失败")
 		}
 		now := time.Now()
 		for _, row := range eligible {
@@ -376,7 +376,7 @@ func 代理账号_续费时长卡(ctx *gin.Context) {
 		}
 		balance = current.Balance - charge
 		fields = []string{
-			fmt.Sprintf("操作人:代理ID:%d", current.ID), "操作:代理续费时长卡",
+			fmt.Sprintf("操作人:小伙伴ID:%d", current.ID), "操作:小伙伴续费时长卡",
 			"卡密:" + strings.Join(success, ","), "时长变更:+" + 格式化授权时长(分钟转秒(request.DurationMinutes)),
 			fmt.Sprintf("数量:%d", len(success)), fmt.Sprintf("失败数量:%d", len(failed)),
 		}

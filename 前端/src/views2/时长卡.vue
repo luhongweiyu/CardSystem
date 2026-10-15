@@ -48,7 +48,7 @@
       <el-table-column prop="software" label="软件" width="140" sortable="custom">
         <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
       </el-table-column>
-      <el-table-column v-if="!是代理账号" label="归属代理" width="140">
+      <el-table-column v-if="!是代理账号" label="归属小伙伴" width="140">
         <template #default="scope">{{ 代理名称(scope.row.agent_id) }}</template>
       </el-table-column>
       <el-table-column prop="card_state" label="状态" width="95">
@@ -502,7 +502,7 @@ const 删除框 = reactive({ 显示: false, 加载中: false, rows: [] })
 const 删除列 = computed(() => [
   { label: '卡密', minWidth: 190, text: (row) => row.card },
   { label: '软件', width: 140, text: (row) => 软件名称(row.software) },
-  ...(!是代理账号.value ? [{ label: '归属代理', width: 140, text: (row) => 代理名称(row.agent_id) }] : []),
+  ...(!是代理账号.value ? [{ label: '归属小伙伴', width: 140, text: (row) => 代理名称(row.agent_id) }] : []),
   { label: '状态', width: 95, text: (row) => 状态文本(row) },
   { label: '到期时间', width: 180, text: (row) => 格式化时间(row.end_time) || '-' },
   { label: '在线', width: 75, text: (row) => row.online ? '在线' : '-' },

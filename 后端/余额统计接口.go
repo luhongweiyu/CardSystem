@@ -74,7 +74,7 @@ func 查询余额统计(ctx *gin.Context, admin string, agentID int) {
 		return
 	}
 	if request.Kind != "point" && request.Kind != "agent" {
-		失败提示管理端(ctx, "请选择点卡或代理账户")
+		失败提示管理端(ctx, "请选择点卡或小伙伴账户")
 		return
 	}
 	if request.Software < 0 || request.AgentID < 0 {

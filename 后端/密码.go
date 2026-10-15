@@ -85,7 +85,7 @@ func 保存代理账号密码(tx *gorm.DB, accountID int, admin string, password
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return fmt.Errorf("代理账号不存在")
+		return fmt.Errorf("小伙伴账号不存在")
 	}
 	return nil
 }

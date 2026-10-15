@@ -340,7 +340,7 @@ func 代理生成点卡卡密(account 代理账号记录, request 代理生成�
 	}
 	var result 代理生成点卡卡密结果
 	fields := []string{
-		fmt.Sprintf("操作人:代理ID:%d", account.ID), "操作:新增点卡",
+		fmt.Sprintf("操作人:小伙伴ID:%d", account.ID), "操作:新增点卡",
 		fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("数量:%d", len(cards)),
 		fmt.Sprintf("点数:%d", request.Points), "成功卡密:" + strings.Join(cards, ","),
 	}
@@ -613,7 +613,7 @@ func 设置代理账号(ctx *gin.Context) {
 			updates["point_debt_limit"] = *request.Data.MinBalance
 		}
 		if err := tx.Table(代理账号表名).Where("id = ? AND admin = ?", request.Data.ID, parent.Name).Updates(updates).Error; err != nil {
-			return fmt.Errorf("保存代理配置失败")
+			return fmt.Errorf("保存小伙伴配置失败")
 		}
 		return 保存代理账号密码(tx, request.Data.ID, parent.Name, request.Data.Password)
 	})
@@ -770,7 +770,7 @@ func 删除代理账号(ctx *gin.Context) {
 		// 代理账号删除后不再有主体可以使用其时长卡价格；价格锚点与
 		// 账号在同一事务清理，避免留下可被新账号 ID 误用的孤立配置。
 		if err := tx.Table(时长卡代理价格表名).Where("admin = ? AND agent_id = ?", parent.Name, request.ID).Delete(&时长卡代理价格{}).Error; err != nil {
-			return fmt.Errorf("清理代理时长卡价格失败")
+			return fmt.Errorf("清理渠道时长卡价格失败")
 		}
 		return nil
 	})
@@ -779,6 +779,6 @@ func 删除代理账号(ctx *gin.Context) {
 		return
 	}
 	全局_登录会话.删除账号会话(agentName, true)
-	记录管理员代理业务流水(parent.Name, request.ID, "操作:删除代理账号", "操作人:管理员:"+parent.Name, "账号:"+agentName)
+	记录管理员代理业务流水(parent.Name, request.ID, "操作:删除小伙伴账号", "操作人:管理员:"+parent.Name, "账号:"+agentName)
 	成功提示管理端(ctx, gin.H{"msg": "删除成功"})
 }

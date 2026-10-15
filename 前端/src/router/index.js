@@ -48,12 +48,12 @@ const router = createRouter({
     },
     {
       path: '/balance-stats', name: 'balance-stats',
-      meta: { title: '余额统计', description: '查看代理账户余额或点卡点数的增加与扣除。' },
+      meta: { title: '余额统计', description: '查看小伙伴账户余额或点卡点数的增加与扣除。' },
       component: () => import('../views2/余额统计.vue')
     },
     {
       path: '/log', name: 'log',
-      meta: { title: '操作日志', description: '查看当前账号的操作记录和代理余额变化。' },
+      meta: { title: '操作日志', description: '查看当前账号的操作记录和小伙伴余额变化。' },
       component: () => import('../views2/Log.vue')
     },
     {

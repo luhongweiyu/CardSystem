@@ -151,7 +151,7 @@ func 生成扣点备注(params 点卡扣费参数, period int64) string {
 	}
 	parts = append(parts, "授权时长="+格式化授权时长(period))
 	if params.AgentCharged > 0 {
-		parts = append(parts, fmt.Sprintf("卡内扣点=%d", params.CardCharged), fmt.Sprintf("代理代扣=%d", params.AgentCharged))
+		parts = append(parts, fmt.Sprintf("卡内扣点=%d", params.CardCharged), fmt.Sprintf("小伙伴代扣=%d", params.AgentCharged))
 	}
 	if params.DeviceID != "" {
 		parts = append(parts, "ID="+params.DeviceID)
@@ -242,10 +242,10 @@ func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, 
 	var account 代理账号记录
 	query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND admin = ?", card.AgentID, admin).First(&account)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return 0, 0, fmt.Errorf("%w：所属代理账号不存在", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：所属小伙伴账号不存在", 错误_点卡余额不足)
 	}
 	if query.Error != nil {
-		return 0, 0, fmt.Errorf("读取代理账号失败")
+		return 0, 0, fmt.Errorf("读取小伙伴账号失败")
 	}
 	if mode == 点卡代扣模式_跟随总开关 && !account.PointCardAutoDeduct {
 		return 0, 0, fmt.Errorf("%w，还差%d点", 错误_点卡余额不足, shortfall)
@@ -253,11 +253,11 @@ func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, 
 	prices := 解析代理价格(account.Prices)
 	unitPrice, exists := prices[softwareID]
 	if !exists {
-		return 0, 0, fmt.Errorf("%w：代理未配置该软件的代扣价格", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：小伙伴未配置该软件的代扣价格", 错误_点卡余额不足)
 	}
 	charge, err := 计算代理点卡费用(unitPrice, shortfall, 1)
 	if err != nil {
-		return 0, 0, fmt.Errorf("%w：代理代扣金额计算失败", 错误_点卡余额不足)
+		return 0, 0, fmt.Errorf("%w：小伙伴代扣金额计算失败", 错误_点卡余额不足)
 	}
 	after, err := 检查代理扣款余额(account, charge)
 	if err != nil {
@@ -265,7 +265,7 @@ func 点卡代理余额代扣(tx *gorm.DB, card *点卡表样式, admin string, 
 	}
 	update := tx.Table(代理账号表名).Where("id = ? AND admin = ?", account.ID, admin).UpdateColumn("balance", gorm.Expr("balance - ?", charge))
 	if update.Error != nil || update.RowsAffected != 1 {
-		return 0, 0, fmt.Errorf("扣除代理余额失败")
+		return 0, 0, fmt.Errorf("扣除小伙伴余额失败")
 	}
 	return charge, after, nil
 }

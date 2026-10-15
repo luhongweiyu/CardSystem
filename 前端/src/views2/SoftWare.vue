@@ -326,7 +326,7 @@
             <DurationInput v-model="scope.row.duration_minutes" :min="最小时长分钟" :max="最大时长分钟" />
           </template>
         </el-table-column>
-        <el-table-column label="代理价格（点）" width="190">
+        <el-table-column label="渠道价格（点）" width="190">
           <template #default="scope">
             <el-input-number
               v-model="scope.row.price"
@@ -358,9 +358,9 @@
 
     <el-dialog v-model="代理时长价格总览框.显示" title="时长卡价格总览" width="1100px" destroy-on-close>
       <el-form :inline="true" :disabled="代理时长价格总览框.加载中" @submit.prevent>
-        <el-form-item label="代理">
-          <el-select v-model="代理时长价格总览框.agent_id" clearable placeholder="全部代理" style="width: 190px" @change="查询代理时长价格总览">
-            <el-option label="全部代理" :value="0" />
+        <el-form-item label="小伙伴">
+          <el-select v-model="代理时长价格总览框.agent_id" clearable placeholder="全部小伙伴" style="width: 190px" @change="查询代理时长价格总览">
+            <el-option label="全部小伙伴" :value="0" />
             <el-option v-for="item in 代理列表" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -375,7 +375,7 @@
         </el-form-item>
       </el-form>
       <el-table v-loading="代理时长价格总览框.加载中" :data="代理时长价格总览框.rows" row-key="key" border>
-        <el-table-column prop="agent_name" label="代理" width="180" />
+        <el-table-column prop="agent_name" label="小伙伴" width="180" />
         <el-table-column prop="software_name" label="软件" width="180" />
         <el-table-column label="价格锚点" min-width="620">
           <template #default="scope">
@@ -1027,7 +1027,7 @@ const 保存总览价格 = function (row) {
       return
     }
     if (!Number.isFinite(price.price) || price.price <= 0 || price.price > 最大代理价格 || Math.abs(price.price * 100 - Math.round(price.price * 100)) > 1e-8) {
-      ElMessage.warning('代理价格必须大于0且最多保留两位小数')
+      ElMessage.warning('渠道价格必须大于0且最多保留两位小数')
       return
     }
     seen.add(price.duration_minutes)
@@ -1098,7 +1098,7 @@ const 保存代理时长价格 = function () {
     const price = Number(row.price)
     const scaledPrice = price * 100
     if (!Number.isFinite(price) || price <= 0 || price > 最大代理价格 || Math.abs(scaledPrice - Math.round(scaledPrice)) > 1e-8) {
-      ElMessage.warning('代理价格必须大于0且最多保留两位小数')
+      ElMessage.warning('渠道价格必须大于0且最多保留两位小数')
       return
     }
     seen.add(row.duration_minutes)

@@ -171,10 +171,10 @@ func 计算时长卡代理费用(rows []时长卡代理价格, requestedMinutes 
 	seen := make(map[int64]struct{}, len(rows))
 	for _, row := range rows {
 		if row.DurationMinutes < 时长卡最小时长分钟 || row.DurationMinutes > 时长卡永久分钟 || row.Price <= 0 || row.Price > 最大单次点数*时长卡代理价格最小单位 {
-			return 时长卡代理报价{}, fmt.Errorf("数据库中的时长卡代理价格配置不正确")
+			return 时长卡代理报价{}, fmt.Errorf("数据库中的时长卡渠道价格配置不正确")
 		}
 		if _, exists := seen[row.DurationMinutes]; exists {
-			return 时长卡代理报价{}, fmt.Errorf("数据库中的时长卡代理价格锚点重复")
+			return 时长卡代理报价{}, fmt.Errorf("数据库中的时长卡渠道价格锚点重复")
 		}
 		seen[row.DurationMinutes] = struct{}{}
 		if row.Enabled {
@@ -211,7 +211,7 @@ func 计算时长卡代理费用(rows []时长卡代理价格, requestedMinutes 
 	}
 
 	if requestedMinutes < active[0].DurationMinutes || requestedMinutes > active[len(active)-1].DurationMinutes {
-		return 时长卡代理报价{}, fmt.Errorf("生成时长超出代理价格覆盖范围：%d至%d分钟", active[0].DurationMinutes, active[len(active)-1].DurationMinutes)
+		return 时长卡代理报价{}, fmt.Errorf("生成时长超出渠道价格覆盖范围：%d至%d分钟", active[0].DurationMinutes, active[len(active)-1].DurationMinutes)
 	}
 	var lower, upper *时长卡代理价格
 	for index := range active {
@@ -288,7 +288,7 @@ func 读取时长卡代理价格(tx *gorm.DB, admin string, agentID, softwareID 
 	}
 	var rows []时长卡代理价格
 	if err := query.Order("duration_minutes ASC, id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("读取时长卡代理价格失败")
+		return nil, fmt.Errorf("读取时长卡渠道价格失败")
 	}
 	return rows, nil
 }
@@ -315,15 +315,15 @@ func 检查时长卡软件(tx *gorm.DB, admin string, softwareID int) error {
 func 锁定时长卡代理账号(tx *gorm.DB, admin string, agentID int) (代理账号记录, error) {
 	var account 代理账号记录
 	if tx == nil || !验证管理员名称(strings.TrimSpace(admin)) || agentID <= 0 {
-		return account, fmt.Errorf("代理账号参数不正确")
+		return account, fmt.Errorf("小伙伴账号参数不正确")
 	}
 	query := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND admin = ?", agentID, strings.TrimSpace(admin)).First(&account)
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		return account, fmt.Errorf("代理账号不存在")
+		return account, fmt.Errorf("小伙伴账号不存在")
 	}
 	if query.Error != nil {
-		return account, fmt.Errorf("读取代理账号失败")
+		return account, fmt.Errorf("读取小伙伴账号失败")
 	}
 	return account, nil
 }
@@ -349,7 +349,7 @@ func 校验时长卡代理账号归属(tx *gorm.DB, admin string, agentID int) e
 func 管理员_查询时长卡代理价格(ctx *gin.Context) {
 	var request 时长卡代理价格查询请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.AgentID <= 0 || request.Software < 0 {
-		失败提示管理端(ctx, "代理账号或软件参数不正确")
+		失败提示管理端(ctx, "小伙伴账号或软件参数不正确")
 		return
 	}
 	parent, ok := 管理员_取账号信息(ctx)
@@ -384,7 +384,7 @@ func 管理员_查询时长卡代理价格(ctx *gin.Context) {
 func 管理员_保存时长卡代理价格(ctx *gin.Context) {
 	var request 时长卡代理价格保存请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.AgentID <= 0 || request.Software <= 0 {
-		失败提示管理端(ctx, "代理账号或软件参数不正确")
+		失败提示管理端(ctx, "小伙伴账号或软件参数不正确")
 		return
 	}
 	if request.Prices == nil {
@@ -430,7 +430,7 @@ func 管理员_保存时长卡代理价格(ctx *gin.Context) {
 		失败提示管理端(ctx, err.Error())
 		return
 	}
-	记录管理员代理业务流水(parent.Name, request.AgentID, "操作:保存代理时长卡价格", "操作人:管理员:"+parent.Name, fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("锚点数:%d", len(prices)))
+	记录管理员代理业务流水(parent.Name, request.AgentID, "操作:保存渠道时长卡价格", "操作人:管理员:"+parent.Name, fmt.Sprintf("软件:%d", request.Software), fmt.Sprintf("锚点数:%d", len(prices)))
 	成功提示管理端(ctx, gin.H{"msg": "保存成功", "count": len(prices)})
 }
 
@@ -439,7 +439,7 @@ func 管理员_保存时长卡代理价格(ctx *gin.Context) {
 func 管理员_删除时长卡代理价格(ctx *gin.Context) {
 	var request 时长卡代理价格删除请求
 	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil || request.AgentID <= 0 || request.Software <= 0 {
-		失败提示管理端(ctx, "代理账号或软件参数不正确")
+		失败提示管理端(ctx, "小伙伴账号或软件参数不正确")
 		return
 	}
 	if request.DurationMinutes < 时长卡最小时长分钟 || request.DurationMinutes > 时长卡永久分钟 {
@@ -507,7 +507,7 @@ func 代理账号_预览时长卡价格(ctx *gin.Context) {
 	}
 	account := 代理账号_取账号信息(ctx)
 	if account.ID <= 0 || !验证管理员名称(account.Admin) || request.Software <= 0 {
-		失败提示管理端(ctx, "软件或代理账号参数不正确")
+		失败提示管理端(ctx, "软件或小伙伴账号参数不正确")
 		return
 	}
 	if err := 检查时长卡软件(db, account.Admin, request.Software); err != nil {
@@ -531,7 +531,7 @@ func 代理账号_预览时长卡价格(ctx *gin.Context) {
 // 扣款后先扣代理余额，再写入时长卡。任意写入失败都会回滚整批操作。
 func 代理生成时长卡(account 代理账号记录, request 时长卡生成请求) (代理生成时长卡结果, error) {
 	if account.ID <= 0 || !验证管理员名称(account.Admin) {
-		return 代理生成时长卡结果{}, fmt.Errorf("代理账号状态错误")
+		return 代理生成时长卡结果{}, fmt.Errorf("小伙伴账号状态错误")
 	}
 	tableName, cards, normalized, err := 准备生成时长卡(account.Admin, request)
 	if err != nil {
@@ -564,7 +564,7 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 		if update := tx.Table(代理账号表名).
 			Where("id = ? AND admin = ?", current.ID, current.Admin).
 			UpdateColumn("balance", gorm.Expr("balance - ?", quote.Charge)); update.Error != nil || update.RowsAffected != 1 {
-			return fmt.Errorf("扣除代理余额失败")
+			return fmt.Errorf("扣除小伙伴余额失败")
 		}
 		// 余额扣减和时长卡写入处于同一事务；保存失败时上面的扣款会
 		// 一并回滚，不会出现代理余额减少但卡密缺失的半成功状态。
@@ -576,7 +576,7 @@ func 代理生成时长卡(account 代理账号记录, request 时长卡生成�
 			LowerDurationMinutes: quote.LowerDurationMinutes, UpperDurationMinutes: quote.UpperDurationMinutes,
 			RateSourceDurationMinutes: quote.RateSourceDurationMinutes}
 		fields = []string{
-			fmt.Sprintf("操作人:代理ID:%d", current.ID), "操作:新增时长卡",
+			fmt.Sprintf("操作人:小伙伴ID:%d", current.ID), "操作:新增时长卡",
 			fmt.Sprintf("软件:%d", normalized.Software), "时长:" + 格式化授权时长(分钟转秒(normalized.DurationMinutes)),
 			fmt.Sprintf("数量:%d", len(cards)), "成功卡密:" + strings.Join(cards, ","),
 			"计价方式:" + result.PricingMode, "价格来源:" + 格式化授权时长(分钟转秒(result.RateSourceDurationMinutes)),

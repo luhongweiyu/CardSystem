@@ -5,7 +5,7 @@
         <el-form-item label="统计对象">
           <el-select v-model="筛选.kind" style="width: 140px" @change="切换对象">
             <el-option label="点卡" value="point" />
-            <el-option label="代理账户" value="agent" />
+            <el-option label="小伙伴账户" value="agent" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="筛选.kind === 'point'" label="软件">
@@ -16,7 +16,7 @@
         <el-form-item v-if="筛选.kind === 'point'" label="卡密">
           <el-input v-model="筛选.card" clearable placeholder="留空统计全部，填写完整卡密" style="width: 240px" />
         </el-form-item>
-        <el-form-item v-if="!是代理账号" label="代理">
+        <el-form-item v-if="!是代理账号" label="小伙伴">
           <el-select v-model="筛选.agent_id" clearable filterable allow-create default-first-option placeholder="全部 / 输入历史账户ID" style="width: 220px">
             <el-option v-for="item in 代理列表" :key="item.id" :value="item.id" :label="`${item.name}（${item.id}）`" />
           </el-select>
@@ -125,9 +125,9 @@ let 请求序号 = 0
 const 单位 = computed(() => 已查询条件.value?.kind === 'point' ? '点数' : '账户余额单位')
 const 结果标题 = computed(() => {
   const q = 已查询条件.value
-  const target = q.kind === 'point' ? `点卡${q.card ? ` ${q.card}` : ''}` : '代理账户'
+  const target = q.kind === 'point' ? `点卡${q.card ? ` ${q.card}` : ''}` : '小伙伴账户'
   const software = q.software ? ` · 软件ID ${q.software}` : ''
-  const agent = q.agent_id ? ` · 代理ID ${q.agent_id}` : ''
+  const agent = q.agent_id ? ` · 小伙伴ID ${q.agent_id}` : ''
   return `${target}${software}${agent} · ${q.start_date} 至 ${q.end_date}`
 })
 const 曲线 = computed(() => 结果.value?.trend || [])
@@ -185,7 +185,7 @@ async function 查询统计() {
   }
   const agentID = Number(筛选.agent_id || 0)
   if (!Number.isSafeInteger(agentID) || agentID < 0) {
-    错误提示.value = '代理ID应为正整数'
+    错误提示.value = '小伙伴ID应为正整数'
     加载中.value = false
     return
   }
