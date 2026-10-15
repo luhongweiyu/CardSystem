@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -279,20 +280,61 @@ func 记录点卡代扣日志(tx *gorm.DB, charge 点卡扣费结果, session �
 		"操作:点卡代扣", "操作人:系统", "原因:点卡代扣", "卡密:"+session.Card, fmt.Sprintf("软件:%d", session.Software), "设备ID:"+session.DeviceID, "设备:"+session.DeviceAlias, "授权截止:"+业务流水时间(session.AuthorizedUntil))
 }
 
+func 规范化点卡余额调整参数(amount int64, reason string) (string, error) {
+	if amount == 0 || amount < -最大单次点数 || amount > 最大单次点数 {
+		return "", fmt.Errorf("每张卡增减点数必须在负%d至%d之间且不能为0", 最大单次点数, 最大单次点数)
+	}
+	reason, valid := 规范化可显示文本(reason, 255)
+	if !valid {
+		return "", fmt.Errorf("备注不能包含控制字符且不能超过255个字符")
+	}
+	return reason, nil
+}
+
+// 单卡和批量共用余额检查、更新和流水处理。调用方须已校验调整参数并锁定
+// 所有卡记录；本函数只使用传入的事务，由调用方统一提交或回滚。
+func 保存点卡余额调整(tx *gorm.DB, tableName, admin string, rows []点卡表样式, amount int64, remark string) error {
+	cards := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.Card_state != 卡密状态_正常 && row.Card_state != 卡密状态_冻结 {
+			return fmt.Errorf("卡密%s状态不正常", row.Card)
+		}
+		if row.Point_balance < 0 {
+			return fmt.Errorf("卡密%s余额数据不正确", row.Card)
+		}
+		if amount < 0 && row.Point_balance < -amount {
+			return fmt.Errorf("卡密%s余额不足，不能减到0以下", row.Card)
+		}
+		if amount > 0 && row.Point_balance > math.MaxInt64-amount {
+			return fmt.Errorf("卡密%s调整后余额超出允许范围", row.Card)
+		}
+		cards = append(cards, row.Card)
+	}
+	result := tx.Table(tableName).Where("card IN ?", cards).UpdateColumn("point_balance", gorm.Expr("point_balance + ?", amount))
+	if result.Error != nil || result.RowsAffected != int64(len(rows)) {
+		return fmt.Errorf("调整点卡余额失败")
+	}
+	now := time.Now()
+	for _, row := range rows {
+		if _, err := 保存点数流水(tx, admin, row.Card, row.Software, row.AgentID, amount,
+			row.Point_balance, row.Point_balance+amount, remark, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // 调整点卡余额供管理员补点或扣回点数。余额不能变成负数，且每次真实变更
 // 都会留下可追溯的流水记录。
 func 调整点卡余额(admin string, cardValue string, amount int64, reason string) (int64, error) {
-	if amount == 0 || amount < -最大单次点数 || amount > 最大单次点数 {
-		return 0, fmt.Errorf("单次调整点数必须在负%d至%d之间且不能为0", 最大单次点数, 最大单次点数)
+	reason, err := 规范化点卡余额调整参数(amount, reason)
+	if err != nil {
+		return 0, err
 	}
 	admin = strings.TrimSpace(admin)
 	cardValue = strings.ToLower(strings.TrimSpace(cardValue))
 	if !验证管理员名称(admin) || !卡密格式规则.MatchString(cardValue) {
 		return 0, fmt.Errorf("卡密参数不正确")
-	}
-	reason, valid := 规范化可显示文本(reason, 255)
-	if !valid {
-		return 0, fmt.Errorf("调整备注不能包含控制字符且不能超过255个字符")
 	}
 	if reason == "" {
 		reason = "管理员调整"
@@ -311,29 +353,139 @@ func 调整点卡余额(admin string, cardValue string, amount int64, reason str
 		if query.Error != nil {
 			return fmt.Errorf("读取点卡失败")
 		}
-		if card.Card_state != 卡密状态_正常 && card.Card_state != 卡密状态_冻结 {
-			return fmt.Errorf("卡密状态不正常")
-		}
-		// 非负余额属于点卡业务规则，在更新余额前检查，避免依赖流水层拦截。
-		if card.Point_balance < 0 {
-			return fmt.Errorf("点卡余额数据不正确")
-		}
-		if amount > 0 && card.Point_balance > math.MaxInt64-amount {
-			return fmt.Errorf("调整后余额超出允许范围")
-		}
-		if amount < 0 && card.Point_balance < -amount {
-			return fmt.Errorf("调整后余额不能小于0")
+		if err := 保存点卡余额调整(tx, tableName, admin, []点卡表样式{card}, amount, reason); err != nil {
+			return err
 		}
 		balance = card.Point_balance + amount
-		updates := map[string]interface{}{"point_balance": balance}
-		if result := tx.Table(tableName).Where("card = ?", card.Card).Updates(updates); result.Error != nil || result.RowsAffected != 1 {
-			return fmt.Errorf("调整点卡余额失败")
-		}
-		_, err := 保存点数流水(tx, admin, card.Card, card.Software, card.AgentID, amount, card.Point_balance, balance, reason, time.Now())
-		return err
+		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
 	return balance, nil
+}
+
+type 点卡批量充值请求 struct {
+	Cards  []string `json:"cards"`
+	Amount int64    `json:"amount"`
+	Reason string   `json:"reason"`
+}
+
+// agentID 为 0 表示管理员人工调整，绝不扣卡密所属代理的余额。
+// 代理加点才扣操作者账户；减点只减少卡内余额，不退还账户余额。
+func 批量调整点卡余额(admin string, agentID int, request 点卡批量充值请求) (int, int64, int64, error) {
+	if agentID < 0 || len(request.Cards) == 0 || len(request.Cards) > 1000 {
+		return 0, 0, 0, fmt.Errorf("单次操作卡密数量必须在1至1000之间")
+	}
+	reason, err := 规范化点卡余额调整参数(request.Amount, request.Reason)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	actor := "管理员"
+	if agentID > 0 {
+		actor = "小伙伴"
+	}
+	remark := actor + "批量调整"
+	if reason != "" {
+		remark += ":" + reason
+	}
+	tableName, err := 点卡数据表名(admin)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	cards := make([]string, 0, len(request.Cards))
+	seen := make(map[string]bool, len(request.Cards))
+	for _, raw := range request.Cards {
+		card := strings.ToLower(strings.TrimSpace(raw))
+		if !卡密格式规则.MatchString(card) {
+			return 0, 0, 0, fmt.Errorf("卡密格式不正确")
+		}
+		if !seen[card] {
+			seen[card] = true
+			cards = append(cards, card)
+		}
+	}
+	sort.Strings(cards)
+	query := db.Table(tableName).Where("card IN ?", cards)
+	if agentID > 0 {
+		query = query.Where("agent_id = ?", agentID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, 0, 0, fmt.Errorf("检查卡密权限失败")
+	}
+	if count != int64(len(cards)) {
+		return 0, 0, 0, fmt.Errorf("选中的卡密不存在或不属于当前账号，请刷新列表")
+	}
+	if err := 批量同步并删除点卡心跳缓存(admin, cards); err != nil {
+		return 0, 0, 0, err
+	}
+	var charge, accountBalance int64
+	err = 执行余额事务(func(tx *gorm.DB) error {
+		// 与续费及归属变更保持卡行在前、代理账户在后的锁顺序。
+		// 排序锁定整批卡，权限和余额均在锁内复查；任一失败整批回滚。
+		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).Where("card IN ?", cards).Order("card ASC")
+		if agentID > 0 {
+			query = query.Where("agent_id = ?", agentID)
+		}
+		var rows []点卡表样式
+		if err := query.Find(&rows).Error; err != nil {
+			return fmt.Errorf("读取点卡失败")
+		}
+		if len(rows) != len(cards) {
+			return fmt.Errorf("卡密归属或数量已变化，请刷新列表")
+		}
+		if err := 保存点卡余额调整(tx, tableName, admin, rows, request.Amount, remark); err != nil {
+			return err
+		}
+		if agentID > 0 {
+			var account 代理账号记录
+			if err := tx.Table(代理账号表名).Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND admin = ?", agentID, admin).First(&account).Error; err != nil {
+				return fmt.Errorf("小伙伴账号不存在")
+			}
+			accountBalance = account.Balance
+			if request.Amount > 0 {
+				// 按软件汇总后计价，每个软件向上取整一次，使用服务器最新价格。
+				// 卡内调整尚未提交，账户扣款失败时连同流水一起回滚。
+				softwareCounts := make(map[int]int)
+				for _, row := range rows {
+					softwareCounts[row.Software]++
+				}
+				prices := 解析代理价格(account.Prices)
+				for softwareID, cardCount := range softwareCounts {
+					price, exists := prices[softwareID]
+					if !exists {
+						return fmt.Errorf("软件%d尚未配置渠道价格", softwareID)
+					}
+					cost, err := 计算代理点卡费用(price, request.Amount, cardCount)
+					if err != nil {
+						return err
+					}
+					if charge > math.MaxInt64-cost {
+						return fmt.Errorf("消费金额超出允许范围")
+					}
+					charge += cost
+				}
+				if _, err := 检查代理扣款余额(account, charge); err != nil {
+					return err
+				}
+				var err error
+				accountBalance, err = 调整代理余额(tx, admin, agentID, -charge,
+					"操作:点卡充值", fmt.Sprintf("操作人:小伙伴ID:%d", agentID), "卡密:"+strings.Join(cards, ","),
+					fmt.Sprintf("每卡增加:%d", request.Amount), "备注:"+reason)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if err := 批量同步并删除点卡心跳缓存(admin, cards); err != nil {
+		日志("log/启动记录.txt", "批量调整点卡余额后同步心跳缓存失败:"+err.Error())
+	}
+	return len(cards), charge, accountBalance, nil
 }

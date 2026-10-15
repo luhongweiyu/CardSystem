@@ -332,14 +332,14 @@ func 锁定时长卡代理账号(tx *gorm.DB, admin string, agentID int) (代理
 // 管理员的数据；写接口会使用上面的行锁版本。
 func 校验时长卡代理账号归属(tx *gorm.DB, admin string, agentID int) error {
 	if tx == nil || !验证管理员名称(strings.TrimSpace(admin)) || agentID <= 0 {
-		return fmt.Errorf("代理账号参数不正确")
+		return fmt.Errorf("小伙伴账号参数不正确")
 	}
 	var count int64
 	if err := tx.Table(代理账号表名).Where("id = ? AND admin = ?", agentID, strings.TrimSpace(admin)).Count(&count).Error; err != nil {
-		return fmt.Errorf("检查代理账号失败")
+		return fmt.Errorf("检查小伙伴账号失败")
 	}
 	if count != 1 {
-		return fmt.Errorf("代理账号不存在")
+		return fmt.Errorf("小伙伴账号不存在")
 	}
 	return nil
 }

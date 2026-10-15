@@ -359,6 +359,33 @@ func 管理员_调整点卡余额(ctx *gin.Context) {
 	成功提示管理端(ctx, gin.H{"msg": "调整成功", "balance": balance})
 }
 
+func 管理员_批量调整点卡余额(ctx *gin.Context) {
+	account, ok := 管理员_取账号信息(ctx)
+	if !ok {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	处理点卡批量充值(ctx, account.Name, 0)
+}
+
+func 处理点卡批量充值(ctx *gin.Context, admin string, agentID int) {
+	var request 点卡批量充值请求
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
+		失败提示管理端(ctx, "充值参数不正确")
+		return
+	}
+	count, charge, balance, err := 批量调整点卡余额(admin, agentID, request)
+	if err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	result := gin.H{"msg": fmt.Sprintf("已调整%d张点卡余额", count), "count": count, "charge": charge}
+	if agentID > 0 {
+		result["balance"] = balance
+	}
+	成功提示管理端(ctx, result)
+}
+
 func 管理员_下线点卡设备(ctx *gin.Context) {
 	account, ok := 管理员_取账号信息(ctx)
 	if !ok || account.Name == "" {

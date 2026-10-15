@@ -201,11 +201,11 @@ func 代理每点价格有效(price float64) bool {
 // 不额外查询数据库。管理员手动调整余额不经过此函数。
 func 检查代理扣款余额(account 代理账号记录, charge int64) (int64, error) {
 	if charge < 0 || account.Balance < math.MinInt64+charge {
-		return 0, fmt.Errorf("代理余额超出允许范围")
+		return 0, fmt.Errorf("小伙伴账户余额超出允许范围")
 	}
 	after := account.Balance - charge
 	if after < account.MinBalance {
-		return 0, fmt.Errorf("代理余额不足，需要%d点，当前%d点，余额下限%d点", charge, account.Balance, account.MinBalance)
+		return 0, fmt.Errorf("小伙伴账户余额不足，需要%d点，当前%d点，余额下限%d点", charge, account.Balance, account.MinBalance)
 	}
 	return after, nil
 }
@@ -462,6 +462,15 @@ func 代理账号_批量修改点卡状态(ctx *gin.Context) {
 		return
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
+}
+
+func 代理账号_批量调整点卡余额(ctx *gin.Context) {
+	account := 代理账号_取账号信息(ctx)
+	if account.ID <= 0 || !验证管理员名称(account.Admin) {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	处理点卡批量充值(ctx, account.Admin, account.ID)
 }
 
 func 代理账号_批量修改点卡代扣模式(ctx *gin.Context) {

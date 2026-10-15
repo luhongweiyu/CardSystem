@@ -13,7 +13,7 @@
       </el-form-item>
     </el-form>
     <p>余额、时长和在线授权保持不变。</p>
-    <p v-if="kind === 'point_card'">归属变更后，账户代扣将跟随新代理的设置。</p>
+    <p v-if="kind === 'point_card'">归属变更后，账户代扣将跟随新归属小伙伴的设置。</p>
     <template v-if="结果">
       <el-alert :title="结果.msg" :type="结果.failed.length ? 'warning' : 'success'" :closable="false" />
       <el-collapse>
@@ -58,7 +58,7 @@ const 打开 = async () => {
     await stores.查询代理列表(true)
     显示.value = true
   } catch (error) {
-    ElMessage.error(获取接口错误提示(error, '加载代理列表失败'))
+    ElMessage.error(获取接口错误提示(error, '加载小伙伴列表失败'))
   }
 }
 

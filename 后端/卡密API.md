@@ -56,6 +56,12 @@
 
 管理员 `/admin/point_card/ledger` 使用 `change_type` 筛选流水：`debit` 为扣点，`credit` 为增加，省略表示全部。
 
+### 批量增减点
+
+`POST /admin/point_card/adjust_batch`、`/agent/point_card/adjust_batch`：提交 `cards`（1～1000 张，重复卡密只处理一次）、`amount`（每张卡的增减整数点数，-10亿～10亿且不能为0）、可选 `reason`（最多255字符）。支持正常、冻结的点卡；减后卡内余额不能小于0。
+
+管理员人工增减不扣代理账户余额。代理只能操作自己名下的卡；加点按当前软件代理价格计算，同软件合计后向上取整，各软件费用相加，扣后不得低于代理余额下限；减点不返还账户余额。整批卡余额、代理扣款和流水共同成功或回滚，任一卡不满足条件则整批失败。成功返回 `count`、`charge`（代理账户扣款额，管理员及减点为0），代理响应另有 `balance`（扣款后的账户余额）。
+
 ### 设备上限
 
 - 软件创建 `/admin/user_add_soft` 和修改 `/admin/user_modify_bulletin` 接收 `point_card_max_devices`，范围 0～1000，0 表示禁止新增设备；创建时默认 1000，修改时省略则保留原值。管理员和代理的软件列表均返回此字段。
@@ -67,7 +73,7 @@
 代理点卡代扣设置：
 
 - `POST /agent/point_card/settings` 的 `point_card_auto_deduct` 控制代理总开关，默认关闭；设置也随 `/agent/user_query_soft_list` 返回。
-- `/agent/point_card/save` 可设置单卡 `point_card_auto_deduct_mode`：`inherit` 跟随总开关，`allow` 允许，`deny` 禁止。`/agent/point_card/auto_deduct` 可批量设置。
+- `/agent/point_card/save` 可设置单卡 `point_card_auto_deduct_mode`：`inherit` 跟随总开关，`allow` 允许，`deny` 禁止。`POST /admin/point_card/auto_deduct`、`/agent/point_card/auto_deduct` 提交 `cards`（1～1000张）和该模式，可整批设置。管理员可设置自己系统内的卡，代理只能设置自己名下的卡；实际代扣使用卡密所属代理账户，管理员名下的卡无代理账户可扣。
 - 管理员通过 `/admin/设置代理账号` 设置 `min_balance`，范围为 -10 亿至 10 亿点。负数允许欠费至该下限，正数要求扣款后至少保留该余额；旧数据不自动转换，由管理员按需调整。
 - 点卡余额不足时，按代理软件单价计算代扣额并向上取整。未允许代扣、无有效价格或扣后低于余额下限时，整笔续费失败，不发生部分扣款。代理扣款、卡内扣点和续费共同成功或回滚。
 - 同一余额下限也用于代理生成点卡、时长卡、时长充值卡及续费时长卡；管理员手动调整代理余额不受限制。

@@ -64,7 +64,7 @@ func 管理员_批量修改卡密归属(ctx *gin.Context, kind string, modify fu
 	}
 	if len(success) > 0 {
 		记录管理员代理业务流水(account.Name, 0, "操作:修改"+kind+"归属",
-			"卡密:"+strings.Join(success, ","), fmt.Sprintf("目标代理ID:%d", agentID))
+			"卡密:"+strings.Join(success, ","), fmt.Sprintf("目标小伙伴ID:%d", agentID))
 	}
 	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("成功%d张，失败%d张", len(success), len(failed)), "success": success, "failed": failed})
 }

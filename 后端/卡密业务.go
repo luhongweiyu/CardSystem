@@ -1395,11 +1395,11 @@ func 修改点卡_批量(admin string, agentID int, cards []string, state int) (
 	return success, failed, nil
 }
 
-// 批量修改点卡代扣模式只接受当前账号自己的卡；整批一起提交，避免界面显示
+// 管理员可设置名下全部点卡，代理只接受自己的卡；整批一起提交，避免界面显示
 // 同一设置时实际只有部分生效。缓存同步放在事务外，不持有卡行锁等待心跳锁。
 func 批量修改点卡代扣模式(admin string, agentID int, cards []string, mode string) (int, error) {
-	if agentID <= 0 {
-		return 0, fmt.Errorf("只能设置自己名下的点卡")
+	if agentID < 0 {
+		return 0, fmt.Errorf("账号参数不正确")
 	}
 	tableName, err := 点卡数据表名(admin)
 	if err != nil {
@@ -1430,7 +1430,11 @@ func 批量修改点卡代扣模式(admin string, agentID int, cards []string, m
 	sort.Strings(unique)
 	// 先确认整批归属，再同步缓存，越权请求不会触碰其他账号的会话。
 	var count int64
-	if err := db.Table(tableName).Where("agent_id = ? AND card IN ?", agentID, unique).Count(&count).Error; err != nil {
+	query := db.Table(tableName).Where("card IN ?", unique)
+	if agentID > 0 {
+		query = query.Where("agent_id = ?", agentID)
+	}
+	if err := query.Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("检查卡密权限失败")
 	}
 	if count != int64(len(unique)) {
@@ -1442,8 +1446,11 @@ func 批量修改点卡代扣模式(admin string, agentID int, cards []string, m
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var rows []点卡表样式
 		query := tx.Table(tableName).Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("card").Where("agent_id = ? AND card IN ?", agentID, unique).Order("card ASC").Find(&rows)
-		if query.Error != nil {
+			Select("card").Where("card IN ?", unique).Order("card ASC")
+		if agentID > 0 {
+			query = query.Where("agent_id = ?", agentID)
+		}
+		if err := query.Find(&rows).Error; err != nil {
 			return fmt.Errorf("读取点卡失败")
 		}
 		// 锁内复查，防止预检查后卡密被并发删除或归属发生变化。
@@ -1451,7 +1458,7 @@ func 批量修改点卡代扣模式(admin string, agentID int, cards []string, m
 			return fmt.Errorf("选中的卡密已变化，请刷新列表")
 		}
 		// 重复设置相同模式也视为成功，不以数据库实际变更行数判断结果。
-		if err := tx.Table(tableName).Where("agent_id = ? AND card IN ?", agentID, unique).
+		if err := tx.Table(tableName).Where("card IN ?", unique).
 			Update("point_card_auto_deduct_mode", mode).Error; err != nil {
 			return fmt.Errorf("保存代扣方式失败")
 		}
@@ -1464,6 +1471,28 @@ func 批量修改点卡代扣模式(admin string, agentID int, cards []string, m
 		日志("log/启动记录.txt", "批量设置点卡代扣后同步心跳缓存失败:"+err.Error())
 	}
 	return len(unique), nil
+}
+
+func 管理员_批量修改点卡代扣模式(ctx *gin.Context) {
+	var request struct {
+		Cards []string `json:"cards"`
+		Mode  string   `json:"point_card_auto_deduct_mode"`
+	}
+	if err := ctx.ShouldBindBodyWith(&request, binding.JSON); err != nil {
+		失败提示管理端(ctx, "数据错误")
+		return
+	}
+	account, ok := 管理员_取账号信息(ctx)
+	if !ok {
+		失败提示管理端(ctx, "登录状态错误")
+		return
+	}
+	count, err := 批量修改点卡代扣模式(account.Name, 0, request.Cards, request.Mode)
+	if err != nil {
+		失败提示管理端(ctx, err.Error())
+		return
+	}
+	成功提示管理端(ctx, gin.H{"msg": fmt.Sprintf("已设置%d张点卡的代扣方式", count), "count": count})
 }
 
 func 管理员_批量修改点卡状态(ctx *gin.Context) {

@@ -49,7 +49,7 @@ export const 格式化代理归属 = (id, agents = []) => {
   const agentID = Number(id || 0)
   if (!agentID) return '管理员'
   const agent = agents.find((item) => Number(item.id) === agentID)
-  return agent ? `${agent.name}(${agentID})` : `代理#${agentID}(${agentID})`
+  return agent ? `${agent.name}(${agentID})` : `小伙伴#${agentID}(${agentID})`
 }
 
 export const 查找软件名称 = (id, softwares = []) => {

@@ -59,8 +59,9 @@
             解冻
           </el-button>
           <el-button size="small" type="danger" :disabled="!已选点卡卡密.length" @click="批量删除">删除</el-button>
+          <el-button size="small" type="primary" :disabled="!已选点卡卡密.length" @click="打开批量充值">充值</el-button>
           <ChangeCardOwner v-if="!是代理账号" :cards="已选点卡卡密" kind="point_card" @changed="查询点卡卡密(false)" />
-          <el-button v-if="是代理账号" size="small" :disabled="!已选点卡卡密.length" @click="打开批量代扣">设置账户代扣</el-button>
+          <el-button size="small" :disabled="!已选点卡卡密.length" @click="打开批量代扣">设置账户代扣</el-button>
           <el-button size="small" :disabled="!点卡卡密列表.length" @click="导出当前页">导出当前页</el-button>
         </div>
       </div>
@@ -284,6 +285,38 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="批量充值框.显示" title="点卡充值" width="min(740px, 94vw)"
+      :close-on-click-modal="!批量充值框.加载中" :close-on-press-escape="!批量充值框.加载中"
+      :show-close="!批量充值框.加载中" destroy-on-close>
+      <el-form label-width="130px" :disabled="批量充值框.加载中" @submit.prevent>
+        <el-form-item label="每张卡增减点数">
+          <el-input-number v-model="批量充值框.amount" :min="-1000000000" :max="1000000000" :precision="0" controls-position="right" />
+          <div class="字段说明">正数增加，负数减少；不能为0，卡内余额不能减到0以下。</div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="批量充值框.reason" maxlength="255" placeholder="选填，例如：给客户补点" />
+        </el-form-item>
+      </el-form>
+      <p v-if="!是代理账号">管理员增减点卡余额，不扣小伙伴账户余额。</p>
+      <p v-else-if="批量充值框.amount < 0">减少卡内点数，不返还小伙伴账户余额。</p>
+      <p v-else>预计扣账户余额：{{ 批量充值费用.error || `${批量充值费用.charge} 点` }}。按各软件的渠道价格汇总计费，实际以提交时为准。</p>
+      <el-table :data="批量充值框.rows" border max-height="300">
+        <el-table-column prop="card" label="卡密" min-width="180" show-overflow-tooltip />
+        <el-table-column label="软件" min-width="110" show-overflow-tooltip>
+          <template #default="scope">{{ 软件名称(scope.row.software) }}</template>
+        </el-table-column>
+        <el-table-column prop="point_balance" label="当前余额" min-width="100" />
+        <el-table-column label="预计变动后" min-width="110">
+          <template #default="scope">{{ 预计充值后余额(scope.row) }}</template>
+        </el-table-column>
+      </el-table>
+      <div class="字段说明">共 {{ 批量充值框.rows.length }} 张，任一卡处理失败，本批次都不会修改余额。</div>
+      <template #footer>
+        <el-button :disabled="批量充值框.加载中" @click="批量充值框.显示 = false">取消</el-button>
+        <el-button type="primary" :disabled="!批量充值输入有效" :loading="批量充值框.加载中" @click="提交批量充值">确认调整</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="批量代扣框.显示"
       title="批量设置账户代扣"
@@ -302,6 +335,7 @@
         </el-form-item>
       </el-form>
       <div class="字段说明">“允许 / 禁止”优先于总开关；已付费的授权不受影响，下次扣费时生效。</div>
+      <div v-if="!是代理账号" class="字段说明">此设置用于点卡消费时扣所属小伙伴的账户余额，管理员名下的卡没有小伙伴账户可扣。</div>
       <template #footer>
         <el-button :disabled="批量代扣框.加载中" @click="批量代扣框.显示 = false">取消</el-button>
         <el-button type="primary" :loading="批量代扣框.加载中" @click="保存批量代扣">保存</el-button>
@@ -458,6 +492,28 @@ const 生成框 = reactive({
   point_card_auto_deduct_mode: 'inherit'
 })
 const 生成框结果 = ref('')
+const 批量充值框 = reactive({ 显示: false, 加载中: false, rows: [], amount: 0, reason: '' })
+const 批量充值输入有效 = computed(() => 批量充值框.rows.length > 0 &&
+  Number.isInteger(批量充值框.amount) && 批量充值框.amount !== 0 && Math.abs(批量充值框.amount) <= 1000000000)
+const 批量充值费用 = computed(() => {
+  if (!是代理账号.value || !批量充值输入有效.value || 批量充值框.amount < 0) return { charge: '0', error: '' }
+  const counts = new Map()
+  for (const row of 批量充值框.rows) counts.set(row.software, (counts.get(row.software) || 0) + 1)
+  let charge = 0n
+  for (const [software, count] of counts) {
+    const price = Number(账号信息.prices?.[software] || 0)
+    if (!Number.isFinite(price) || price <= 0) return { charge: '0', error: `${软件名称(software)}未配置渠道价格` }
+    // 与后端相同，先按软件合计，再以整数计算并向上取整。
+    charge += (BigInt(Math.round(price * 100)) * BigInt(批量充值框.amount) * BigInt(count) + 99n) / 100n
+  }
+  return { charge: charge.toString(), error: '' }
+})
+const 预计充值后余额 = (row) => {
+  const before = Number(row.point_balance)
+  if (!批量充值输入有效.value) return '—'
+  if (!Number.isSafeInteger(before) || !Number.isSafeInteger(before + 批量充值框.amount)) return '以提交结果为准'
+  return before + 批量充值框.amount
+}
 const 批量代扣框 = reactive({
   显示: false,
   加载中: false,
@@ -725,8 +781,37 @@ const 批量修改状态 = function (state) {
     })
     .catch(显示错误)
 }
+const 打开批量充值 = function () {
+  if (!已选点卡卡密.value.length) return
+  const selected = new Set(已选点卡卡密.value)
+  Object.assign(批量充值框, {
+    显示: true,
+    rows: 点卡卡密列表.value.filter((row) => selected.has(row.card)).map((row) => ({ ...row })),
+    amount: 0,
+    reason: ''
+  })
+}
+const 提交批量充值 = async function () {
+  if (批量充值框.加载中 || !批量充值输入有效.value) return
+  批量充值框.加载中 = true
+  try {
+    const res = await post('/point_card/adjust_batch', {
+      cards: 批量充值框.rows.map((row) => row.card),
+      amount: 批量充值框.amount,
+      reason: 批量充值框.reason
+    })
+    if (!res.data?.state) throw new Error(res.data?.msg || '调整失败，本批次未修改余额')
+    ElMessage.success(res.data.msg || '调整成功')
+    批量充值框.显示 = false
+    await 查询点卡卡密(false)
+  } catch (error) {
+    显示错误(error)
+  } finally {
+    批量充值框.加载中 = false
+  }
+}
 const 打开批量代扣 = function () {
-  if (!是代理账号.value || !已选点卡卡密.value.length) return
+  if (!已选点卡卡密.value.length) return
   // 保存打开对话框时的选择，避免列表刷新后提交到不同的一批卡密。
   Object.assign(批量代扣框, {
     显示: true,
