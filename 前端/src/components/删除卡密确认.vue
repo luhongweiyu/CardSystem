@@ -23,8 +23,10 @@
       </el-table-column>
     </el-table>
     <div class="数量确认">
-      <label for="删除确认数量">输入 {{ rows.length }} 确认删除</label>
+      <label for="删除确认数量">删除张数</label>
       <el-input id="删除确认数量" v-model="输入数量" :disabled="加载中" inputmode="numeric" autocomplete="off" :placeholder="`输入 ${rows.length}`" />
+      <label for="删除随机确认">随机验证码：{{ 随机尾数 }}</label>
+      <el-input id="删除随机确认" v-model="输入验证码" :disabled="加载中" inputmode="numeric" autocomplete="off" maxlength="3" placeholder="输入三位验证码" />
     </div>
     <template #footer>
       <el-button :disabled="加载中" @click="显示 = false">取消</el-button>
@@ -50,9 +52,17 @@ const 显示 = computed({
   set: (value) => emit('update:modelValue', value)
 })
 const 输入数量 = ref('')
-const 可提交 = computed(() => !props.加载中 && props.rows.length > 0 && 输入数量.value === String(props.rows.length))
+const 输入验证码 = ref('')
+const 随机尾数 = ref('')
+const 可提交 = computed(() => !props.加载中 && props.rows.length > 0 && 输入数量.value === String(props.rows.length) && 随机尾数.value !== '' && 输入验证码.value === 随机尾数.value)
 const 确认 = () => { if (可提交.value) emit('confirm') }
-watch(() => props.modelValue, (open) => { if (open) 输入数量.value = '' })
+watch(() => props.modelValue, (open) => {
+  if (open) {
+    输入数量.value = ''
+    输入验证码.value = ''
+    随机尾数.value = String(Math.floor(Math.random() * 900) + 100)
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>
